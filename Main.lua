@@ -15,8 +15,7 @@ MainModule.Noclip = {
 }
 
 MainModule.AutoQTE = {
-    Enabled = false,
-    AntiStunEnabled = false
+    RageEnabled = false
 }
 
 MainModule.Rebel = {
@@ -38,6 +37,16 @@ MainModule.Dalgona = {
     FreeLighterEnabled = false
 }
 
+MainModule.HNS = {
+    ESPHiders = false,
+    ESPSeekers = false,
+    AutoPickup = false,
+    SpikesKill = false,
+    DeleteSpikes = false,
+    KillHiders = false,
+    AutoDodge = false
+}
+
 MainModule.Misc = {
     InstaInteract = false,
     NoCooldownProximity = false
@@ -49,6 +58,7 @@ local autoFarmConnection = nil
 local godModeConnection = nil
 local instaInteractConnection = nil
 local noCooldownConnection = nil
+local rageQTEConnection = nil
 
 function MainModule.ToggleSpeedHack(enabled)
     MainModule.SpeedHack.Enabled = enabled
@@ -126,48 +136,60 @@ function MainModule.TeleportDown40()
     end
 end
 
--- Auto QTE функции
-function MainModule.ToggleAutoQTE(enabled)
-    MainModule.AutoQTE.Enabled = enabled
+-- Auto QTE Rage функция (исправленная версия)
+function MainModule.ToggleRageQTE(enabled)
+    MainModule.AutoQTE.RageEnabled = enabled
     
-    if enabled then
-        task.spawn(function()
-            while MainModule.AutoQTE.Enabled do
-                pcall(function()
-                    local remote = game:GetService("ReplicatedStorage"):FindFirstChild("RemoteForQTE")
-                    if remote and remote:IsA("RemoteEvent") then
-                        remote:FireServer()
-                    end
-                end)
-                task.wait(0.2)
-            end
-        end)
+    if rageQTEConnection then
+        rageQTEConnection:Disconnect()
+        rageQTEConnection = nil
     end
-end
-
--- Anti Stun QTE функции
-function MainModule.ToggleAntiStunQTE(enabled)
-    MainModule.AutoQTE.AntiStunEnabled = enabled
     
     if enabled then
-        if not MainModule.AntiStunConnection then
-            local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-            local impactFrames = playerGui:WaitForChild("ImpactFrames")
-            local replicatedStorage = game:GetService("ReplicatedStorage")
+        rageQTEConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.AutoQTE.RageEnabled then return end
             
-            MainModule.AntiStunConnection = impactFrames.ChildAdded:Connect(function(child)
-                if child.Name == "OuterRingTemplate" and not (MainModule.ProcessedAntiStun or {})[child] then
-                    (MainModule.ProcessedAntiStun or {})[child] = true
-                    
-                    task.defer(function()
-                        task.wait(0.03)
-                        
+            pcall(function()
+                local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+                local impactFrames = playerGui:FindFirstChild("ImpactFrames")
+                if not impactFrames then return end
+                
+                local replicatedStorage = game:GetService("ReplicatedStorage")
+                local virtualInput = game:GetService("VirtualInputManager")
+                local hbgModule = require(replicatedStorage.Modules.HBGQTE)
+                
+                -- Проверяем только новые QTE
+                for _, child in pairs(impactFrames:GetChildren()) do
+                    if child.Name == "OuterRingTemplate" and child:IsA("Frame") then
+                        -- Ищем соответствующий InnerTemplate
                         for _, innerChild in pairs(impactFrames:GetChildren()) do
                             if innerChild.Name == "InnerTemplate" and innerChild.Position == child.Position 
-                               and not innerChild:GetAttribute("Failed") then
+                               and not innerChild:GetAttribute("Failed") and not innerChild:GetAttribute("Tweening") then
                                
-                                pcall(function()
-                                    local hbgModule = require(replicatedStorage.Modules.HBGQTE)
+                                local qteMain = innerChild:FindFirstChild("QTEMain")
+                                if qteMain and qteMain:FindFirstChild("Button") then
+                                    local buttonInfo = qteMain.Button.Inner.Info
+                                    if buttonInfo and buttonInfo.Text then
+                                        local key = buttonInfo.Text
+                                        
+                                        -- Создаем данные для QTE
+                                        local qteData = {
+                                            Inner = innerChild,
+                                            Outer = child,
+                                            Duration = 2,
+                                            StartedAt = tick()
+                                        }
+                                        
+                                        -- Нажимаем QTE
+                                        hbgModule.Pressed(false, qteData)
+                                        
+                                        -- Отправляем нажатие клавиши
+                                        virtualInput:SendKeyEvent(true, Enum.KeyCode[key], false, game)
+                                        task.wait(0.05)
+                                        virtualInput:SendKeyEvent(false, Enum.KeyCode[key], false, game)
+                                    end
+                                else
+                                    -- Если нет кнопки, просто нажимаем QTE
                                     local qteData = {
                                         Inner = innerChild,
                                         Outer = child,
@@ -175,22 +197,14 @@ function MainModule.ToggleAntiStunQTE(enabled)
                                         StartedAt = tick()
                                     }
                                     hbgModule.Pressed(false, qteData)
-                                end)
+                                end
                                 break
                             end
                         end
-                    end)
+                    end
                 end
             end)
-            
-            MainModule.ProcessedAntiStun = {}
-        end
-    else
-        if MainModule.AntiStunConnection then
-            MainModule.AntiStunConnection:Disconnect()
-            MainModule.AntiStunConnection = nil
-        end
-        MainModule.ProcessedAntiStun = {}
+        end)
     end
 end
 
@@ -283,13 +297,61 @@ end
 
 -- Dalgona функции
 function MainModule.CompleteDalgona()
-    MainModule.Dalgona.CompleteEnabled = true
-    -- Здесь будет код для Complete Dalgona
+    task.spawn(function()
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        if not ReplicatedStorage then
+            return
+        end
+        local DalgonaClientModule = ReplicatedStorage:FindFirstChild("Modules") and
+                                    ReplicatedStorage.Modules:FindFirstChild("Games") and
+                                    ReplicatedStorage.Modules.Games:FindFirstChild("DalgonaClient")
+        if not DalgonaClientModule then
+            return
+        end
+        for _, func in pairs(getreg()) do
+            if typeof(func) == "function" and islclosure(func) then
+                local info = getinfo(func)
+                if info.nups == 76 then
+                    setupvalue(func, 33, 9999)
+                    setupvalue(func, 34, 9999)
+                end
+            end
+        end
+    end)
 end
 
 function MainModule.FreeLighter()
-    MainModule.Dalgona.FreeLighterEnabled = true
-    -- Здесь будет код для Free Lighter
+    local player = game:GetService("Players").LocalPlayer
+    player:SetAttribute("HasLighter", true)
+end
+
+-- HNS функции
+function MainModule.ToggleESPHiders(enabled)
+    MainModule.HNS.ESPHiders = enabled
+end
+
+function MainModule.ToggleESPSeekers(enabled)
+    MainModule.HNS.ESPSeekers = enabled
+end
+
+function MainModule.ToggleAutoPickup(enabled)
+    MainModule.HNS.AutoPickup = enabled
+end
+
+function MainModule.ToggleSpikesKill(enabled)
+    MainModule.HNS.SpikesKill = enabled
+end
+
+function MainModule.ToggleDeleteSpikes(enabled)
+    MainModule.HNS.DeleteSpikes = enabled
+end
+
+function MainModule.ToggleKillHiders(enabled)
+    MainModule.HNS.KillHiders = enabled
+end
+
+function MainModule.ToggleAutoDodge(enabled)
+    MainModule.HNS.AutoDodge = enabled
 end
 
 -- Misc функции
