@@ -15,7 +15,7 @@ MainModule.Noclip = {
 }
 
 MainModule.AutoQTE = {
-    RageEnabled = false
+    AntiStunEnabled = false
 }
 
 MainModule.Rebel = {
@@ -29,7 +29,10 @@ MainModule.RLGL = {
 
 MainModule.Guards = {
     SelectedGuard = "Circle",
-    AutoFarm = false
+    AutoFarm = false,
+    RapidFire = false,
+    InfiniteAmmo = false,
+    HitboxExpander = false
 }
 
 MainModule.Dalgona = {
@@ -47,6 +50,14 @@ MainModule.HNS = {
     AutoDodge = false
 }
 
+MainModule.TugOfWar = {
+    AutoPull = false
+}
+
+MainModule.GlassBridge = {
+    AntiBreak = false
+}
+
 MainModule.Misc = {
     InstaInteract = false,
     NoCooldownProximity = false
@@ -58,7 +69,12 @@ local autoFarmConnection = nil
 local godModeConnection = nil
 local instaInteractConnection = nil
 local noCooldownConnection = nil
-local rageQTEConnection = nil
+local antiStunConnection = nil
+local rapidFireConnection = nil
+local infiniteAmmoConnection = nil
+local hitboxConnection = nil
+local autoPullConnection = nil
+local antiBreakConnection = nil
 
 function MainModule.ToggleSpeedHack(enabled)
     MainModule.SpeedHack.Enabled = enabled
@@ -136,18 +152,18 @@ function MainModule.TeleportDown40()
     end
 end
 
--- Auto QTE Rage функция (исправленная версия)
-function MainModule.ToggleRageQTE(enabled)
-    MainModule.AutoQTE.RageEnabled = enabled
+-- Anti Stun QTE функция (исправленная без лагов)
+function MainModule.ToggleAntiStunQTE(enabled)
+    MainModule.AutoQTE.AntiStunEnabled = enabled
     
-    if rageQTEConnection then
-        rageQTEConnection:Disconnect()
-        rageQTEConnection = nil
+    if antiStunConnection then
+        antiStunConnection:Disconnect()
+        antiStunConnection = nil
     end
     
     if enabled then
-        rageQTEConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if not MainModule.AutoQTE.RageEnabled then return end
+        antiStunConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.AutoQTE.AntiStunEnabled then return end
             
             pcall(function()
                 local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
@@ -155,41 +171,23 @@ function MainModule.ToggleRageQTE(enabled)
                 if not impactFrames then return end
                 
                 local replicatedStorage = game:GetService("ReplicatedStorage")
-                local virtualInput = game:GetService("VirtualInputManager")
-                local hbgModule = require(replicatedStorage.Modules.HBGQTE)
                 
-                -- Проверяем только новые QTE
+                -- Безопасная проверка модуля
+                local success, hbgModule = pcall(function()
+                    return require(replicatedStorage.Modules.HBGQTE)
+                end)
+                
+                if not success then return end
+                
+                -- Проверяем только активные QTE
                 for _, child in pairs(impactFrames:GetChildren()) do
                     if child.Name == "OuterRingTemplate" and child:IsA("Frame") then
-                        -- Ищем соответствующий InnerTemplate
                         for _, innerChild in pairs(impactFrames:GetChildren()) do
                             if innerChild.Name == "InnerTemplate" and innerChild.Position == child.Position 
                                and not innerChild:GetAttribute("Failed") and not innerChild:GetAttribute("Tweening") then
                                
-                                local qteMain = innerChild:FindFirstChild("QTEMain")
-                                if qteMain and qteMain:FindFirstChild("Button") then
-                                    local buttonInfo = qteMain.Button.Inner.Info
-                                    if buttonInfo and buttonInfo.Text then
-                                        local key = buttonInfo.Text
-                                        
-                                        -- Создаем данные для QTE
-                                        local qteData = {
-                                            Inner = innerChild,
-                                            Outer = child,
-                                            Duration = 2,
-                                            StartedAt = tick()
-                                        }
-                                        
-                                        -- Нажимаем QTE
-                                        hbgModule.Pressed(false, qteData)
-                                        
-                                        -- Отправляем нажатие клавиши
-                                        virtualInput:SendKeyEvent(true, Enum.KeyCode[key], false, game)
-                                        task.wait(0.05)
-                                        virtualInput:SendKeyEvent(false, Enum.KeyCode[key], false, game)
-                                    end
-                                else
-                                    -- Если нет кнопки, просто нажимаем QTE
+                                -- Безопасное нажатие QTE
+                                pcall(function()
                                     local qteData = {
                                         Inner = innerChild,
                                         Outer = child,
@@ -197,7 +195,7 @@ function MainModule.ToggleRageQTE(enabled)
                                         StartedAt = tick()
                                     }
                                     hbgModule.Pressed(false, qteData)
-                                end
+                                end)
                                 break
                             end
                         end
@@ -295,6 +293,145 @@ function MainModule.ToggleAutoFarm(enabled)
     end
 end
 
+-- Rapid Fire функция
+function MainModule.ToggleRapidFire(enabled)
+    MainModule.Guards.RapidFire = enabled
+    
+    if rapidFireConnection then
+        rapidFireConnection:Disconnect()
+        rapidFireConnection = nil
+    end
+    
+    if enabled then
+        -- Применяем один раз при включении
+        pcall(function()
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            local weaponsFolder = ReplicatedStorage:FindFirstChild("Weapons")
+            if not weaponsFolder then return end
+            local gunsFolder = weaponsFolder:FindFirstChild("Guns")
+            if not gunsFolder then return end
+            
+            local function findFireRateCDObjects(parent)
+                local results = {}
+                for _, obj in ipairs(parent:GetDescendants()) do
+                    if obj.Name == "FireRateCD" then
+                        table.insert(results, obj)
+                    end
+                end
+                return results
+            end
+            
+            local fireRateCDs = findFireRateCDObjects(gunsFolder)
+            for _, valObject in ipairs(fireRateCDs) do
+                if valObject:IsA("NumberValue") or valObject:IsA("IntValue") or valObject:IsA("BoolValue") then
+                    valObject.Value = 0
+                end
+            end
+        end)
+        
+        -- Постоянное обновление
+        rapidFireConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if MainModule.Guards.RapidFire then
+                pcall(function()
+                    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+                    local weaponsFolder = ReplicatedStorage:FindFirstChild("Weapons")
+                    if not weaponsFolder then return end
+                    local gunsFolder = weaponsFolder:FindFirstChild("Guns")
+                    if not gunsFolder then return end
+                    
+                    for _, obj in ipairs(gunsFolder:GetDescendants()) do
+                        if obj.Name == "FireRateCD" and (obj:IsA("NumberValue") or obj:IsA("IntValue") or obj:IsA("BoolValue")) then
+                            obj.Value = 0
+                        end
+                    end
+                end)
+            end
+        end)
+    end
+end
+
+-- Infinite Ammo функция
+function MainModule.ToggleInfiniteAmmo(enabled)
+    MainModule.Guards.InfiniteAmmo = enabled
+    
+    if infiniteAmmoConnection then
+        infiniteAmmoConnection:Disconnect()
+        infiniteAmmoConnection = nil
+    end
+    
+    if enabled then
+        infiniteAmmoConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.Guards.InfiniteAmmo then return end
+            
+            local player = game:GetService("Players").LocalPlayer
+            local character = player.Character
+            if character then
+                for _, tool in pairs(character:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        for _, obj in pairs(tool:GetDescendants()) do
+                            if obj:IsA("NumberValue") then
+                                if obj.Name:lower():find("ammo") or 
+                                   obj.Name:lower():find("bullet") or
+                                   obj.Name:lower():find("clip") then
+                                    obj.Value = 9999
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end
+
+-- Hitbox Expander функция
+function MainModule.ToggleHitboxExpander(enabled)
+    MainModule.Guards.HitboxExpander = enabled
+    
+    if hitboxConnection then
+        hitboxConnection:Disconnect()
+        hitboxConnection = nil
+    end
+    
+    if enabled then
+        _G.HeadSize = 30
+        
+        local function UpdateHeadHitboxes()
+            local Players = game:GetService("Players")
+            local player = Players.LocalPlayer
+            
+            for _, v in pairs(Players:GetPlayers()) do
+                if v ~= player and v.Character and v.Character:FindFirstChild("Head") then
+                    pcall(function()
+                        v.Character.Head.Size = Vector3.new(_G.HeadSize, _G.HeadSize, _G.HeadSize)
+                        v.Character.Head.Transparency = 0.5
+                        v.Character.Head.BrickColor = BrickColor.new("Red")
+                        v.Character.Head.Material = "Neon"
+                        v.Character.Head.CanCollide = false
+                    end)
+                end
+            end
+        end
+        
+        hitboxConnection = game:GetService("RunService").RenderStepped:Connect(UpdateHeadHitboxes)
+    else
+        -- Восстанавливаем оригинальные размеры
+        local Players = game:GetService("Players")
+        local player = Players.LocalPlayer
+        
+        for _, v in pairs(Players:GetPlayers()) do
+            if v ~= player and v.Character and v.Character:FindFirstChild("Head") then
+                pcall(function()
+                    v.Character.Head.Size = Vector3.new(2, 1, 1)
+                    v.Character.Head.Transparency = 0
+                    v.Character.Head.Material = "Plastic"
+                    v.Character.Head.BrickColor = BrickColor.new("Medium stone grey")
+                end)
+            end
+        end
+    end
+end
+
 -- Dalgona функции
 function MainModule.CompleteDalgona()
     task.spawn(function()
@@ -354,7 +491,63 @@ function MainModule.ToggleAutoDodge(enabled)
     MainModule.HNS.AutoDodge = enabled
 end
 
--- Misc функции
+-- Tug Of War функции
+function MainModule.ToggleAutoPull(enabled)
+    MainModule.TugOfWar.AutoPull = enabled
+    
+    if autoPullConnection then
+        autoPullConnection:Disconnect()
+        autoPullConnection = nil
+    end
+    
+    if enabled then
+        autoPullConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if MainModule.TugOfWar.AutoPull then
+                pcall(function()
+                    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+                    local Remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("TemporaryReachedBindable")
+                    local args = {
+                        { IHateYou = true }
+                    }
+                    Remote:FireServer(unpack(args))
+                end)
+                task.wait(0.25)
+            end
+        end)
+    end
+end
+
+-- Glass Bridge функции
+function MainModule.ToggleAntiBreak(enabled)
+    MainModule.GlassBridge.AntiBreak = enabled
+    
+    if antiBreakConnection then
+        antiBreakConnection:Disconnect()
+        antiBreakConnection = nil
+    end
+    
+    if enabled then
+        antiBreakConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.GlassBridge.AntiBreak then return end
+            
+            pcall(function()
+                local GlassHolder = workspace:FindFirstChild("GlassBridge") and workspace.GlassBridge:FindFirstChild("GlassHolder")
+                if not GlassHolder then return end
+                for _, v in pairs(GlassHolder:GetChildren()) do
+                    for _, j in pairs(v:GetChildren()) do
+                        if j:IsA("Model") and j.PrimaryPart then
+                            if j.PrimaryPart:GetAttribute("exploitingisevil") ~= nil then
+                                j.PrimaryPart:SetAttribute("exploitingisevil", nil)
+                            end
+                        end
+                    end
+                end
+            end)
+        end)
+    end
+end
+
+-- Misc функции (исправленные без лагов)
 function MainModule.ToggleInstaInteract(enabled)
     MainModule.Misc.InstaInteract = enabled
     
@@ -364,43 +557,27 @@ function MainModule.ToggleInstaInteract(enabled)
     end
     
     if enabled then
-        local player = game:GetService("Players").LocalPlayer
         local function makePromptInstant(prompt)
             if prompt:IsA("ProximityPrompt") then
-                prompt:GetPropertyChangedSignal("HoldDuration"):Connect(function()
-                    if MainModule.Misc.InstaInteract then
-                        prompt.HoldDuration = 0
-                    end
-                end)
-                if MainModule.Misc.InstaInteract then
-                    prompt.HoldDuration = 0
-                end
+                prompt.HoldDuration = 0
             end
         end
 
+        -- Применяем к существующим промптам
         for _, obj in pairs(workspace:GetDescendants()) do
             if obj:IsA("ProximityPrompt") then
                 makePromptInstant(obj)
             end
         end
 
+        -- Слушаем только новые промпты
         instaInteractConnection = workspace.DescendantAdded:Connect(function(obj)
             if obj:IsA("ProximityPrompt") then
                 makePromptInstant(obj)
             end
         end)
-
-        task.spawn(function()
-            while task.wait(0.1) do
-                if MainModule.Misc.InstaInteract then
-                    for _, prompt in pairs(workspace:GetDescendants()) do
-                        if prompt:IsA("ProximityPrompt") and prompt.HoldDuration ~= 0 then
-                            prompt.HoldDuration = 0
-                        end
-                    end
-                end
-            end
-        end)
+    else
+        -- При выключении не делаем ничего, пусть игра сама управляет промптами
     end
 end
 
