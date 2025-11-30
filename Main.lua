@@ -16,7 +16,6 @@ MainModule.Noclip = {
 
 MainModule.AutoQTE = {
     Enabled = false,
-    RageEnabled = false,
     AntiStunEnabled = false
 }
 
@@ -34,10 +33,22 @@ MainModule.Guards = {
     AutoFarm = false
 }
 
+MainModule.Dalgona = {
+    CompleteEnabled = false,
+    FreeLighterEnabled = false
+}
+
+MainModule.Misc = {
+    InstaInteract = false,
+    NoCooldownProximity = false
+}
+
 -- Постоянное обновление скорости
 local speedConnection = nil
 local autoFarmConnection = nil
 local godModeConnection = nil
+local instaInteractConnection = nil
+local noCooldownConnection = nil
 
 function MainModule.ToggleSpeedHack(enabled)
     MainModule.SpeedHack.Enabled = enabled
@@ -134,58 +145,6 @@ function MainModule.ToggleAutoQTE(enabled)
     end
 end
 
--- Rage Mode QTE функции
-function MainModule.ToggleRageQTE(enabled)
-    MainModule.AutoQTE.RageEnabled = enabled
-    
-    if enabled then
-        if not MainModule.RageConnection then
-            local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-            local impactFrames = playerGui:WaitForChild("ImpactFrames")
-            local virtualInput = game:GetService("VirtualInputManager")
-            local replicatedStorage = game:GetService("ReplicatedStorage")
-            
-            MainModule.RageConnection = impactFrames.ChildAdded:Connect(function(child)
-                if child.Name == "OuterRingTemplate" and not (MainModule.ProcessedRage or {})[child] then
-                    (MainModule.ProcessedRage or {})[child] = true
-                    
-                    task.defer(function()
-                        task.wait(0.03)
-                        
-                        for _, innerChild in pairs(impactFrames:GetChildren()) do
-                            if innerChild.Name == "InnerTemplate" and innerChild.Position == child.Position 
-                               and not innerChild:GetAttribute("Failed") then
-                               
-                                local qteMain = innerChild:FindFirstChild("QTEMain")
-                                if qteMain and qteMain:FindFirstChild("Button") then
-                                    local buttonInfo = qteMain.Button.Inner.Info
-                                    if buttonInfo and buttonInfo.Text then
-                                        local key = buttonInfo.Text
-                                        
-                                        task.wait(0.02)
-                                        virtualInput:SendKeyEvent(true, Enum.KeyCode[key], false, game)
-                                        task.wait(0.03)
-                                        virtualInput:SendKeyEvent(false, Enum.KeyCode[key], false, game)
-                                    end
-                                end
-                                break
-                            end
-                        end
-                    end)
-                end
-            end)
-            
-            MainModule.ProcessedRage = {}
-        end
-    else
-        if MainModule.RageConnection then
-            MainModule.RageConnection:Disconnect()
-            MainModule.RageConnection = nil
-        end
-        MainModule.ProcessedRage = {}
-    end
-end
-
 -- Anti Stun QTE функции
 function MainModule.ToggleAntiStunQTE(enabled)
     MainModule.AutoQTE.AntiStunEnabled = enabled
@@ -269,17 +228,9 @@ function MainModule.ToggleGodMode(enabled)
         local character = player.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
             MainModule.RLGL.OriginalHeight = character.HumanoidRootPart.Position.Y
+            local currentPos = character.HumanoidRootPart.Position
+            character.HumanoidRootPart.CFrame = CFrame.new(currentPos.X, 1184.9, currentPos.Z)
         end
-        
-        godModeConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if MainModule.RLGL.GodMode then
-                local character = player.Character
-                if character and character:FindFirstChild("HumanoidRootPart") then
-                    local currentPos = character.HumanoidRootPart.Position
-                    character.HumanoidRootPart.CFrame = CFrame.new(currentPos.X, 1184.9, currentPos.Z)
-                end
-            end
-        end)
     else
         local player = game:GetService("Players").LocalPlayer
         local character = player.Character
@@ -325,6 +276,92 @@ function MainModule.ToggleAutoFarm(enabled)
                 pcall(function()
                     game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("VideoGameRemote"):FireServer(unpack(args2))
                 end)
+            end
+        end)
+    end
+end
+
+-- Dalgona функции
+function MainModule.CompleteDalgona()
+    MainModule.Dalgona.CompleteEnabled = true
+    -- Здесь будет код для Complete Dalgona
+end
+
+function MainModule.FreeLighter()
+    MainModule.Dalgona.FreeLighterEnabled = true
+    -- Здесь будет код для Free Lighter
+end
+
+-- Misc функции
+function MainModule.ToggleInstaInteract(enabled)
+    MainModule.Misc.InstaInteract = enabled
+    
+    if instaInteractConnection then
+        instaInteractConnection:Disconnect()
+        instaInteractConnection = nil
+    end
+    
+    if enabled then
+        local player = game:GetService("Players").LocalPlayer
+        local function makePromptInstant(prompt)
+            if prompt:IsA("ProximityPrompt") then
+                prompt:GetPropertyChangedSignal("HoldDuration"):Connect(function()
+                    if MainModule.Misc.InstaInteract then
+                        prompt.HoldDuration = 0
+                    end
+                end)
+                if MainModule.Misc.InstaInteract then
+                    prompt.HoldDuration = 0
+                end
+            end
+        end
+
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") then
+                makePromptInstant(obj)
+            end
+        end
+
+        instaInteractConnection = workspace.DescendantAdded:Connect(function(obj)
+            if obj:IsA("ProximityPrompt") then
+                makePromptInstant(obj)
+            end
+        end)
+
+        task.spawn(function()
+            while task.wait(0.1) do
+                if MainModule.Misc.InstaInteract then
+                    for _, prompt in pairs(workspace:GetDescendants()) do
+                        if prompt:IsA("ProximityPrompt") and prompt.HoldDuration ~= 0 then
+                            prompt.HoldDuration = 0
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end
+
+function MainModule.ToggleNoCooldownProximity(enabled)
+    MainModule.Misc.NoCooldownProximity = enabled
+    
+    if noCooldownConnection then
+        noCooldownConnection:Disconnect()
+        noCooldownConnection = nil
+    end
+    
+    if enabled then
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v.ClassName == "ProximityPrompt" then
+                v.HoldDuration = 0
+            end
+        end
+        
+        noCooldownConnection = workspace.DescendantAdded:Connect(function(obj)
+            if MainModule.Misc.NoCooldownProximity then
+                if obj:IsA("ProximityPrompt") then
+                    obj.HoldDuration = 0
+                end
             end
         end)
     end
