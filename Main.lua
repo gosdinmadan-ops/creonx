@@ -25,7 +25,8 @@ MainModule.Rebel = {
 }
 
 MainModule.RLGL = {
-    GodMode = false
+    GodMode = false,
+    OriginalHeight = nil
 }
 
 MainModule.Guards = {
@@ -36,6 +37,7 @@ MainModule.Guards = {
 -- Постоянное обновление скорости
 local speedConnection = nil
 local autoFarmConnection = nil
+local godModeConnection = nil
 
 function MainModule.ToggleSpeedHack(enabled)
     MainModule.SpeedHack.Enabled = enabled
@@ -96,6 +98,21 @@ function MainModule.SetSpeed(value)
     end
     
     return value
+end
+
+-- Функции телепортации
+function MainModule.TeleportUp100()
+    local player = game:GetService("Players").LocalPlayer
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = player.Character.HumanoidRootPart.CFrame + Vector3.new(0, 100, 0)
+    end
+end
+
+function MainModule.TeleportDown40()
+    local player = game:GetService("Players").LocalPlayer
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = player.Character.HumanoidRootPart.CFrame + Vector3.new(0, -40, 0)
+    end
 end
 
 -- Auto QTE функции
@@ -222,36 +239,60 @@ end
 function MainModule.ToggleRebel(enabled)
     MainModule.Rebel.Enabled = enabled
     _G.InstantRebel = enabled
-    
-    if enabled then
-        print("Instant Rebel включен")
-    else
-        print("Instant Rebel выключен")
-    end
 end
 
 -- RLGL функции
 function MainModule.TeleportToEnd()
-    print("TP TO END (не реализовано)")
+    local player = game:GetService("Players").LocalPlayer
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = CFrame.new(-214.4, 1023.1, 146.7)
+    end
 end
 
 function MainModule.TeleportToStart()
-    print("TP TO START (не реализовано)")
+    local player = game:GetService("Players").LocalPlayer
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = CFrame.new(-55.3, 1023.1, -545.8)
+    end
 end
 
 function MainModule.ToggleGodMode(enabled)
     MainModule.RLGL.GodMode = enabled
+    
+    if godModeConnection then
+        godModeConnection:Disconnect()
+        godModeConnection = nil
+    end
+    
     if enabled then
-        print("GodMode включен (не реализовано)")
+        local player = game:GetService("Players").LocalPlayer
+        local character = player.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            MainModule.RLGL.OriginalHeight = character.HumanoidRootPart.Position.Y
+        end
+        
+        godModeConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if MainModule.RLGL.GodMode then
+                local character = player.Character
+                if character and character:FindFirstChild("HumanoidRootPart") then
+                    local currentPos = character.HumanoidRootPart.Position
+                    character.HumanoidRootPart.CFrame = CFrame.new(currentPos.X, 1184.9, currentPos.Z)
+                end
+            end
+        end)
     else
-        print("GodMode выключен (не реализовано)")
+        local player = game:GetService("Players").LocalPlayer
+        local character = player.Character
+        if character and character:FindFirstChild("HumanoidRootPart") and MainModule.RLGL.OriginalHeight then
+            local currentPos = character.HumanoidRootPart.Position
+            character.HumanoidRootPart.CFrame = CFrame.new(currentPos.X, MainModule.RLGL.OriginalHeight, currentPos.Z)
+        end
     end
 end
 
 -- Guards функции
 function MainModule.SetGuardType(guardType)
     MainModule.Guards.SelectedGuard = guardType
-    print("Выбран гвард: " .. guardType)
 end
 
 function MainModule.SpawnAsGuard()
@@ -263,7 +304,6 @@ function MainModule.SpawnAsGuard()
     
     pcall(function()
         game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("PlayableGuardRemote"):FireServer(unpack(args))
-        print("Попытка стать гвардом: " .. MainModule.Guards.SelectedGuard)
     end)
 end
 
@@ -287,9 +327,6 @@ function MainModule.ToggleAutoFarm(enabled)
                 end)
             end
         end)
-        print("AutoFarm включен")
-    else
-        print("AutoFarm выключен")
     end
 end
 
