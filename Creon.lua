@@ -83,16 +83,17 @@ if not success then
     MainModule = {
         SpeedHack = {Enabled = false, DefaultSpeed = 16, CurrentSpeed = 16, MaxSpeed = 150, MinSpeed = 16},
         Noclip = {Enabled = false, Status = "Don't work, Disabled"},
-        AutoQTE = {Enabled = false, RageEnabled = false, AntiStunEnabled = false},
+        AutoQTE = {Enabled = false, AntiStunEnabled = false},
         Rebel = {Enabled = false},
         RLGL = {GodMode = false, OriginalHeight = nil},
         Guards = {SelectedGuard = "Circle", AutoFarm = false},
+        Dalgona = {CompleteEnabled = false, FreeLighterEnabled = false},
+        Misc = {InstaInteract = false, NoCooldownProximity = false},
         ToggleSpeedHack = function() end,
         SetSpeed = function() return 16 end,
         TeleportUp100 = function() end,
         TeleportDown40 = function() end,
         ToggleAutoQTE = function() end,
-        ToggleRageQTE = function() end,
         ToggleAntiStunQTE = function() end,
         ToggleRebel = function() end,
         TeleportToEnd = function() end,
@@ -101,6 +102,10 @@ if not success then
         SetGuardType = function() end,
         SpawnAsGuard = function() end,
         ToggleAutoFarm = function() end,
+        CompleteDalgona = function() end,
+        FreeLighter = function() end,
+        ToggleInstaInteract = function() end,
+        ToggleNoCooldownProximity = function() end,
         GetPlayerPosition = function() return "Не доступно" end
     }
 end
@@ -477,27 +482,27 @@ local function CreateMainContent()
         MainModule.ToggleAutoQTE(enabled)
     end)
     
-    local rageToggle = CreateToggle("Rage QTE", UDim2.new(0.075, 0, 0.45, 0), MainModule.AutoQTE.RageEnabled, function(enabled)
-        MainModule.ToggleRageQTE(enabled)
-    end)
-    
-    local antistunToggle = CreateToggle("Anti Stun QTE", UDim2.new(0.075, 0, 0.55, 0), MainModule.AutoQTE.AntiStunEnabled, function(enabled)
+    local antistunToggle = CreateToggle("Anti Stun QTE", UDim2.new(0.075, 0, 0.45, 0), MainModule.AutoQTE.AntiStunEnabled, function(enabled)
         MainModule.ToggleAntiStunQTE(enabled)
     end)
     
-    local tpUpBtn = CreateButton("TP 100 blocks up", UDim2.new(0.075, 0, 0.65, 0))
+    local instaInteractToggle = CreateToggle("Insta Interact", UDim2.new(0.075, 0, 0.55, 0), MainModule.Misc.InstaInteract, function(enabled)
+        MainModule.ToggleInstaInteract(enabled)
+    end)
+    
+    local noCooldownToggle = CreateToggle("No Cooldown Proximity", UDim2.new(0.075, 0, 0.65, 0), MainModule.Misc.NoCooldownProximity, function(enabled)
+        MainModule.ToggleNoCooldownProximity(enabled)
+    end)
+    
+    local tpUpBtn = CreateButton("TP 100 blocks up", UDim2.new(0.075, 0, 0.75, 0))
     tpUpBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportUp100()
     end)
     
-    local tpDownBtn = CreateButton("TP 40 blocks down", UDim2.new(0.075, 0, 0.75, 0))
+    local tpDownBtn = CreateButton("TP 40 blocks down", UDim2.new(0.075, 0, 0.85, 0))
     tpDownBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportDown40()
     end)
-    
-    local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status, UDim2.new(0.075, 0, 0.85, 0))
-    noclipLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-    noclipLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 end
 
 local function CreateCombatContent()
@@ -592,8 +597,21 @@ local function CreateGuardsContent()
 end
 
 local function CreateDalgonaContent()
-    SoonLabel.Visible = true
-    SoonLabel.Text = "Soon"
+    for _, child in pairs(ContentFrame:GetChildren()) do
+        if child ~= SoonLabel then
+            child:Destroy()
+        end
+    end
+    
+    local completeBtn = CreateButton("Complete Dalgona", UDim2.new(0.075, 0, 0.1, 0))
+    completeBtn.MouseButton1Click:Connect(function()
+        MainModule.CompleteDalgona()
+    end)
+    
+    local lighterBtn = CreateButton("Free Lighter", UDim2.new(0.075, 0, 0.25, 0))
+    lighterBtn.MouseButton1Click:Connect(function()
+        MainModule.FreeLighter()
+    end)
 end
 
 local function CreateHNSContent()
@@ -678,6 +696,7 @@ for i, name in pairs(tabs) do
         end)
     elseif name == "Dalgona" then
         button.MouseButton1Click:Connect(function()
+            SoonLabel.Visible = false
             CreateDalgonaContent()
         end)
     elseif name == "HNS" then
