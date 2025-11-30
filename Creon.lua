@@ -85,14 +85,19 @@ if not success then
     MainModule = {
         SpeedHack = {Enabled = false, DefaultSpeed = 16, CurrentSpeed = 16, MaxSpeed = 150, MinSpeed = 16},
         Noclip = {Enabled = false, Status = "Don't work, Disabled"},
-        AutoQTE = {Enabled = false},
+        AutoQTE = {Enabled = false, RageEnabled = false, AntiStunEnabled = false},
+        Rebel = {Enabled = false},
+        RLGL = {GodMode = false},
         ToggleSpeedHack = function() end,
         SetSpeed = function() return 16 end,
         ToggleAutoQTE = function() end,
-        EnableRageQTE = function() end,
-        DisableRageQTE = function() end,
-        EnableAntiStunQTE = function() end,
-        DisableAntiStunQTE = function() end
+        ToggleRageQTE = function() end,
+        ToggleAntiStunQTE = function() end,
+        ToggleRebel = function() end,
+        TeleportToEnd = function() end,
+        TeleportToStart = function() end,
+        ToggleGodMode = function() end,
+        GetPlayerPosition = function() return "Не доступно" end
     }
 end
 
@@ -114,7 +119,7 @@ local SoonLabel = Instance.new("TextLabel")
 ScreenGui.Parent = game.CoreGui
 ScreenGui.Name = "CreonX"
 
--- Увеличенные размеры (+15% ширина, +10% высота)
+-- Увеличенные размеры
 MainFrame.Size = UDim2.new(0, 690, 0, 528)
 MainFrame.Position = UDim2.new(0.5, -345, 0.5, -264)
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
@@ -242,11 +247,66 @@ local function CreateButton(text, position, size)
     return button
 end
 
+-- Функция для создания переключателя
+local function CreateToggle(text, position, enabled, callback)
+    local toggleContainer = Instance.new("Frame")
+    toggleContainer.Size = UDim2.new(0.85, 0, 0, 35)
+    toggleContainer.Position = position
+    toggleContainer.BackgroundTransparency = 1
+    toggleContainer.Parent = ContentFrame
+    
+    local toggleButton = Instance.new("TextButton")
+    toggleButton.Size = UDim2.new(0.7, 0, 1, 0)
+    toggleButton.Position = UDim2.new(0, 0, 0, 0)
+    toggleButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    toggleButton.BorderSizePixel = 0
+    toggleButton.Text = text
+    toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleButton.TextSize = 12
+    toggleButton.Font = Enum.Font.Gotham
+    toggleButton.AutoButtonColor = false
+    toggleButton.Parent = toggleContainer
+    
+    local toggleIndicator = Instance.new("TextLabel")
+    toggleIndicator.Size = UDim2.new(0.25, 0, 0.6, 0)
+    toggleIndicator.Position = UDim2.new(0.72, 0, 0.2, 0)
+    toggleIndicator.BackgroundColor3 = enabled and Color3.fromRGB(0, 170, 0) or Color3.fromRGB(170, 0, 0)
+    toggleIndicator.BorderSizePixel = 0
+    toggleIndicator.Text = enabled and "→" or "←"
+    toggleIndicator.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleIndicator.TextSize = 12
+    toggleIndicator.Font = Enum.Font.GothamBold
+    toggleIndicator.Parent = toggleContainer
+    
+    local corner1 = Instance.new("UICorner")
+    corner1.CornerRadius = UDim.new(0, 6)
+    corner1.Parent = toggleButton
+    
+    local corner2 = Instance.new("UICorner")
+    corner2.CornerRadius = UDim.new(0, 4)
+    corner2.Parent = toggleIndicator
+    
+    local stroke1 = Instance.new("UIStroke")
+    stroke1.Color = Color3.fromRGB(80, 80, 80)
+    stroke1.Thickness = 1
+    stroke1.Parent = toggleButton
+    
+    toggleButton.MouseButton1Click:Connect(function()
+        local newState = not enabled
+        enabled = newState
+        toggleIndicator.BackgroundColor3 = newState and Color3.fromRGB(0, 170, 0) or Color3.fromRGB(170, 0, 0)
+        toggleIndicator.Text = newState and "→" or "←"
+        callback(newState)
+    end)
+    
+    return toggleContainer
+end
+
 -- Функция для создания слайдера скорости
 local function CreateSpeedSlider()
     local sliderContainer = Instance.new("Frame")
     sliderContainer.Size = UDim2.new(0.85, 0, 0, 60)
-    sliderContainer.Position = UDim2.new(0.075, 0, 0.25, 0)
+    sliderContainer.Position = UDim2.new(0.075, 0, 0.1, 0)
     sliderContainer.BackgroundTransparency = 1
     sliderContainer.Parent = ContentFrame
     
@@ -332,34 +392,111 @@ local function CreateMainContent()
     end
     
     -- SpeedHack Toggle
-    local speedToggle = CreateButton("SpeedHack: " .. (MainModule.SpeedHack.Enabled and "ON" or "OFF"), UDim2.new(0.075, 0, 0.1, 0))
-    
-    speedToggle.MouseButton1Click:Connect(function()
-        MainModule.ToggleSpeedHack(not MainModule.SpeedHack.Enabled)
-        speedToggle.Text = "SpeedHack: " .. (MainModule.SpeedHack.Enabled and "ON" or "OFF")
-        speedToggle.BackgroundColor3 = MainModule.SpeedHack.Enabled and Color3.fromRGB(0, 100, 0) or Color3.fromRGB(45, 45, 45)
+    local speedToggle = CreateToggle("SpeedHack", UDim2.new(0.075, 0, 0.02, 0), MainModule.SpeedHack.Enabled, function(enabled)
+        MainModule.ToggleSpeedHack(enabled)
     end)
     
     -- Speed Slider
     local speedLabel = CreateSpeedSlider()
     
+    -- Auto QTE Toggle
+    local qteToggle = CreateToggle("Auto QTE", UDim2.new(0.075, 0, 0.25, 0), MainModule.AutoQTE.Enabled, function(enabled)
+        MainModule.ToggleAutoQTE(enabled)
+    end)
+    
+    -- Rage QTE Toggle
+    local rageToggle = CreateToggle("Rage QTE", UDim2.new(0.075, 0, 0.32, 0), MainModule.AutoQTE.RageEnabled, function(enabled)
+        MainModule.ToggleRageQTE(enabled)
+    end)
+    
+    -- Anti Stun QTE Toggle
+    local antistunToggle = CreateToggle("Anti Stun QTE", UDim2.new(0.075, 0, 0.39, 0), MainModule.AutoQTE.AntiStunEnabled, function(enabled)
+        MainModule.ToggleAntiStunQTE(enabled)
+    end)
+    
     -- Noclip Label
-    local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status, UDim2.new(0.075, 0, 0.45, 0))
+    local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status, UDim2.new(0.075, 0, 0.46, 0))
     noclipLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
     noclipLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+end
+
+-- Функция для создания Rebel вкладки
+local function CreateRebelContent()
+    for _, child in pairs(ContentFrame:GetChildren()) do
+        if child ~= SoonLabel then
+            child:Destroy()
+        end
+    end
     
-    -- Auto QTE Toggle
-    local qteToggle = CreateButton("Auto QTE: " .. (MainModule.AutoQTE.Enabled and "ON" or "OFF"), UDim2.new(0.075, 0, 0.6, 0))
+    -- Заголовок REBEL
+    local rebelTitle = Instance.new("TextLabel")
+    rebelTitle.Size = UDim2.new(0.85, 0, 0, 40)
+    rebelTitle.Position = UDim2.new(0.075, 0, 0.05, 0)
+    rebelTitle.BackgroundTransparency = 1
+    rebelTitle.Text = "REBEL"
+    rebelTitle.TextColor3 = Color3.fromRGB(255, 50, 50)
+    rebelTitle.TextSize = 24
+    rebelTitle.Font = Enum.Font.GothamBold
+    rebelTitle.Parent = ContentFrame
     
-    qteToggle.MouseButton1Click:Connect(function()
-        MainModule.ToggleAutoQTE(not MainModule.AutoQTE.Enabled)
-        qteToggle.Text = "Auto QTE: " .. (MainModule.AutoQTE.Enabled and "ON" or "OFF")
-        qteToggle.BackgroundColor3 = MainModule.AutoQTE.Enabled and Color3.fromRGB(0, 100, 0) or Color3.fromRGB(45, 45, 45)
+    -- Instant Rebel Toggle
+    local rebelToggle = CreateToggle("Instant Rebel", UDim2.new(0.075, 0, 0.2, 0), MainModule.Rebel.Enabled, function(enabled)
+        MainModule.ToggleRebel(enabled)
+    end)
+end
+
+-- Функция для создания RLGL вкладки
+local function CreateRLGLContent()
+    for _, child in pairs(ContentFrame:GetChildren()) do
+        if child ~= SoonLabel then
+            child:Destroy()
+        end
+    end
+    
+    local tpEndBtn = CreateButton("TP TO END", UDim2.new(0.075, 0, 0.1, 0))
+    tpEndBtn.MouseButton1Click:Connect(function()
+        MainModule.TeleportToEnd()
+    end)
+    
+    local tpStartBtn = CreateButton("TP TO START", UDim2.new(0.075, 0, 0.2, 0))
+    tpStartBtn.MouseButton1Click:Connect(function()
+        MainModule.TeleportToStart()
+    end)
+    
+    local godModeToggle = CreateToggle("GodMode", UDim2.new(0.075, 0, 0.3, 0), MainModule.RLGL.GodMode, function(enabled)
+        MainModule.ToggleGodMode(enabled)
+    end)
+end
+
+-- Функция для создания Settings вкладки
+local function CreateSettingsContent()
+    for _, child in pairs(ContentFrame:GetChildren()) do
+        if child ~= SoonLabel then
+            child:Destroy()
+        end
+    end
+    
+    local creatorLabel = CreateButton("Creator: Creon", UDim2.new(0.075, 0, 0.1, 0))
+    creatorLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local versionLabel = CreateButton("Version: 1.0", UDim2.new(0.075, 0, 0.2, 0))
+    versionLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local executorLabel = CreateButton("Executor: " .. executorName, UDim2.new(0.075, 0, 0.3, 0))
+    executorLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    -- Координаты игрока
+    local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition(), UDim2.new(0.075, 0, 0.4, 0))
+    positionLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    -- Обновление координат
+    game:GetService("RunService").Heartbeat:Connect(function()
+        positionLabel.Text = "Position: " .. MainModule.GetPlayerPosition()
     end)
 end
 
 -- Создание вкладок
-local tabs = {"Main", "Combat", "Misc", "Settings"}
+local tabs = {"Main", "Rebel", "RLGL", "Settings"}
 for i, name in pairs(tabs) do
     local button = CreateButton(name, UDim2.new(0.05, 0, 0, (i-1)*55), UDim2.new(0.9, 0, 0, 45))
     button.Parent = TabButtons
@@ -370,32 +507,20 @@ for i, name in pairs(tabs) do
             SoonLabel.Visible = false
             CreateMainContent()
         end)
+    elseif name == "Rebel" then
+        button.MouseButton1Click:Connect(function()
+            SoonLabel.Visible = false
+            CreateRebelContent()
+        end)
+    elseif name == "RLGL" then
+        button.MouseButton1Click:Connect(function()
+            SoonLabel.Visible = false
+            CreateRLGLContent()
+        end)
     elseif name == "Settings" then
         button.MouseButton1Click:Connect(function()
             SoonLabel.Visible = false
-            for _, child in pairs(ContentFrame:GetChildren()) do
-                if child ~= SoonLabel then
-                    child:Destroy()
-                end
-            end
-            
-            local creatorLabel = CreateButton("Creator: Creon", UDim2.new(0.075, 0, 0.1, 0))
-            creatorLabel.TextXAlignment = Enum.TextXAlignment.Left
-            
-            local versionLabel = CreateButton("Version: 1.0", UDim2.new(0.075, 0, 0.2, 0))
-            versionLabel.TextXAlignment = Enum.TextXAlignment.Left
-            
-            local executorLabel = CreateButton("Executor: " .. executorName, UDim2.new(0.075, 0, 0.3, 0))
-            executorLabel.TextXAlignment = Enum.TextXAlignment.Left
-        end)
-    else
-        button.MouseButton1Click:Connect(function()
-            SoonLabel.Visible = true
-            for _, child in pairs(ContentFrame:GetChildren()) do
-                if child ~= SoonLabel then
-                    child:Destroy()
-                end
-            end
+            CreateSettingsContent()
         end)
     end
 end
@@ -404,7 +529,6 @@ UIS.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.M then
         MainFrame.Visible = not MainFrame.Visible
         if MainFrame.Visible then
-            -- Возвращаем в центр при открытии
             MainFrame.Position = UDim2.new(0.5, -345, 0.5, -264)
         end
     end
