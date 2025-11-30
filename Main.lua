@@ -350,7 +350,7 @@ function MainModule.ToggleRapidFire(enabled)
     end
 end
 
--- Infinite Ammo функция
+-- Infinite Ammo функция (обновленная по вашему коду)
 function MainModule.ToggleInfiniteAmmo(enabled)
     MainModule.Guards.InfiniteAmmo = enabled
     
@@ -373,7 +373,7 @@ function MainModule.ToggleInfiniteAmmo(enabled)
                                 if obj.Name:lower():find("ammo") or 
                                    obj.Name:lower():find("bullet") or
                                    obj.Name:lower():find("clip") then
-                                    obj.Value = 9999
+                                    obj.Value = math.huge -- Бесконечность вместо 9999
                                 end
                             end
                         end
@@ -618,3 +618,4 @@ function MainModule.GetPlayerPosition()
 end
 
 return MainModule
+
