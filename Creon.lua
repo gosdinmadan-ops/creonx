@@ -100,10 +100,20 @@ if not success then
             SpikesKill = false, 
             DeleteSpikes = false, 
             KillHiders = false, 
-            AutoDodge = false
+            AutoDodge = false,
+            KillAuraEnabled = false,
+            SpikeTeleportEnabled = false,
+            AutoTeleportEnabled = false
         },
         TugOfWar = {AutoPull = false},
-        GlassBridge = {AntiBreak = false},
+        GlassBridge = {AntiBreak = false, GlassESPEnabled = false},
+        JumpRope = {
+            AutoJump = false,
+            GodMode = false,
+            DeleteRope = false,
+            AntiFall = false,
+            AutoBalance = false
+        },
         Misc = {
             InstaInteract = false, 
             NoCooldownProximity = false,
@@ -113,7 +123,14 @@ if not success then
             ESPDistance = true,
             ESPFillTransparency = 0.75,
             ESPOutlineTransparency = 0,
-            ESPTextSize = 22
+            ESPTextSize = 22,
+            PlayerESP = true,
+            SeekerESP = true,
+            HiderESP = true,
+            GuardESP = true,
+            DoorESP = true,
+            KeyESP = true,
+            EscapeDoorESP = true
         },
         
         -- Функции
@@ -181,6 +198,23 @@ if not success then
         end,
         ToggleAntiBreak = function(enabled)
             MainModule.GlassBridge.AntiBreak = enabled
+        end,
+        ToggleGlassBridgeESP = function(enabled)
+            MainModule.GlassBridge.GlassESPEnabled = enabled
+        end,
+        TeleportToJumpRopeEnd = function() end,
+        DeleteJumpRope = function() end,
+        ToggleAutoJump = function(enabled)
+            MainModule.JumpRope.AutoJump = enabled
+        end,
+        ToggleJumpRopeGodMode = function(enabled)
+            MainModule.JumpRope.GodMode = enabled
+        end,
+        ToggleJumpRopeAntiFall = function(enabled)
+            MainModule.JumpRope.AntiFall = enabled
+        end,
+        ToggleAutoBalance = function(enabled)
+            MainModule.JumpRope.AutoBalance = enabled
         end,
         ToggleInstaInteract = function(enabled)
             MainModule.Misc.InstaInteract = enabled
@@ -648,6 +682,52 @@ local function CreateDropdown(options, default, position, callback)
     return dropdownContainer
 end
 
+-- Функция для создания ESP настроек
+local function CreateESPSettings(position)
+    local settingsContainer = Instance.new("Frame")
+    settingsContainer.Size = UDim2.new(0.9, 0, 0, 200)
+    settingsContainer.Position = position
+    settingsContainer.BackgroundTransparency = 1
+    settingsContainer.Parent = ContentFrame
+    
+    local settingsTitle = Instance.new("TextLabel")
+    settingsTitle.Size = UDim2.new(1, 0, 0, 25)
+    settingsTitle.BackgroundTransparency = 1
+    settingsTitle.Text = "ESP Settings"
+    settingsTitle.TextColor3 = Color3.fromRGB(0, 170, 255)
+    settingsTitle.TextSize = 16
+    settingsTitle.Font = Enum.Font.GothamBold
+    settingsTitle.Parent = settingsContainer
+    
+    -- ESP типы
+    local playerESPToggle = CreateToggle("Player ESP", UDim2.new(0, 0, 0.15, 0), MainModule.Misc.PlayerESP, function(enabled)
+        MainModule.Misc.PlayerESP = enabled
+    end)
+    playerESPToggle.Parent = settingsContainer
+    
+    local seekerESPToggle = CreateToggle("Seeker ESP", UDim2.new(0, 0, 0.3, 0), MainModule.Misc.SeekerESP, function(enabled)
+        MainModule.Misc.SeekerESP = enabled
+    end)
+    seekerESPToggle.Parent = settingsContainer
+    
+    local hiderESPToggle = CreateToggle("Hider ESP", UDim2.new(0, 0, 0.45, 0), MainModule.Misc.HiderESP, function(enabled)
+        MainModule.Misc.HiderESP = enabled
+    end)
+    hiderESPToggle.Parent = settingsContainer
+    
+    local guardESPToggle = CreateToggle("Guard ESP", UDim2.new(0, 0, 0.6, 0), MainModule.Misc.GuardESP, function(enabled)
+        MainModule.Misc.GuardESP = enabled
+    end)
+    guardESPToggle.Parent = settingsContainer
+    
+    local doorESPToggle = CreateToggle("Door ESP", UDim2.new(0, 0, 0.75, 0), MainModule.Misc.DoorESP, function(enabled)
+        MainModule.Misc.DoorESP = enabled
+    end)
+    doorESPToggle.Parent = settingsContainer
+    
+    return settingsContainer
+end
+
 -- Функции для создания контента вкладок
 local function CreateMainContent()
     for _, child in pairs(ContentFrame:GetChildren()) do
@@ -708,11 +788,34 @@ local function CreateMiscContent()
     
     SoonLabel.Visible = false
     
-    local espToggle = CreateToggle("ESP System", UDim2.new(0.05, 0, 0.1, 0), MainModule.Misc.ESPEnabled, function(enabled)
+    -- ESP System
+    local espTitle = Instance.new("TextLabel")
+    espTitle.Size = UDim2.new(0.9, 0, 0, 30)
+    espTitle.Position = UDim2.new(0.05, 0, 0.02, 0)
+    espTitle.BackgroundTransparency = 1
+    espTitle.Text = "ESP SYSTEM"
+    espTitle.TextColor3 = Color3.fromRGB(0, 170, 255)
+    espTitle.TextSize = 18
+    espTitle.Font = Enum.Font.GothamBold
+    espTitle.Parent = ContentFrame
+    
+    local espToggle = CreateToggle("ESP System", UDim2.new(0.05, 0, 0.08, 0), MainModule.Misc.ESPEnabled, function(enabled)
         MainModule.ToggleESP(enabled)
     end)
     
-    local dashToggle = CreateToggle("Enable Dash", UDim2.new(0.05, 0, 0.2, 0), MainModule.Misc.EnableDash, function(enabled)
+    local espHighlightToggle = CreateToggle("ESP Highlight", UDim2.new(0.05, 0, 0.15, 0), MainModule.Misc.ESPHighlight, function(enabled)
+        MainModule.Misc.ESPHighlight = enabled
+    end)
+    
+    local espDistanceToggle = CreateToggle("Show Distance", UDim2.new(0.05, 0, 0.22, 0), MainModule.Misc.ESPDistance, function(enabled)
+        MainModule.Misc.ESPDistance = enabled
+    end)
+    
+    -- ESP Settings
+    CreateESPSettings(UDim2.new(0.05, 0, 0.3, 0))
+    
+    -- Other Misc Features
+    local dashToggle = CreateToggle("Enable Dash", UDim2.new(0.05, 0, 0.85, 0), MainModule.Misc.EnableDash, function(enabled)
         MainModule.ToggleEnableDash(enabled)
     end)
 end
@@ -854,6 +957,10 @@ local function CreateGlassBridgeContent()
     local antiBreakToggle = CreateToggle("Anti Break", UDim2.new(0.05, 0, 0.1, 0), MainModule.GlassBridge.AntiBreak, function(enabled)
         MainModule.ToggleAntiBreak(enabled)
     end)
+    
+    local glassESPToggle = CreateToggle("Glass Bridge ESP", UDim2.new(0.05, 0, 0.2, 0), MainModule.GlassBridge.GlassESPEnabled, function(enabled)
+        MainModule.ToggleGlassBridgeESP(enabled)
+    end)
 end
 
 local function CreateTugOfWarContent()
@@ -869,13 +976,37 @@ local function CreateTugOfWarContent()
 end
 
 local function CreateJumpRopeContent()
-    SoonLabel.Visible = true
-    SoonLabel.Text = "Jump Rope Features Coming Soon"
     for _, child in pairs(ContentFrame:GetChildren()) do
         if child ~= SoonLabel then
             child:Destroy()
         end
     end
+    
+    local tpEndBtn = CreateButton("Teleport To End", UDim2.new(0.05, 0, 0.1, 0))
+    tpEndBtn.MouseButton1Click:Connect(function()
+        MainModule.TeleportToJumpRopeEnd()
+    end)
+    
+    local deleteRopeBtn = CreateButton("Delete The Rope", UDim2.new(0.05, 0, 0.2, 0))
+    deleteRopeBtn.MouseButton1Click:Connect(function()
+        MainModule.DeleteJumpRope()
+    end)
+    
+    local autoJumpToggle = CreateToggle("Auto Jump", UDim2.new(0.05, 0, 0.3, 0), MainModule.JumpRope.AutoJump, function(enabled)
+        MainModule.ToggleAutoJump(enabled)
+    end)
+    
+    local godModeToggle = CreateToggle("GodMode", UDim2.new(0.05, 0, 0.4, 0), MainModule.JumpRope.GodMode, function(enabled)
+        MainModule.ToggleJumpRopeGodMode(enabled)
+    end)
+    
+    local antiFallToggle = CreateToggle("Anti Fall", UDim2.new(0.05, 0, 0.5, 0), MainModule.JumpRope.AntiFall, function(enabled)
+        MainModule.ToggleJumpRopeAntiFall(enabled)
+    end)
+    
+    local autoBalanceToggle = CreateToggle("Auto Balance", UDim2.new(0.05, 0, 0.6, 0), MainModule.JumpRope.AutoBalance, function(enabled)
+        MainModule.ToggleAutoBalance(enabled)
+    end)
 end
 
 local function CreateSettingsContent()
@@ -961,6 +1092,7 @@ for i, name in pairs(tabs) do
         end)
     elseif name == "Jump Rope" then
         button.MouseButton1Click:Connect(function()
+            SoonLabel.Visible = false
             CreateJumpRopeContent()
         end)
     elseif name == "Settings" then
