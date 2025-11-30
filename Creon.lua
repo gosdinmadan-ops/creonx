@@ -17,8 +17,7 @@ for _, name in pairs(supportedExecutors) do
 end
 
 if not isSupported then
-    error("Unsupported executor: " .. executorName)
-    return
+    warn("Unsupported executor: " .. executorName)
 end
 
 -- Античит байпас
@@ -74,47 +73,123 @@ end
 -- Загрузка Main модуля
 local MainModule
 local success, err = pcall(function()
-    local mainUrl = "https://raw.githubusercontent.com/gosdinmadan-ops/creonx/main/Main.lua"
-    MainModule = loadstring(game:HttpGet(mainUrl))()
+    MainModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/gosdinmadan-ops/creonx/main/Main.lua"))()
 end)
 
 if not success then
-    -- Заглушка
+    warn("Не удалось загрузить Main.lua: " .. tostring(err))
+    -- Создаем заглушку с правильными функциями
     MainModule = {
         SpeedHack = {Enabled = false, DefaultSpeed = 16, CurrentSpeed = 16, MaxSpeed = 150, MinSpeed = 16},
         Noclip = {Enabled = false, Status = "Don't work, Disabled"},
-        AutoQTE = {RageEnabled = false},
+        AutoQTE = {AntiStunEnabled = false},
         Rebel = {Enabled = false},
         RLGL = {GodMode = false, OriginalHeight = nil},
-        Guards = {SelectedGuard = "Circle", AutoFarm = false},
+        Guards = {
+            SelectedGuard = "Circle", 
+            AutoFarm = false,
+            RapidFire = false,
+            InfiniteAmmo = false,
+            HitboxExpander = false
+        },
         Dalgona = {CompleteEnabled = false, FreeLighterEnabled = false},
-        HNS = {ESPHiders = false, ESPSeekers = false, AutoPickup = false, SpikesKill = false, DeleteSpikes = false, KillHiders = false, AutoDodge = false},
+        HNS = {
+            ESPHiders = false, 
+            ESPSeekers = false, 
+            AutoPickup = false, 
+            SpikesKill = false, 
+            DeleteSpikes = false, 
+            KillHiders = false, 
+            AutoDodge = false
+        },
+        TugOfWar = {AutoPull = false},
+        GlassBridge = {AntiBreak = false},
         Misc = {InstaInteract = false, NoCooldownProximity = false},
-        ToggleSpeedHack = function() end,
-        SetSpeed = function() return 16 end,
+        
+        -- Функции
+        ToggleSpeedHack = function(enabled)
+            MainModule.SpeedHack.Enabled = enabled
+        end,
+        SetSpeed = function(value)
+            MainModule.SpeedHack.CurrentSpeed = value
+            return value
+        end,
         TeleportUp100 = function() end,
         TeleportDown40 = function() end,
-        ToggleRageQTE = function() end,
-        ToggleRebel = function() end,
+        ToggleAntiStunQTE = function(enabled)
+            MainModule.AutoQTE.AntiStunEnabled = enabled
+        end,
+        ToggleRebel = function(enabled)
+            MainModule.Rebel.Enabled = enabled
+        end,
         TeleportToEnd = function() end,
         TeleportToStart = function() end,
-        ToggleGodMode = function() end,
-        SetGuardType = function() end,
+        ToggleGodMode = function(enabled)
+            MainModule.RLGL.GodMode = enabled
+        end,
+        SetGuardType = function(guardType)
+            MainModule.Guards.SelectedGuard = guardType
+        end,
         SpawnAsGuard = function() end,
-        ToggleAutoFarm = function() end,
+        ToggleAutoFarm = function(enabled)
+            MainModule.Guards.AutoFarm = enabled
+        end,
+        ToggleRapidFire = function(enabled)
+            MainModule.Guards.RapidFire = enabled
+        end,
+        ToggleInfiniteAmmo = function(enabled)
+            MainModule.Guards.InfiniteAmmo = enabled
+        end,
+        ToggleHitboxExpander = function(enabled)
+            MainModule.Guards.HitboxExpander = enabled
+        end,
         CompleteDalgona = function() end,
         FreeLighter = function() end,
-        ToggleESPHiders = function() end,
-        ToggleESPSeekers = function() end,
-        ToggleAutoPickup = function() end,
-        ToggleSpikesKill = function() end,
-        ToggleDeleteSpikes = function() end,
-        ToggleKillHiders = function() end,
-        ToggleAutoDodge = function() end,
-        ToggleInstaInteract = function() end,
-        ToggleNoCooldownProximity = function() end,
-        GetPlayerPosition = function() return "Не доступно" end
+        ToggleESPHiders = function(enabled)
+            MainModule.HNS.ESPHiders = enabled
+        end,
+        ToggleESPSeekers = function(enabled)
+            MainModule.HNS.ESPSeekers = enabled
+        end,
+        ToggleAutoPickup = function(enabled)
+            MainModule.HNS.AutoPickup = enabled
+        end,
+        ToggleSpikesKill = function(enabled)
+            MainModule.HNS.SpikesKill = enabled
+        end,
+        ToggleDeleteSpikes = function(enabled)
+            MainModule.HNS.DeleteSpikes = enabled
+        end,
+        ToggleKillHiders = function(enabled)
+            MainModule.HNS.KillHiders = enabled
+        end,
+        ToggleAutoDodge = function(enabled)
+            MainModule.HNS.AutoDodge = enabled
+        end,
+        ToggleAutoPull = function(enabled)
+            MainModule.TugOfWar.AutoPull = enabled
+        end,
+        ToggleAntiBreak = function(enabled)
+            MainModule.GlassBridge.AntiBreak = enabled
+        end,
+        ToggleInstaInteract = function(enabled)
+            MainModule.Misc.InstaInteract = enabled
+        end,
+        ToggleNoCooldownProximity = function(enabled)
+            MainModule.Misc.NoCooldownProximity = enabled
+        end,
+        GetPlayerPosition = function() 
+            local player = game:GetService("Players").LocalPlayer
+            local character = player.Character
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                local position = character.HumanoidRootPart.Position
+                return string.format("X: %.1f, Y: %.1f, Z: %.1f", position.X, position.Y, position.Z)
+            end
+            return "Не доступно"
+        end
     }
+else
+    print("Main.lua успешно загружен")
 end
 
 -- GUI с новым дизайном
@@ -175,6 +250,7 @@ SoonLabel.Text = "Soon...."
 SoonLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 SoonLabel.TextSize = 24
 SoonLabel.Font = Enum.Font.Gotham
+SoonLabel.Visible = false
 SoonLabel.Parent = ContentFrame
 
 -- Функция для перемещения GUI
@@ -423,7 +499,7 @@ local function CreateSpeedSlider()
     return speedLabel
 end
 
--- Функция для создания выпадающего списка (исправленная)
+-- Функция для создания выпадающего списка
 local function CreateDropdown(options, default, position, callback)
     local dropdownContainer = Instance.new("Frame")
     dropdownContainer.Size = UDim2.new(0.85, 0, 0, 35)
@@ -472,17 +548,6 @@ local function CreateDropdown(options, default, position, callback)
         dropdownList.Visible = not dropdownList.Visible
     end)
     
-    -- Закрытие при клике вне списка
-    local function closeDropdown()
-        dropdownList.Visible = false
-    end
-    
-    dropdownContainer:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
-        if dropdownList.Visible then
-            closeDropdown()
-        end
-    end)
-    
     return dropdownContainer
 end
 
@@ -500,8 +565,8 @@ local function CreateMainContent()
         MainModule.ToggleSpeedHack(enabled)
     end)
     
-    local rageToggle = CreateToggle("Auto QTE Rage", UDim2.new(0.075, 0, 0.35, 0), MainModule.AutoQTE.RageEnabled, function(enabled)
-        MainModule.ToggleRageQTE(enabled)
+    local antiStunToggle = CreateToggle("Anti Stun QTE", UDim2.new(0.075, 0, 0.35, 0), MainModule.AutoQTE.AntiStunEnabled, function(enabled)
+        MainModule.ToggleAntiStunQTE(enabled)
     end)
     
     local instaInteractToggle = CreateToggle("Insta Interact", UDim2.new(0.075, 0, 0.45, 0), MainModule.Misc.InstaInteract, function(enabled)
@@ -529,6 +594,7 @@ end
 
 local function CreateCombatContent()
     SoonLabel.Visible = true
+    SoonLabel.Text = "Combat Features Coming Soon"
     for _, child in pairs(ContentFrame:GetChildren()) do
         if child ~= SoonLabel then
             child:Destroy()
@@ -538,6 +604,7 @@ end
 
 local function CreateMiscContent()
     SoonLabel.Visible = true
+    SoonLabel.Text = "Misc Features Coming Soon"
     for _, child in pairs(ContentFrame:GetChildren()) do
         if child ~= SoonLabel then
             child:Destroy()
@@ -605,15 +672,19 @@ local function CreateGuardsContent()
         MainModule.SpawnAsGuard()
     end)
     
-    local rapidFireBtn = CreateButton("Rapid Fire (No work)", UDim2.new(0.075, 0, 0.4, 0))
-    rapidFireBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-    rapidFireBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+    local rapidFireToggle = CreateToggle("Rapid Fire", UDim2.new(0.075, 0, 0.4, 0), MainModule.Guards.RapidFire, function(enabled)
+        MainModule.ToggleRapidFire(enabled)
+    end)
     
-    local hitboxBtn = CreateButton("Hitbox Expander (no work)", UDim2.new(0.075, 0, 0.55, 0))
-    hitboxBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-    hitboxBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+    local infiniteAmmoToggle = CreateToggle("Infinite Ammo", UDim2.new(0.075, 0, 0.55, 0), MainModule.Guards.InfiniteAmmo, function(enabled)
+        MainModule.ToggleInfiniteAmmo(enabled)
+    end)
     
-    local autoFarmToggle = CreateToggle("AutoFarm", UDim2.new(0.075, 0, 0.7, 0), MainModule.Guards.AutoFarm, function(enabled)
+    local hitboxToggle = CreateToggle("Hitbox Expander", UDim2.new(0.075, 0, 0.7, 0), MainModule.Guards.HitboxExpander, function(enabled)
+        MainModule.ToggleHitboxExpander(enabled)
+    end)
+    
+    local autoFarmToggle = CreateToggle("AutoFarm", UDim2.new(0.075, 0, 0.85, 0), MainModule.Guards.AutoFarm, function(enabled)
         MainModule.ToggleAutoFarm(enabled)
     end)
 end
@@ -673,18 +744,37 @@ local function CreateHNSContent()
 end
 
 local function CreateGlassBridgeContent()
-    SoonLabel.Visible = true
-    SoonLabel.Text = "Soon"
+    for _, child in pairs(ContentFrame:GetChildren()) do
+        if child ~= SoonLabel then
+            child:Destroy()
+        end
+    end
+    
+    local antiBreakToggle = CreateToggle("Anti Break", UDim2.new(0.075, 0, 0.1, 0), MainModule.GlassBridge.AntiBreak, function(enabled)
+        MainModule.ToggleAntiBreak(enabled)
+    end)
 end
 
 local function CreateTugOfWarContent()
-    SoonLabel.Visible = true
-    SoonLabel.Text = "Soon"
+    for _, child in pairs(ContentFrame:GetChildren()) do
+        if child ~= SoonLabel then
+            child:Destroy()
+        end
+    end
+    
+    local autoPullToggle = CreateToggle("Auto Pull", UDim2.new(0.075, 0, 0.1, 0), MainModule.TugOfWar.AutoPull, function(enabled)
+        MainModule.ToggleAutoPull(enabled)
+    end)
 end
 
 local function CreateJumpRopeContent()
     SoonLabel.Visible = true
-    SoonLabel.Text = "Soon"
+    SoonLabel.Text = "Jump Rope Features Coming Soon"
+    for _, child in pairs(ContentFrame:GetChildren()) do
+        if child ~= SoonLabel then
+            child:Destroy()
+        end
+    end
 end
 
 local function CreateSettingsContent()
@@ -759,10 +849,12 @@ for i, name in pairs(tabs) do
         end)
     elseif name == "Glass Bridge" then
         button.MouseButton1Click:Connect(function()
+            SoonLabel.Visible = false
             CreateGlassBridgeContent()
         end)
     elseif name == "Tug of War" then
         button.MouseButton1Click:Connect(function()
+            SoonLabel.Visible = false
             CreateTugOfWarContent()
         end)
     elseif name == "Jump Rope" then
