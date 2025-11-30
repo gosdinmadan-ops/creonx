@@ -24,7 +24,8 @@ MainModule.Rebel = {
 
 MainModule.RLGL = {
     GodMode = false,
-    OriginalHeight = nil
+    OriginalHeight = nil,
+    RemoveInjuredWalking = false
 }
 
 MainModule.Guards = {
@@ -32,7 +33,9 @@ MainModule.Guards = {
     AutoFarm = false,
     RapidFire = false,
     InfiniteAmmo = false,
-    HitboxExpander = false
+    HitboxExpander = false,
+    OriginalFireRates = {},
+    OriginalAmmo = {}
 }
 
 MainModule.Dalgona = {
@@ -41,8 +44,6 @@ MainModule.Dalgona = {
 }
 
 MainModule.HNS = {
-    ESPHiders = false,
-    ESPSeekers = false,
     AutoPickup = false,
     SpikesKill = false,
     DeleteSpikes = false,
@@ -60,10 +61,29 @@ MainModule.GlassBridge = {
 
 MainModule.Misc = {
     InstaInteract = false,
-    NoCooldownProximity = false
+    NoCooldownProximity = false,
+    EnableDash = false,
+    ESPEnabled = false,
+    ESPHighlight = true,
+    ESPDistance = true,
+    ESPFillTransparency = 0.75,
+    ESPOutlineTransparency = 0,
+    ESPTextSize = 22
 }
 
--- Постоянное обновление скорости
+-- ESP System
+MainModule.ESPTable = {
+    Player = {},
+    Seeker = {},
+    Hider = {},
+    Guard = {},
+    Door = {},
+    None = {},
+    Key = {},
+    EscapeDoor = {}
+}
+
+-- Постоянные соединения
 local speedConnection = nil
 local autoFarmConnection = nil
 local godModeConnection = nil
@@ -75,7 +95,11 @@ local infiniteAmmoConnection = nil
 local hitboxConnection = nil
 local autoPullConnection = nil
 local antiBreakConnection = nil
+local removeInjuredConnection = nil
+local dashConnection = nil
+local espConnection = nil
 
+-- Функции скорости
 function MainModule.ToggleSpeedHack(enabled)
     MainModule.SpeedHack.Enabled = enabled
     local player = game:GetService("Players").LocalPlayer
@@ -152,7 +176,7 @@ function MainModule.TeleportDown40()
     end
 end
 
--- Anti Stun QTE функция (исправленная без лагов)
+-- Anti Stun QTE функция
 function MainModule.ToggleAntiStunQTE(enabled)
     MainModule.AutoQTE.AntiStunEnabled = enabled
     
@@ -172,21 +196,18 @@ function MainModule.ToggleAntiStunQTE(enabled)
                 
                 local replicatedStorage = game:GetService("ReplicatedStorage")
                 
-                -- Безопасная проверка модуля
                 local success, hbgModule = pcall(function()
                     return require(replicatedStorage.Modules.HBGQTE)
                 end)
                 
                 if not success then return end
                 
-                -- Проверяем только активные QTE
                 for _, child in pairs(impactFrames:GetChildren()) do
                     if child.Name == "OuterRingTemplate" and child:IsA("Frame") then
                         for _, innerChild in pairs(impactFrames:GetChildren()) do
                             if innerChild.Name == "InnerTemplate" and innerChild.Position == child.Position 
                                and not innerChild:GetAttribute("Failed") and not innerChild:GetAttribute("Tweening") then
                                
-                                -- Безопасное нажатие QTE
                                 pcall(function()
                                     local qteData = {
                                         Inner = innerChild,
@@ -253,6 +274,96 @@ function MainModule.ToggleGodMode(enabled)
     end
 end
 
+-- Remove InjuredWalking функция
+function MainModule.ToggleRemoveInjuredWalking(enabled)
+    MainModule.RLGL.RemoveInjuredWalking = enabled
+    
+    if removeInjuredConnection then
+        removeInjuredConnection:Disconnect()
+        removeInjuredConnection = nil
+    end
+    
+    if enabled then
+        removeInjuredConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.RLGL.RemoveInjuredWalking then return end
+            
+            pcall(function()
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if obj.Name == "InjuredWalking" or obj.Name:lower():find("stun") then
+                        obj:Destroy()
+                    end
+                end
+            end)
+        end)
+    end
+end
+
+-- Enable Dash функция
+function MainModule.ToggleEnableDash(enabled)
+    MainModule.Misc.EnableDash = enabled
+    
+    if dashConnection then
+        dashConnection:Disconnect()
+        dashConnection = nil
+    end
+    
+    if enabled then
+        local player = game:GetService("Players").LocalPlayer
+        
+        -- Устанавливаем максимальный уровень спринта
+        pcall(function()
+            if player:FindFirstChild("Boosts") and player.Boosts:FindFirstChild("Faster Sprint") then
+                player.Boosts["Faster Sprint"].Value = 5
+            end
+        end)
+        
+        -- Скрываем кнопки покупки
+        dashConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.Misc.EnableDash then return end
+            
+            pcall(function()
+                local shopGui = player.PlayerGui:FindFirstChild("ShopGui")
+                if shopGui then
+                    local storeHolder = shopGui:FindFirstChild("StoreHolder")
+                    if storeHolder then
+                        local store = storeHolder:FindFirstChild("Store")
+                        if store then
+                            local pages = store:FindFirstChild("PAGES")
+                            if pages then
+                                local boosts = pages:FindFirstChild("Boosts")
+                                if boosts then
+                                    local speedBoost = boosts:FindFirstChild("Faster Sprint")
+                                    if speedBoost then
+                                        -- Скрываем кнопки покупки
+                                        if speedBoost:FindFirstChild("BuyButtonRobux") then
+                                            speedBoost.BuyButtonRobux.Visible = false
+                                        end
+                                        if speedBoost:FindFirstChild("BuyButtonCoin") then
+                                            speedBoost.BuyButtonCoin.Visible = false
+                                        end
+                                        -- Устанавливаем текст уровня
+                                        if speedBoost:FindFirstChild("ItemLevel") then
+                                            speedBoost.ItemLevel.Text = "Current Level (5)"
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        end)
+    else
+        -- Возвращаем исходное значение
+        pcall(function()
+            local player = game:GetService("Players").LocalPlayer
+            if player:FindFirstChild("Boosts") and player.Boosts:FindFirstChild("Faster Sprint") then
+                player.Boosts["Faster Sprint"].Value = 1 -- Исходный уровень
+            end
+        end)
+    end
+end
+
 -- Guards функции
 function MainModule.SetGuardType(guardType)
     MainModule.Guards.SelectedGuard = guardType
@@ -293,7 +404,7 @@ function MainModule.ToggleAutoFarm(enabled)
     end
 end
 
--- Rapid Fire функция
+-- Rapid Fire функция (исправленная)
 function MainModule.ToggleRapidFire(enabled)
     MainModule.Guards.RapidFire = enabled
     
@@ -303,54 +414,67 @@ function MainModule.ToggleRapidFire(enabled)
     end
     
     if enabled then
-        -- Применяем один раз при включении
+        -- Сохраняем исходные значения
         pcall(function()
             local ReplicatedStorage = game:GetService("ReplicatedStorage")
             local weaponsFolder = ReplicatedStorage:FindFirstChild("Weapons")
-            if not weaponsFolder then return end
-            local gunsFolder = weaponsFolder:FindFirstChild("Guns")
-            if not gunsFolder then return end
-            
-            local function findFireRateCDObjects(parent)
-                local results = {}
-                for _, obj in ipairs(parent:GetDescendants()) do
-                    if obj.Name == "FireRateCD" then
-                        table.insert(results, obj)
+            if weaponsFolder then
+                local gunsFolder = weaponsFolder:FindFirstChild("Guns")
+                if gunsFolder then
+                    for _, obj in ipairs(gunsFolder:GetDescendants()) do
+                        if obj.Name == "FireRateCD" and (obj:IsA("NumberValue") or obj:IsA("IntValue")) then
+                            MainModule.Guards.OriginalFireRates[obj] = obj.Value
+                        end
                     end
-                end
-                return results
-            end
-            
-            local fireRateCDs = findFireRateCDObjects(gunsFolder)
-            for _, valObject in ipairs(fireRateCDs) do
-                if valObject:IsA("NumberValue") or valObject:IsA("IntValue") or valObject:IsA("BoolValue") then
-                    valObject.Value = 0
                 end
             end
         end)
         
-        -- Постоянное обновление
         rapidFireConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if MainModule.Guards.RapidFire then
-                pcall(function()
-                    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-                    local weaponsFolder = ReplicatedStorage:FindFirstChild("Weapons")
-                    if not weaponsFolder then return end
-                    local gunsFolder = weaponsFolder:FindFirstChild("Guns")
-                    if not gunsFolder then return end
-                    
-                    for _, obj in ipairs(gunsFolder:GetDescendants()) do
-                        if obj.Name == "FireRateCD" and (obj:IsA("NumberValue") or obj:IsA("IntValue") or obj:IsA("BoolValue")) then
-                            obj.Value = 0
+            if not MainModule.Guards.RapidFire then return end
+            
+            pcall(function()
+                local ReplicatedStorage = game:GetService("ReplicatedStorage")
+                local weaponsFolder = ReplicatedStorage:FindFirstChild("Weapons")
+                if not weaponsFolder then return end
+                local gunsFolder = weaponsFolder:FindFirstChild("Guns")
+                if not gunsFolder then return end
+                
+                for _, obj in ipairs(gunsFolder:GetDescendants()) do
+                    if obj.Name == "FireRateCD" and (obj:IsA("NumberValue") or obj:IsA("IntValue")) then
+                        obj.Value = 0
+                    end
+                end
+                
+                local player = game:GetService("Players").LocalPlayer
+                local character = player.Character
+                if character then
+                    for _, tool in pairs(character:GetChildren()) do
+                        if tool:IsA("Tool") then
+                            for _, obj in pairs(tool:GetDescendants()) do
+                                if obj.Name == "FireRateCD" and (obj:IsA("NumberValue") or obj:IsA("IntValue")) then
+                                    obj.Value = 0
+                                end
+                            end
                         end
                     end
-                end)
+                end
+            end)
+        end)
+    else
+        -- Восстанавливаем исходные значения
+        pcall(function()
+            for obj, originalValue in pairs(MainModule.Guards.OriginalFireRates) do
+                if obj and obj.Parent then
+                    obj.Value = originalValue
+                end
             end
+            MainModule.Guards.OriginalFireRates = {}
         end)
     end
 end
 
--- Infinite Ammo функция (обновленная по вашему коду)
+-- Infinite Ammo функция (исправленная)
 function MainModule.ToggleInfiniteAmmo(enabled)
     MainModule.Guards.InfiniteAmmo = enabled
     
@@ -360,6 +484,27 @@ function MainModule.ToggleInfiniteAmmo(enabled)
     end
     
     if enabled then
+        -- Сохраняем исходные значения патронов
+        pcall(function()
+            local player = game:GetService("Players").LocalPlayer
+            local character = player.Character
+            if character then
+                for _, tool in pairs(character:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        for _, obj in pairs(tool:GetDescendants()) do
+                            if obj:IsA("NumberValue") then
+                                if obj.Name:lower():find("ammo") or 
+                                   obj.Name:lower():find("bullet") or
+                                   obj.Name:lower():find("clip") then
+                                    MainModule.Guards.OriginalAmmo[obj] = obj.Value
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+        
         infiniteAmmoConnection = game:GetService("RunService").Heartbeat:Connect(function()
             if not MainModule.Guards.InfiniteAmmo then return end
             
@@ -373,7 +518,7 @@ function MainModule.ToggleInfiniteAmmo(enabled)
                                 if obj.Name:lower():find("ammo") or 
                                    obj.Name:lower():find("bullet") or
                                    obj.Name:lower():find("clip") then
-                                    obj.Value = math.huge -- Бесконечность вместо 9999
+                                    obj.Value = math.huge
                                 end
                             end
                         end
@@ -381,10 +526,20 @@ function MainModule.ToggleInfiniteAmmo(enabled)
                 end
             end
         end)
+    else
+        -- Восстанавливаем исходные значения патронов
+        pcall(function()
+            for obj, originalValue in pairs(MainModule.Guards.OriginalAmmo) do
+                if obj and obj.Parent then
+                    obj.Value = originalValue
+                end
+            end
+            MainModule.Guards.OriginalAmmo = {}
+        end)
     end
 end
 
--- Hitbox Expander функция
+-- Hitbox Expander функция (исправленная)
 function MainModule.ToggleHitboxExpander(enabled)
     MainModule.Guards.HitboxExpander = enabled
     
@@ -403,10 +558,9 @@ function MainModule.ToggleHitboxExpander(enabled)
             for _, v in pairs(Players:GetPlayers()) do
                 if v ~= player and v.Character and v.Character:FindFirstChild("Head") then
                     pcall(function()
+                        -- Увеличиваем хитбокс но делаем его полностью прозрачным
                         v.Character.Head.Size = Vector3.new(_G.HeadSize, _G.HeadSize, _G.HeadSize)
-                        v.Character.Head.Transparency = 0.5
-                        v.Character.Head.BrickColor = BrickColor.new("Red")
-                        v.Character.Head.Material = "Neon"
+                        v.Character.Head.Transparency = 1 -- Полностью прозрачный
                         v.Character.Head.CanCollide = false
                     end)
                 end
@@ -415,7 +569,7 @@ function MainModule.ToggleHitboxExpander(enabled)
         
         hitboxConnection = game:GetService("RunService").RenderStepped:Connect(UpdateHeadHitboxes)
     else
-        -- Восстанавливаем оригинальные размеры
+        -- Восстанавливаем оригинальные размеры и прозрачность
         local Players = game:GetService("Players")
         local player = Players.LocalPlayer
         
@@ -462,15 +616,7 @@ function MainModule.FreeLighter()
     player:SetAttribute("HasLighter", true)
 end
 
--- HNS функции
-function MainModule.ToggleESPHiders(enabled)
-    MainModule.HNS.ESPHiders = enabled
-end
-
-function MainModule.ToggleESPSeekers(enabled)
-    MainModule.HNS.ESPSeekers = enabled
-end
-
+-- HNS функции (убраны ESP функции)
 function MainModule.ToggleAutoPickup(enabled)
     MainModule.HNS.AutoPickup = enabled
 end
@@ -547,7 +693,143 @@ function MainModule.ToggleAntiBreak(enabled)
     end
 end
 
--- Misc функции (исправленные без лагов)
+-- ESP System функции
+function MainModule.CreateESP(args)
+    if not args.Object then return end
+
+    local ESPManager = {
+        Object = args.Object,
+        Text = args.Text or "No Text",
+        TextParent = args.TextParent,
+        Color = args.Color or Color3.new(),
+        Offset = args.Offset or Vector3.zero,
+        IsEntity = args.IsEntity or false,
+        Type = args.Type or "None",
+        Highlights = {},
+        Humanoid = nil,
+        Connections = {}
+    }
+
+    local tableIndex = #MainModule.ESPTable[ESPManager.Type] + 1
+
+    if ESPManager.IsEntity and ESPManager.Object.PrimaryPart then
+        ESPManager.Object:SetAttribute("Transparency", ESPManager.Object.PrimaryPart.Transparency)
+        ESPManager.Humanoid = Instance.new("Humanoid", ESPManager.Object)
+        ESPManager.Object.PrimaryPart.Transparency = 0.99
+    end
+
+    local highlight = Instance.new("Highlight")
+    highlight.Adornee = ESPManager.Object
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.FillColor = ESPManager.Color
+    highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+    highlight.OutlineColor = ESPManager.Color
+    highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+    highlight.Enabled = MainModule.Misc.ESPHighlight
+    highlight.Parent = ESPManager.Object
+
+    table.insert(ESPManager.Highlights, highlight)
+    
+    local billboardGui = Instance.new("BillboardGui")
+    billboardGui.Adornee = ESPManager.TextParent or ESPManager.Object
+    billboardGui.AlwaysOnTop = true
+    billboardGui.ClipsDescendants = false
+    billboardGui.Size = UDim2.new(0, 1, 0, 1)
+    billboardGui.StudsOffset = ESPManager.Offset
+    billboardGui.Parent = ESPManager.TextParent or ESPManager.Object
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.BackgroundTransparency = 1
+    textLabel.Font = Enum.Font.Oswald
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.Text = ESPManager.Text
+    textLabel.TextColor3 = ESPManager.Color
+    textLabel.TextSize = MainModule.Misc.ESPTextSize
+    textLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+    textLabel.TextStrokeTransparency = 0.75
+    textLabel.Parent = billboardGui
+
+    function ESPManager.Destroy()
+        if ESPManager.IsEntity and ESPManager.Object then
+            if ESPManager.Object.PrimaryPart then
+                ESPManager.Object.PrimaryPart.Transparency = ESPManager.Object.PrimaryPart:GetAttribute("Transparency")
+            end
+            if ESPManager.Humanoid then
+                ESPManager.Humanoid:Destroy()
+            end
+        end
+
+        for _, highlight in pairs(ESPManager.Highlights) do
+            highlight:Destroy()
+        end
+        if billboardGui then billboardGui:Destroy() end
+
+        if MainModule.ESPTable[ESPManager.Type][tableIndex] then
+            MainModule.ESPTable[ESPManager.Type][tableIndex] = nil
+        end
+
+        for _, conn in pairs(ESPManager.Connections) do
+            pcall(function()
+                conn:Disconnect()
+            end)
+        end
+        ESPManager.Connections = {}
+    end
+
+    function ESPManager.GiveSignal(signal)
+        table.insert(ESPManager.Connections, signal)
+    end
+
+    MainModule.ESPTable[ESPManager.Type][tableIndex] = ESPManager
+    return ESPManager
+end
+
+function MainModule.DistanceFromCharacter(obj)
+    local player = game:GetService("Players").LocalPlayer
+    local character = player.Character
+    if character and character:FindFirstChild("HumanoidRootPart") and obj and obj:IsA("BasePart") then
+        return (character.HumanoidRootPart.Position - obj.Position).Magnitude
+    end
+    return 0
+end
+
+function MainModule.ToggleESP(enabled)
+    MainModule.Misc.ESPEnabled = enabled
+    
+    if espConnection then
+        espConnection:Disconnect()
+        espConnection = nil
+    end
+    
+    if enabled then
+        -- Очищаем старые ESP
+        for _, espType in pairs(MainModule.ESPTable) do
+            for _, esp in pairs(espType) do
+                if esp.Destroy then
+                    esp:Destroy()
+                end
+            end
+        end
+        
+        espConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.Misc.ESPEnabled then return end
+            
+            -- Здесь будет логика создания ESP для разных объектов
+            -- Пока что это заглушка для демонстрации
+        end)
+    else
+        -- Очищаем все ESP при выключении
+        for _, espType in pairs(MainModule.ESPTable) do
+            for _, esp in pairs(espType) do
+                if esp.Destroy then
+                    esp:Destroy()
+                end
+            end
+        end
+    end
+end
+
+-- Misc функции
 function MainModule.ToggleInstaInteract(enabled)
     MainModule.Misc.InstaInteract = enabled
     
@@ -563,21 +845,17 @@ function MainModule.ToggleInstaInteract(enabled)
             end
         end
 
-        -- Применяем к существующим промптам
         for _, obj in pairs(workspace:GetDescendants()) do
             if obj:IsA("ProximityPrompt") then
                 makePromptInstant(obj)
             end
         end
 
-        -- Слушаем только новые промпты
         instaInteractConnection = workspace.DescendantAdded:Connect(function(obj)
             if obj:IsA("ProximityPrompt") then
                 makePromptInstant(obj)
             end
         end)
-    else
-        -- При выключении не делаем ничего, пусть игра сама управляет промптами
     end
 end
 
@@ -618,4 +896,3 @@ function MainModule.GetPlayerPosition()
 end
 
 return MainModule
-
