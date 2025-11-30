@@ -15,7 +15,17 @@ MainModule.Noclip = {
 }
 
 MainModule.AutoQTE = {
+    Enabled = false,
+    RageEnabled = false,
+    AntiStunEnabled = false
+}
+
+MainModule.Rebel = {
     Enabled = false
+}
+
+MainModule.RLGL = {
+    GodMode = false
 }
 
 -- Постоянное обновление скорости
@@ -25,14 +35,12 @@ function MainModule.ToggleSpeedHack(enabled)
     MainModule.SpeedHack.Enabled = enabled
     local player = game:GetService("Players").LocalPlayer
     
-    -- Убираем старое соединение
     if speedConnection then
         speedConnection:Disconnect()
         speedConnection = nil
     end
     
     if enabled then
-        -- Сохраняем стандартную скорость
         local character = player.Character or player.CharacterAdded:Wait()
         if character then
             local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -41,7 +49,6 @@ function MainModule.ToggleSpeedHack(enabled)
             end
         end
         
-        -- Создаем постоянное обновление скорости
         speedConnection = game:GetService("RunService").Heartbeat:Connect(function()
             local character = player.Character
             if character and MainModule.SpeedHack.Enabled then
@@ -51,10 +58,7 @@ function MainModule.ToggleSpeedHack(enabled)
                 end
             end
         end)
-        
-        print("SpeedHack включен: " .. MainModule.SpeedHack.CurrentSpeed)
     else
-        -- Возвращаем стандартную скорость
         local character = player.Character
         if character then
             local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -62,11 +66,9 @@ function MainModule.ToggleSpeedHack(enabled)
                 humanoid.WalkSpeed = MainModule.SpeedHack.DefaultSpeed
             end
         end
-        print("SpeedHack выключен")
     end
 end
 
--- Функция изменения скорости
 function MainModule.SetSpeed(value)
     if value < MainModule.SpeedHack.MinSpeed then
         value = MainModule.SpeedHack.MinSpeed
@@ -76,7 +78,6 @@ function MainModule.SetSpeed(value)
     
     MainModule.SpeedHack.CurrentSpeed = value
     
-    -- Немедленно применяем скорость если включено
     if MainModule.SpeedHack.Enabled then
         local player = game:GetService("Players").LocalPlayer
         local character = player.Character
@@ -107,27 +108,149 @@ function MainModule.ToggleAutoQTE(enabled)
                 task.wait(0.2)
             end
         end)
-        print("Auto QTE включен")
-    else
-        print("Auto QTE выключен")
     end
 end
 
--- Заглушки для остальных функций
-function MainModule.EnableRageQTE() 
-    print("Rage QTE включен")
+-- Rage Mode QTE функции
+function MainModule.ToggleRageQTE(enabled)
+    MainModule.AutoQTE.RageEnabled = enabled
+    
+    if enabled then
+        if not MainModule.RageConnection then
+            local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+            local impactFrames = playerGui:WaitForChild("ImpactFrames")
+            local virtualInput = game:GetService("VirtualInputManager")
+            local replicatedStorage = game:GetService("ReplicatedStorage")
+            
+            MainModule.RageConnection = impactFrames.ChildAdded:Connect(function(child)
+                if child.Name == "OuterRingTemplate" and not (MainModule.ProcessedRage or {})[child] then
+                    (MainModule.ProcessedRage or {})[child] = true
+                    
+                    task.defer(function()
+                        task.wait(0.03)
+                        
+                        for _, innerChild in pairs(impactFrames:GetChildren()) do
+                            if innerChild.Name == "InnerTemplate" and innerChild.Position == child.Position 
+                               and not innerChild:GetAttribute("Failed") then
+                               
+                                local qteMain = innerChild:FindFirstChild("QTEMain")
+                                if qteMain and qteMain:FindFirstChild("Button") then
+                                    local buttonInfo = qteMain.Button.Inner.Info
+                                    if buttonInfo and buttonInfo.Text then
+                                        local key = buttonInfo.Text
+                                        
+                                        task.wait(0.02)
+                                        virtualInput:SendKeyEvent(true, Enum.KeyCode[key], false, game)
+                                        task.wait(0.03)
+                                        virtualInput:SendKeyEvent(false, Enum.KeyCode[key], false, game)
+                                    end
+                                end
+                                break
+                            end
+                        end
+                    end)
+                end
+            end)
+            
+            MainModule.ProcessedRage = {}
+        end
+    else
+        if MainModule.RageConnection then
+            MainModule.RageConnection:Disconnect()
+            MainModule.RageConnection = nil
+        end
+        MainModule.ProcessedRage = {}
+    end
 end
 
-function MainModule.DisableRageQTE() 
-    print("Rage QTE выключен")
+-- Anti Stun QTE функции
+function MainModule.ToggleAntiStunQTE(enabled)
+    MainModule.AutoQTE.AntiStunEnabled = enabled
+    
+    if enabled then
+        if not MainModule.AntiStunConnection then
+            local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+            local impactFrames = playerGui:WaitForChild("ImpactFrames")
+            local replicatedStorage = game:GetService("ReplicatedStorage")
+            
+            MainModule.AntiStunConnection = impactFrames.ChildAdded:Connect(function(child)
+                if child.Name == "OuterRingTemplate" and not (MainModule.ProcessedAntiStun or {})[child] then
+                    (MainModule.ProcessedAntiStun or {})[child] = true
+                    
+                    task.defer(function()
+                        task.wait(0.03)
+                        
+                        for _, innerChild in pairs(impactFrames:GetChildren()) do
+                            if innerChild.Name == "InnerTemplate" and innerChild.Position == child.Position 
+                               and not innerChild:GetAttribute("Failed") then
+                               
+                                pcall(function()
+                                    local hbgModule = require(replicatedStorage.Modules.HBGQTE)
+                                    local qteData = {
+                                        Inner = innerChild,
+                                        Outer = child,
+                                        Duration = 2,
+                                        StartedAt = tick()
+                                    }
+                                    hbgModule.Pressed(false, qteData)
+                                end)
+                                break
+                            end
+                        end
+                    end)
+                end
+            end)
+            
+            MainModule.ProcessedAntiStun = {}
+        end
+    else
+        if MainModule.AntiStunConnection then
+            MainModule.AntiStunConnection:Disconnect()
+            MainModule.AntiStunConnection = nil
+        end
+        MainModule.ProcessedAntiStun = {}
+    end
 end
 
-function MainModule.EnableAntiStunQTE() 
-    print("Anti Stun QTE включен")
+-- Rebel функция
+function MainModule.ToggleRebel(enabled)
+    MainModule.Rebel.Enabled = enabled
+    _G.InstantRebel = enabled
+    
+    if enabled then
+        print("Instant Rebel включен")
+    else
+        print("Instant Rebel выключен")
+    end
 end
 
-function MainModule.DisableAntiStunQTE() 
-    print("Anti Stun QTE выключен")
+-- RLGL функции
+function MainModule.TeleportToEnd()
+    print("TP TO END (не реализовано)")
+end
+
+function MainModule.TeleportToStart()
+    print("TP TO START (не реализовано)")
+end
+
+function MainModule.ToggleGodMode(enabled)
+    MainModule.RLGL.GodMode = enabled
+    if enabled then
+        print("GodMode включен (не реализовано)")
+    else
+        print("GodMode выключен (не реализовано)")
+    end
+end
+
+-- Функция для получения координат
+function MainModule.GetPlayerPosition()
+    local player = game:GetService("Players").LocalPlayer
+    local character = player.Character
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        local position = character.HumanoidRootPart.Position
+        return string.format("X: %.1f, Y: %.1f, Z: %.1f", position.X, position.Y, position.Z)
+    end
+    return "Не доступно"
 end
 
 return MainModule
