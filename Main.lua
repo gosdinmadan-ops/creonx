@@ -48,7 +48,10 @@ MainModule.HNS = {
     SpikesKill = false,
     DeleteSpikes = false,
     KillHiders = false,
-    AutoDodge = false
+    AutoDodge = false,
+    KillAuraEnabled = false,
+    SpikeTeleportEnabled = false,
+    AutoTeleportEnabled = false
 }
 
 MainModule.TugOfWar = {
@@ -56,7 +59,16 @@ MainModule.TugOfWar = {
 }
 
 MainModule.GlassBridge = {
-    AntiBreak = false
+    AntiBreak = false,
+    GlassESPEnabled = false
+}
+
+MainModule.JumpRope = {
+    AutoJump = false,
+    GodMode = false,
+    DeleteRope = false,
+    AntiFall = false,
+    AutoBalance = false
 }
 
 MainModule.Misc = {
@@ -68,7 +80,14 @@ MainModule.Misc = {
     ESPDistance = true,
     ESPFillTransparency = 0.75,
     ESPOutlineTransparency = 0,
-    ESPTextSize = 22
+    ESPTextSize = 22,
+    PlayerESP = true,
+    SeekerESP = true,
+    HiderESP = true,
+    GuardESP = true,
+    DoorESP = true,
+    KeyESP = true,
+    EscapeDoorESP = true
 }
 
 -- ESP System
@@ -81,6 +100,17 @@ MainModule.ESPTable = {
     None = {},
     Key = {},
     EscapeDoor = {}
+}
+
+-- ESP Colors
+MainModule.ESPColors = {
+    Player = Color3.fromRGB(0, 170, 255),
+    Seeker = Color3.fromRGB(255, 50, 50),
+    Hider = Color3.fromRGB(50, 255, 50),
+    Guard = Color3.fromRGB(255, 150, 0),
+    Door = Color3.fromRGB(255, 255, 0),
+    Key = Color3.fromRGB(255, 0, 255),
+    EscapeDoor = Color3.fromRGB(0, 255, 255)
 }
 
 -- Постоянные соединения
@@ -98,6 +128,14 @@ local antiBreakConnection = nil
 local removeInjuredConnection = nil
 local dashConnection = nil
 local espConnection = nil
+local hnsKillAuraConnection = nil
+local hnsSpikeTeleportConnection = nil
+local hnsAutoTeleportConnection = nil
+local jumpRopeConnection = nil
+local jumpRopeGodModeConnection = nil
+local jumpRopeAntiFallConnection = nil
+local jumpRopeAutoBalanceConnection = nil
+local glassBridgeESPConnection = nil
 
 -- Функции скорости
 function MainModule.ToggleSpeedHack(enabled)
@@ -616,25 +654,133 @@ function MainModule.FreeLighter()
     player:SetAttribute("HasLighter", true)
 end
 
--- HNS функции (убраны ESP функции)
+-- HNS функции
 function MainModule.ToggleAutoPickup(enabled)
     MainModule.HNS.AutoPickup = enabled
 end
 
 function MainModule.ToggleSpikesKill(enabled)
     MainModule.HNS.SpikesKill = enabled
+    
+    if hnsSpikeTeleportConnection then
+        hnsSpikeTeleportConnection:Disconnect()
+        hnsSpikeTeleportConnection = nil
+    end
+    
+    if enabled then
+        -- Функция телепортации на шипы
+        local function SetupSpikeTeleport()
+            local player = game:GetService("Players").LocalPlayer
+            local character = player.Character
+            if not character then return end
+            
+            local humanoid = character:FindFirstChild("Humanoid")
+            if not humanoid then return end
+            
+            -- Ищем шипы в workspace
+            local spikes = workspace:FindFirstChild("HideAndSeekMap") and 
+                          workspace.HideAndSeekMap:FindFirstChild("KillingParts")
+            
+            if spikes then
+                -- Телепортируем к ближайшему шипу
+                local closestSpike = nil
+                local closestDistance = math.huge
+                
+                for _, spike in pairs(spikes:GetChildren()) do
+                    if spike:IsA("BasePart") then
+                        local distance = (character.HumanoidRootPart.Position - spike.Position).Magnitude
+                        if distance < closestDistance then
+                            closestDistance = distance
+                            closestSpike = spike
+                        end
+                    end
+                end
+                
+                if closestSpike then
+                    character.HumanoidRootPart.CFrame = closestSpike.CFrame + Vector3.new(0, 3, 0)
+                end
+            end
+        end
+        
+        hnsSpikeTeleportConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.HNS.SpikesKill then return end
+            SetupSpikeTeleport()
+        end)
+    end
 end
 
 function MainModule.ToggleDeleteSpikes(enabled)
     MainModule.HNS.DeleteSpikes = enabled
+    
+    if enabled then
+        pcall(function()
+            if workspace:FindFirstChild("HideAndSeekMap") and workspace.HideAndSeekMap:FindFirstChild("KillingParts") then
+                workspace.HideAndSeekMap.KillingParts:ClearAllChildren()
+            end
+        end)
+    end
 end
 
 function MainModule.ToggleKillHiders(enabled)
     MainModule.HNS.KillHiders = enabled
+    
+    if hnsKillAuraConnection then
+        hnsKillAuraConnection:Disconnect()
+        hnsKillAuraConnection = nil
+    end
+    
+    if enabled then
+        hnsKillAuraConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.HNS.KillHiders then return end
+            
+            local player = game:GetService("Players").LocalPlayer
+            local character = player.Character
+            if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+            
+            local HRP = character.HumanoidRootPart
+            
+            -- Ищем ближайшего хайдера
+            for _, targetPlayer in pairs(game:GetService("Players"):GetPlayers()) do
+                if targetPlayer ~= player and targetPlayer.Character and 
+                   targetPlayer.Character:FindFirstChild("HumanoidRootPart") and
+                   targetPlayer:GetAttribute("IsHider") then
+                   
+                    local targetHRP = targetPlayer.Character.HumanoidRootPart
+                    local distance = (HRP.Position - targetHRP.Position).Magnitude
+                    
+                    if distance < 20 then
+                        -- Телепортируемся к хайдеру
+                        HRP.CFrame = targetHRP.CFrame * CFrame.new(0, 0, -3)
+                        break
+                    end
+                end
+            end
+        end)
+    end
 end
 
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.HNS.AutoDodge = enabled
+    
+    if hnsAutoTeleportConnection then
+        hnsAutoTeleportConnection:Disconnect()
+        hnsAutoTeleportConnection = nil
+    end
+    
+    if enabled then
+        hnsAutoTeleportConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.HNS.AutoDodge then return end
+            
+            -- Автоматическая телепортация от опасностей
+            local player = game:GetService("Players").LocalPlayer
+            local character = player.Character
+            if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+            
+            -- Ищем безопасное место для телепортации
+            local safePosition = Vector3.new(0, 50, 0) -- Пример безопасной позиции
+            character.HumanoidRootPart.CFrame = CFrame.new(safePosition)
+        end)
+    end
 end
 
 -- Tug Of War функции
@@ -689,6 +835,228 @@ function MainModule.ToggleAntiBreak(enabled)
                     end
                 end
             end)
+        end)
+    end
+end
+
+function MainModule.ToggleGlassBridgeESP(enabled)
+    MainModule.GlassBridge.GlassESPEnabled = enabled
+    
+    if glassBridgeESPConnection then
+        glassBridgeESPConnection:Disconnect()
+        glassBridgeESPConnection = nil
+    end
+    
+    if enabled then
+        glassBridgeESPConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.GlassBridge.GlassESPEnabled then return end
+            
+            pcall(function()
+                local glassHolder = workspace:FindFirstChild("GlassBridge") and workspace.GlassBridge:FindFirstChild("GlassHolder")
+                if not glassHolder then return end
+
+                for _, tilePair in pairs(glassHolder:GetChildren()) do
+                    for _, tileModel in pairs(tilePair:GetChildren()) do
+                        if tileModel:IsA("Model") and tileModel.PrimaryPart then
+                            local primaryPart = tileModel.PrimaryPart
+                            for _, child in ipairs(tileModel:GetChildren()) do
+                                if child:IsA("Highlight") then
+                                    child:Destroy()
+                                end
+                            end
+                            
+                            local isBreakable = primaryPart:GetAttribute("exploitingisevil") == true
+                            local targetColor = isBreakable and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
+                            local transparency = 0.5
+
+                            for _, part in pairs(tileModel:GetDescendants()) do
+                                if part:IsA("BasePart") then
+                                    game:GetService("TweenService"):Create(part, TweenInfo.new(0.5, Enum.EasingStyle.Linear), {
+                                        Transparency = transparency,
+                                        Color = targetColor
+                                    }):Play()
+                                end
+                            end
+
+                            local highlight = Instance.new("Highlight")
+                            highlight.FillColor = targetColor
+                            highlight.FillTransparency = 0.7
+                            highlight.OutlineTransparency = 0.5
+                            highlight.Parent = tileModel
+                        end
+                    end
+                end
+            end)
+        end)
+        
+        -- Показываем сообщение
+        pcall(function()
+            local Effects = require(game:GetService("ReplicatedStorage").Modules.Effects)
+            Effects.AnnouncementTween({
+                AnnouncementOneLine = true,
+                FasterTween = true,
+                DisplayTime = 10,
+                AnnouncementDisplayText = "[CreonX]: Safe tiles are green, breakable tiles are red!"
+            })
+        end)
+    end
+end
+
+-- Jump Rope функции
+function MainModule.TeleportToJumpRopeEnd()
+    local player = game:GetService("Players").LocalPlayer
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = CFrame.new(720.896057, 198.628311, 921.170654)
+    end
+end
+
+function MainModule.DeleteJumpRope()
+    pcall(function()
+        local rope = workspace:FindFirstChild("Effects") and workspace.Effects:FindFirstChild("rope")
+        if rope then
+            rope:Destroy()
+        end
+    end)
+end
+
+function MainModule.ToggleAutoJump(enabled)
+    MainModule.JumpRope.AutoJump = enabled
+    
+    if jumpRopeConnection then
+        jumpRopeConnection:Disconnect()
+        jumpRopeConnection = nil
+    end
+    
+    if enabled then
+        jumpRopeConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.JumpRope.AutoJump then return end
+            
+            local player = game:GetService("Players").LocalPlayer
+            local character = player.Character
+            if not character then return end
+            
+            local humanoid = character:FindFirstChild("Humanoid")
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            
+            if not humanoid or not rootPart then return end
+            
+            -- Проверяем наличие веревки
+            local rope = workspace:FindFirstChild("Effects") and workspace.Effects:FindFirstChild("rope")
+            if rope then
+                local distance = (rootPart.Position - rope.Position).Magnitude
+                
+                -- Автоматически прыгаем когда близко к веревке
+                if distance <= 15 then
+                    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end
+        end)
+    end
+end
+
+function MainModule.ToggleJumpRopeGodMode(enabled)
+    MainModule.JumpRope.GodMode = enabled
+    
+    if jumpRopeGodModeConnection then
+        jumpRopeGodModeConnection:Disconnect()
+        jumpRopeGodModeConnection = nil
+    end
+    
+    if enabled then
+        jumpRopeGodModeConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.JumpRope.GodMode then return end
+            
+            local player = game:GetService("Players").LocalPlayer
+            local character = player.Character
+            if not character then return end
+            
+            -- Защита от падения
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if rootPart and rootPart.Position.Y < 190 then
+                rootPart.CFrame = CFrame.new(720.896057, 198.628311, 921.170654)
+            end
+            
+            -- Защита от веревки
+            local rope = workspace:FindFirstChild("Effects") and workspace.Effects:FindFirstChild("rope")
+            if rope then
+                -- Делаем веревку безопасной
+                for _, part in pairs(rope:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanTouch = false
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+    end
+end
+
+function MainModule.ToggleJumpRopeAntiFall(enabled)
+    MainModule.JumpRope.AntiFall = enabled
+    
+    if jumpRopeAntiFallConnection then
+        jumpRopeAntiFallConnection:Disconnect()
+        jumpRopeAntiFallConnection = nil
+    end
+    
+    if enabled then
+        jumpRopeAntiFallConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.JumpRope.AntiFall then return end
+            
+            local player = game:GetService("Players").LocalPlayer
+            local character = player.Character
+            if not character then return end
+            
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if rootPart and rootPart.Position.Y < 190 then
+                rootPart.CFrame = CFrame.new(720.896057, 198.628311, 921.170654)
+            end
+        end)
+    end
+end
+
+function MainModule.ToggleAutoBalance(enabled)
+    MainModule.JumpRope.AutoBalance = enabled
+    
+    if jumpRopeAutoBalanceConnection then
+        jumpRopeAutoBalanceConnection:Disconnect()
+        jumpRopeAutoBalanceConnection = nil
+    end
+    
+    if enabled then
+        jumpRopeAutoBalanceConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not MainModule.JumpRope.AutoBalance then return end
+            
+            -- Автоматическое нажатие A/D для баланса
+            local player = game:GetService("Players").LocalPlayer
+            local playerGui = player:FindFirstChild("PlayerGui")
+            
+            if playerGui then
+                -- Ищем интерфейс баланса
+                for _, gui in pairs(playerGui:GetDescendants()) do
+                    if gui:IsA("TextLabel") and (gui.Text:find("A") or gui.Text:find("D")) then
+                        -- Автоматически нажимаем нужные кнопки
+                        local virtualInput = game:GetService("VirtualInputManager")
+                        
+                        if gui.Text:find("A") then
+                            for i = 1, 3 do -- Нажимаем A 3 раза
+                                virtualInput:SendKeyEvent(true, Enum.KeyCode.A, false, nil)
+                                task.wait(0.1)
+                                virtualInput:SendKeyEvent(false, Enum.KeyCode.A, false, nil)
+                                task.wait(0.1)
+                            end
+                        elseif gui.Text:find("D") then
+                            for i = 1, 3 do -- Нажимаем D 3 раза
+                                virtualInput:SendKeyEvent(true, Enum.KeyCode.D, false, nil)
+                                task.wait(0.1)
+                                virtualInput:SendKeyEvent(false, Enum.KeyCode.D, false, nil)
+                                task.wait(0.1)
+                            end
+                        end
+                        break
+                    end
+                end
+            end
         end)
     end
 end
@@ -793,6 +1161,124 @@ function MainModule.DistanceFromCharacter(obj)
     return 0
 end
 
+-- ESP для игроков
+function MainModule.CreatePlayerESP(player)
+    if not (player.Character and player.Character.PrimaryPart and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0) then return end
+
+    local playerEsp = MainModule.CreateESP({
+        Type = "Player",
+        Object = player.Character,
+        Text = string.format("%s [%s]", player.DisplayName, player.Character.Humanoid.Health),
+        TextParent = player.Character.PrimaryPart,
+        Color = MainModule.ESPColors.Player
+    })
+
+    if playerEsp then
+        playerEsp.GiveSignal(player.Character.Humanoid.HealthChanged:Connect(function(newHealth)
+            if newHealth > 0 then
+                playerEsp.Text = string.format("%s [%s]", player.DisplayName, newHealth)
+            else
+                playerEsp.Destroy()
+            end
+        end))
+    end
+end
+
+-- ESP для Hide & Seek
+function MainModule.CreateSeekerESP(player)
+    if player:GetAttribute("IsHunter") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local esp = MainModule.CreateESP({
+            Object = player.Character,
+            Text = player.Name .. " (Seeker)",
+            Color = MainModule.ESPColors.Seeker,
+            Offset = Vector3.new(0, 3, 0),
+            Type = "Seeker"
+        })
+    end
+end
+
+function MainModule.CreateHiderESP(player)
+    if player:GetAttribute("IsHider") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local esp = MainModule.CreateESP({
+            Object = player.Character,
+            Text = player.Name .. " (Hider)",
+            Color = MainModule.ESPColors.Hider,
+            Offset = Vector3.new(0, 3, 0),
+            Type = "Hider"
+        })
+        
+        if esp then
+            player:GetAttributeChangedSignal("IsHider"):Once(function()
+                if not player:GetAttribute("IsHider") then
+                    esp.Destroy()
+                end
+            end)
+        end
+    end
+end
+
+-- ESP для предметов
+function MainModule.CreateKeyESP(key)
+    if key:IsA("Model") and key.PrimaryPart then
+        local esp = MainModule.CreateESP({
+            Object = key,
+            Text = key.Name .. " (Key)",
+            Color = MainModule.ESPColors.Key,
+            Offset = Vector3.new(0, 1, 0),
+            Type = "Key",
+            IsEntity = true
+        })
+    end
+end
+
+function MainModule.CreateDoorESP(door)
+    if door:IsA("Model") and door.Name == "FullDoorAnimated" and door.PrimaryPart then
+        local keyNeeded = door:GetAttribute("KeyNeeded") or "None"
+        local esp = MainModule.CreateESP({
+            Object = door,
+            Text = "Door (Key: " .. keyNeeded .. ")",
+            Color = MainModule.ESPColors.Door,
+            Offset = Vector3.new(0, 2, 0),
+            Type = "Door",
+            IsEntity = true
+        })
+    end
+end
+
+function MainModule.CreateEscapeDoorESP(door)
+    if door:IsA("Model") and door.Name == "EXITDOOR" and door.PrimaryPart and door:GetAttribute("CANESCAPE") then
+        local esp = MainModule.CreateESP({
+            Object = door,
+            Text = "Escape Door",
+            Color = MainModule.ESPColors.EscapeDoor,
+            Offset = Vector3.new(0, 2, 0),
+            Type = "EscapeDoor",
+            IsEntity = true
+        })
+    end
+end
+
+function MainModule.CreateGuardESP(character)
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        local esp = MainModule.CreateESP({
+            Object = character,
+            Text = "Guard",
+            Color = MainModule.ESPColors.Guard,
+            Offset = Vector3.new(0, 3, 0),
+            Type = "Guard"
+        })
+        
+        if esp then
+            table.insert(esp.Connections, character.ChildAdded:Connect(function(v)
+                if v.Name == "Dead" and v.ClassName == "Folder" then
+                    esp.Destroy()
+                end
+            end))
+        end
+    end
+end
+
+-- Основная функция ESP
 function MainModule.ToggleESP(enabled)
     MainModule.Misc.ESPEnabled = enabled
     
@@ -801,31 +1287,82 @@ function MainModule.ToggleESP(enabled)
         espConnection = nil
     end
     
-    if enabled then
-        -- Очищаем старые ESP
-        for _, espType in pairs(MainModule.ESPTable) do
-            for _, esp in pairs(espType) do
-                if esp.Destroy then
-                    esp:Destroy()
-                end
+    -- Очищаем старые ESP
+    for _, espType in pairs(MainModule.ESPTable) do
+        for _, esp in pairs(espType) do
+            if esp.Destroy then
+                esp:Destroy()
             end
         end
-        
+    end
+    
+    if enabled then
         espConnection = game:GetService("RunService").Heartbeat:Connect(function()
             if not MainModule.Misc.ESPEnabled then return end
             
-            -- Здесь будет логика создания ESP для разных объектов
-            -- Пока что это заглушка для демонстрации
-        end)
-    else
-        -- Очищаем все ESP при выключении
-        for _, espType in pairs(MainModule.ESPTable) do
-            for _, esp in pairs(espType) do
-                if esp.Destroy then
-                    esp:Destroy()
+            -- ESP для игроков
+            if MainModule.Misc.PlayerESP then
+                for _, player in pairs(game:GetService("Players"):GetPlayers()) do
+                    if player ~= game:GetService("Players").LocalPlayer then
+                        MainModule.CreatePlayerESP(player)
+                    end
                 end
             end
-        end
+            
+            -- ESP для Hide & Seek
+            if MainModule.Misc.SeekerESP then
+                for _, player in pairs(game:GetService("Players"):GetPlayers()) do
+                    if player:GetAttribute("IsHunter") then
+                        MainModule.CreateSeekerESP(player)
+                    end
+                end
+            end
+            
+            if MainModule.Misc.HiderESP then
+                for _, player in pairs(game:GetService("Players"):GetPlayers()) do
+                    if player:GetAttribute("IsHider") then
+                        MainModule.CreateHiderESP(player)
+                    end
+                end
+            end
+            
+            -- ESP для Guards
+            if MainModule.Misc.GuardESP then
+                -- Ищем охранников в workspace
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") then
+                        if obj.Name:lower():find("guard") or obj:GetAttribute("IsGuard") then
+                            MainModule.CreateGuardESP(obj)
+                        end
+                    end
+                end
+            end
+            
+            -- ESP для предметов
+            if MainModule.Misc.DoorESP then
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if obj:IsA("Model") and obj.Name == "FullDoorAnimated" then
+                        MainModule.CreateDoorESP(obj)
+                    end
+                end
+            end
+            
+            if MainModule.Misc.KeyESP then
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if obj:IsA("Model") and obj.Name:lower():find("key") then
+                        MainModule.CreateKeyESP(obj)
+                    end
+                end
+            end
+            
+            if MainModule.Misc.EscapeDoorESP then
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if obj:IsA("Model") and obj.Name == "EXITDOOR" then
+                        MainModule.CreateEscapeDoorESP(obj)
+                    end
+                end
+            end
+        end)
     end
 end
 
