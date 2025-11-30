@@ -83,18 +83,18 @@ if not success then
     MainModule = {
         SpeedHack = {Enabled = false, DefaultSpeed = 16, CurrentSpeed = 16, MaxSpeed = 150, MinSpeed = 16},
         Noclip = {Enabled = false, Status = "Don't work, Disabled"},
-        AutoQTE = {Enabled = false, AntiStunEnabled = false},
+        AutoQTE = {RageEnabled = false},
         Rebel = {Enabled = false},
         RLGL = {GodMode = false, OriginalHeight = nil},
         Guards = {SelectedGuard = "Circle", AutoFarm = false},
         Dalgona = {CompleteEnabled = false, FreeLighterEnabled = false},
+        HNS = {ESPHiders = false, ESPSeekers = false, AutoPickup = false, SpikesKill = false, DeleteSpikes = false, KillHiders = false, AutoDodge = false},
         Misc = {InstaInteract = false, NoCooldownProximity = false},
         ToggleSpeedHack = function() end,
         SetSpeed = function() return 16 end,
         TeleportUp100 = function() end,
         TeleportDown40 = function() end,
-        ToggleAutoQTE = function() end,
-        ToggleAntiStunQTE = function() end,
+        ToggleRageQTE = function() end,
         ToggleRebel = function() end,
         TeleportToEnd = function() end,
         TeleportToStart = function() end,
@@ -104,6 +104,13 @@ if not success then
         ToggleAutoFarm = function() end,
         CompleteDalgona = function() end,
         FreeLighter = function() end,
+        ToggleESPHiders = function() end,
+        ToggleESPSeekers = function() end,
+        ToggleAutoPickup = function() end,
+        ToggleSpikesKill = function() end,
+        ToggleDeleteSpikes = function() end,
+        ToggleKillHiders = function() end,
+        ToggleAutoDodge = function() end,
         ToggleInstaInteract = function() end,
         ToggleNoCooldownProximity = function() end,
         GetPlayerPosition = function() return "Не доступно" end
@@ -261,7 +268,7 @@ end
 -- Функция для создания красивого переключателя
 local function CreateToggle(text, position, enabled, callback)
     local toggleContainer = Instance.new("Frame")
-    toggleContainer.Size = UDim2.new(0.85, 0, 0, 40)
+    toggleContainer.Size = UDim2.new(0.85, 0, 0, 35)
     toggleContainer.Position = position
     toggleContainer.BackgroundTransparency = 1
     toggleContainer.Parent = ContentFrame
@@ -416,17 +423,19 @@ local function CreateSpeedSlider()
     return speedLabel
 end
 
--- Функция для создания выпадающего списка
+-- Функция для создания выпадающего списка (исправленная)
 local function CreateDropdown(options, default, position, callback)
     local dropdownContainer = Instance.new("Frame")
     dropdownContainer.Size = UDim2.new(0.85, 0, 0, 35)
     dropdownContainer.Position = position
     dropdownContainer.BackgroundTransparency = 1
     dropdownContainer.Parent = ContentFrame
+    dropdownContainer.ZIndex = 10
     
     local dropdownButton = CreateButton(default, UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 1, 0))
     dropdownButton.Parent = dropdownContainer
     dropdownButton.Text = default .. " ▼"
+    dropdownButton.ZIndex = 11
     
     local dropdownList = Instance.new("Frame")
     dropdownList.Size = UDim2.new(1, 0, 0, #options * 30)
@@ -435,6 +444,7 @@ local function CreateDropdown(options, default, position, callback)
     dropdownList.BorderSizePixel = 0
     dropdownList.Visible = false
     dropdownList.Parent = dropdownContainer
+    dropdownList.ZIndex = 20
     
     local listCorner = Instance.new("UICorner")
     listCorner.CornerRadius = UDim.new(0, 6)
@@ -449,6 +459,7 @@ local function CreateDropdown(options, default, position, callback)
         local optionButton = CreateButton(option, UDim2.new(0, 5, 0, (i-1)*30), UDim2.new(1, -10, 0, 25))
         optionButton.Parent = dropdownList
         optionButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+        optionButton.ZIndex = 21
         
         optionButton.MouseButton1Click:Connect(function()
             dropdownButton.Text = option .. " ▼"
@@ -459,6 +470,17 @@ local function CreateDropdown(options, default, position, callback)
     
     dropdownButton.MouseButton1Click:Connect(function()
         dropdownList.Visible = not dropdownList.Visible
+    end)
+    
+    -- Закрытие при клике вне списка
+    local function closeDropdown()
+        dropdownList.Visible = false
+    end
+    
+    dropdownContainer:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
+        if dropdownList.Visible then
+            closeDropdown()
+        end
     end)
     
     return dropdownContainer
@@ -478,31 +500,31 @@ local function CreateMainContent()
         MainModule.ToggleSpeedHack(enabled)
     end)
     
-    local qteToggle = CreateToggle("Auto QTE", UDim2.new(0.075, 0, 0.35, 0), MainModule.AutoQTE.Enabled, function(enabled)
-        MainModule.ToggleAutoQTE(enabled)
+    local rageToggle = CreateToggle("Auto QTE Rage", UDim2.new(0.075, 0, 0.35, 0), MainModule.AutoQTE.RageEnabled, function(enabled)
+        MainModule.ToggleRageQTE(enabled)
     end)
     
-    local antistunToggle = CreateToggle("Anti Stun QTE", UDim2.new(0.075, 0, 0.45, 0), MainModule.AutoQTE.AntiStunEnabled, function(enabled)
-        MainModule.ToggleAntiStunQTE(enabled)
-    end)
-    
-    local instaInteractToggle = CreateToggle("Insta Interact", UDim2.new(0.075, 0, 0.55, 0), MainModule.Misc.InstaInteract, function(enabled)
+    local instaInteractToggle = CreateToggle("Insta Interact", UDim2.new(0.075, 0, 0.45, 0), MainModule.Misc.InstaInteract, function(enabled)
         MainModule.ToggleInstaInteract(enabled)
     end)
     
-    local noCooldownToggle = CreateToggle("No Cooldown Proximity", UDim2.new(0.075, 0, 0.65, 0), MainModule.Misc.NoCooldownProximity, function(enabled)
+    local noCooldownToggle = CreateToggle("No Cooldown Proximity", UDim2.new(0.075, 0, 0.55, 0), MainModule.Misc.NoCooldownProximity, function(enabled)
         MainModule.ToggleNoCooldownProximity(enabled)
     end)
     
-    local tpUpBtn = CreateButton("TP 100 blocks up", UDim2.new(0.075, 0, 0.75, 0))
+    local tpUpBtn = CreateButton("TP 100 blocks up", UDim2.new(0.075, 0, 0.65, 0))
     tpUpBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportUp100()
     end)
     
-    local tpDownBtn = CreateButton("TP 40 blocks down", UDim2.new(0.075, 0, 0.85, 0))
+    local tpDownBtn = CreateButton("TP 40 blocks down", UDim2.new(0.075, 0, 0.75, 0))
     tpDownBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportDown40()
     end)
+    
+    local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status, UDim2.new(0.075, 0, 0.85, 0))
+    noclipLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    noclipLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 end
 
 local function CreateCombatContent()
@@ -615,8 +637,39 @@ local function CreateDalgonaContent()
 end
 
 local function CreateHNSContent()
-    SoonLabel.Visible = true
-    SoonLabel.Text = "Soon"
+    for _, child in pairs(ContentFrame:GetChildren()) do
+        if child ~= SoonLabel then
+            child:Destroy()
+        end
+    end
+    
+    local espHidersToggle = CreateToggle("ESP Hiders", UDim2.new(0.075, 0, 0.1, 0), MainModule.HNS.ESPHiders, function(enabled)
+        MainModule.ToggleESPHiders(enabled)
+    end)
+    
+    local espSeekersToggle = CreateToggle("ESP Seekers", UDim2.new(0.075, 0, 0.2, 0), MainModule.HNS.ESPSeekers, function(enabled)
+        MainModule.ToggleESPSeekers(enabled)
+    end)
+    
+    local autoPickupToggle = CreateToggle("Auto Pickup", UDim2.new(0.075, 0, 0.3, 0), MainModule.HNS.AutoPickup, function(enabled)
+        MainModule.ToggleAutoPickup(enabled)
+    end)
+    
+    local spikesKillToggle = CreateToggle("Spikes Kill", UDim2.new(0.075, 0, 0.4, 0), MainModule.HNS.SpikesKill, function(enabled)
+        MainModule.ToggleSpikesKill(enabled)
+    end)
+    
+    local deleteSpikesToggle = CreateToggle("Delete Spikes", UDim2.new(0.075, 0, 0.5, 0), MainModule.HNS.DeleteSpikes, function(enabled)
+        MainModule.ToggleDeleteSpikes(enabled)
+    end)
+    
+    local killHidersToggle = CreateToggle("Kill Hiders", UDim2.new(0.075, 0, 0.6, 0), MainModule.HNS.KillHiders, function(enabled)
+        MainModule.ToggleKillHiders(enabled)
+    end)
+    
+    local autoDodgeToggle = CreateToggle("AutoDodge", UDim2.new(0.075, 0, 0.7, 0), MainModule.HNS.AutoDodge, function(enabled)
+        MainModule.ToggleAutoDodge(enabled)
+    end)
 end
 
 local function CreateGlassBridgeContent()
@@ -701,6 +754,7 @@ for i, name in pairs(tabs) do
         end)
     elseif name == "HNS" then
         button.MouseButton1Click:Connect(function()
+            SoonLabel.Visible = false
             CreateHNSContent()
         end)
     elseif name == "Glass Bridge" then
