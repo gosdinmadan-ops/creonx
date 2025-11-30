@@ -69,7 +69,6 @@ if _G.ANypass then
             return oldhmmnc(self, ...)
         end)
     end
-    print("Unmatched Full Anti-Cheat Bypass Active")
 end
 
 -- Загрузка Main модуля
@@ -80,17 +79,18 @@ local success, err = pcall(function()
 end)
 
 if not success then
-    warn("Не удалось загрузить Main.lua: " .. err)
     -- Заглушка
     MainModule = {
         SpeedHack = {Enabled = false, DefaultSpeed = 16, CurrentSpeed = 16, MaxSpeed = 150, MinSpeed = 16},
         Noclip = {Enabled = false, Status = "Don't work, Disabled"},
         AutoQTE = {Enabled = false, RageEnabled = false, AntiStunEnabled = false},
         Rebel = {Enabled = false},
-        RLGL = {GodMode = false},
+        RLGL = {GodMode = false, OriginalHeight = nil},
         Guards = {SelectedGuard = "Circle", AutoFarm = false},
         ToggleSpeedHack = function() end,
         SetSpeed = function() return 16 end,
+        TeleportUp100 = function() end,
+        TeleportDown40 = function() end,
         ToggleAutoQTE = function() end,
         ToggleRageQTE = function() end,
         ToggleAntiStunQTE = function() end,
@@ -137,7 +137,7 @@ TitleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 TitleBar.BorderSizePixel = 0
 TitleBar.Parent = MainFrame
 
-TitleLabel.Size = UDim2.new(1, 0, 1, 0)
+TitleLabel.Size = UDim2.new(1, 0, 0, 25)
 TitleLabel.BackgroundTransparency = 1
 TitleLabel.Text = "CreonX"
 TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -485,7 +485,17 @@ local function CreateMainContent()
         MainModule.ToggleAntiStunQTE(enabled)
     end)
     
-    local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status, UDim2.new(0.075, 0, 0.75, 0))
+    local tpUpBtn = CreateButton("TP 100 blocks up", UDim2.new(0.075, 0, 0.65, 0))
+    tpUpBtn.MouseButton1Click:Connect(function()
+        MainModule.TeleportUp100()
+    end)
+    
+    local tpDownBtn = CreateButton("TP 40 blocks down", UDim2.new(0.075, 0, 0.75, 0))
+    tpDownBtn.MouseButton1Click:Connect(function()
+        MainModule.TeleportDown40()
+    end)
+    
+    local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status, UDim2.new(0.075, 0, 0.85, 0))
     noclipLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
     noclipLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 end
@@ -581,6 +591,31 @@ local function CreateGuardsContent()
     end)
 end
 
+local function CreateDalgonaContent()
+    SoonLabel.Visible = true
+    SoonLabel.Text = "Soon"
+end
+
+local function CreateHNSContent()
+    SoonLabel.Visible = true
+    SoonLabel.Text = "Soon"
+end
+
+local function CreateGlassBridgeContent()
+    SoonLabel.Visible = true
+    SoonLabel.Text = "Soon"
+end
+
+local function CreateTugOfWarContent()
+    SoonLabel.Visible = true
+    SoonLabel.Text = "Soon"
+end
+
+local function CreateJumpRopeContent()
+    SoonLabel.Visible = true
+    SoonLabel.Text = "Soon"
+end
+
 local function CreateSettingsContent()
     for _, child in pairs(ContentFrame:GetChildren()) do
         if child ~= SoonLabel then
@@ -606,11 +641,12 @@ local function CreateSettingsContent()
 end
 
 -- Создание вкладок
-local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Settings"}
+local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Settings"}
 for i, name in pairs(tabs) do
-    local button = CreateButton(name, UDim2.new(0.05, 0, 0, (i-1)*40), UDim2.new(0.9, 0, 0, 35))
+    local button = CreateButton(name, UDim2.new(0.05, 0, 0, (i-1)*35), UDim2.new(0.9, 0, 0, 30))
     button.Parent = TabButtons
     button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    button.TextSize = 11
     
     if name == "Main" then
         button.MouseButton1Click:Connect(function()
@@ -640,6 +676,26 @@ for i, name in pairs(tabs) do
             SoonLabel.Visible = false
             CreateGuardsContent()
         end)
+    elseif name == "Dalgona" then
+        button.MouseButton1Click:Connect(function()
+            CreateDalgonaContent()
+        end)
+    elseif name == "HNS" then
+        button.MouseButton1Click:Connect(function()
+            CreateHNSContent()
+        end)
+    elseif name == "Glass Bridge" then
+        button.MouseButton1Click:Connect(function()
+            CreateGlassBridgeContent()
+        end)
+    elseif name == "Tug of War" then
+        button.MouseButton1Click:Connect(function()
+            CreateTugOfWarContent()
+        end)
+    elseif name == "Jump Rope" then
+        button.MouseButton1Click:Connect(function()
+            CreateJumpRopeContent()
+        end)
     elseif name == "Settings" then
         button.MouseButton1Click:Connect(function()
             SoonLabel.Visible = false
@@ -660,4 +716,4 @@ end)
 -- Автоматически открываем Main вкладку
 CreateMainContent()
 
-print("CreonX загружен! Нажми M для открытия/закрытия")
+print("CreonHub загружен...")
