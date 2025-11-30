@@ -72,82 +72,40 @@ if _G.ANypass then
     print("Unmatched Full Anti-Cheat Bypass Active")
 end
 
--- Загрузка Main модуля из нового репозитория
+-- Загрузка Main модуля
 local MainModule
 local success, err = pcall(function()
     local mainUrl = "https://raw.githubusercontent.com/gosdinmadan-ops/creonx/main/Main.lua"
-    print("Загружаем Main.lua по ссылке: " .. mainUrl)
     MainModule = loadstring(game:HttpGet(mainUrl))()
 end)
 
 if not success then
     warn("Не удалось загрузить Main.lua: " .. err)
-    -- Создаем заглушку если файл не загрузился
+    -- Заглушка
     MainModule = {
-        SpeedHack = {Enabled = false, DefaultSpeed = 16, CurrentSpeed = 16, MaxSpeed = 150},
+        SpeedHack = {Enabled = false, DefaultSpeed = 16, CurrentSpeed = 16, MaxSpeed = 150, MinSpeed = 16},
         Noclip = {Enabled = false, Status = "Don't work, Disabled"},
         AutoQTE = {Enabled = false},
-        ToggleSpeedHack = function(enabled)
-            MainModule.SpeedHack.Enabled = enabled
-            local player = game:GetService("Players").LocalPlayer
-            local character = player.Character
-            if character then
-                local humanoid = character:FindFirstChildOfClass("Humanoid")
-                if humanoid then
-                    if enabled then
-                        MainModule.SpeedHack.DefaultSpeed = humanoid.WalkSpeed
-                        humanoid.WalkSpeed = MainModule.SpeedHack.CurrentSpeed
-                    else
-                        humanoid.WalkSpeed = MainModule.SpeedHack.DefaultSpeed
-                    end
-                end
-            end
-        end,
-        SetSpeed = function(value)
-            MainModule.SpeedHack.CurrentSpeed = value
-            if MainModule.SpeedHack.Enabled then
-                local player = game:GetService("Players").LocalPlayer
-                local character = player.Character
-                if character then
-                    local humanoid = character:FindFirstChildOfClass("Humanoid")
-                    if humanoid then
-                        humanoid.WalkSpeed = value
-                    end
-                end
-            end
-        end,
-        ToggleAutoQTE = function(enabled)
-            MainModule.AutoQTE.Enabled = enabled
-            if enabled then
-                task.spawn(function()
-                    while MainModule.AutoQTE.Enabled do
-                        pcall(function()
-                            local remote = game:GetService("ReplicatedStorage"):FindFirstChild("RemoteForQTE")
-                            if remote and remote:IsA("RemoteEvent") then
-                                remote:FireServer()
-                            end
-                        end)
-                        task.wait(0.2)
-                    end
-                end)
-            end
-        end,
+        ToggleSpeedHack = function() end,
+        SetSpeed = function() return 16 end,
+        ToggleAutoQTE = function() end,
         EnableRageQTE = function() end,
         DisableRageQTE = function() end,
         EnableAntiStunQTE = function() end,
         DisableAntiStunQTE = function() end
     }
-else
-    print("Main.lua успешно загружен!")
 end
 
--- GUI
+-- GUI с новым дизайном
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
+local mouse = player:GetMouse()
 
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
+local TitleBar = Instance.new("Frame")
 local TitleLabel = Instance.new("TextLabel")
 local TabButtons = Instance.new("Frame")
 local ContentFrame = Instance.new("Frame")
@@ -156,42 +114,214 @@ local SoonLabel = Instance.new("TextLabel")
 ScreenGui.Parent = game.CoreGui
 ScreenGui.Name = "CreonX"
 
-MainFrame.Size = UDim2.new(0, 600, 0, 480)
-MainFrame.Position = UDim2.new(0.5, -300, 0.5, -240)
-MainFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+-- Увеличенные размеры (+15% ширина, +10% высота)
+MainFrame.Size = UDim2.new(0, 690, 0, 528)
+MainFrame.Position = UDim2.new(0.5, -345, 0.5, -264)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 MainFrame.BorderSizePixel = 0
+MainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
 MainFrame.Parent = ScreenGui
 
-TitleLabel.Size = UDim2.new(1, 0, 0, 30)
-TitleLabel.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-TitleLabel.BorderSizePixel = 0
-TitleLabel.Text = "CreonX"
-TitleLabel.TextColor3 = Color3.new(1, 1, 1)
-TitleLabel.TextSize = 18
-TitleLabel.Font = Enum.Font.GothamBold
-TitleLabel.Parent = MainFrame
+-- TitleBar для перемещения
+TitleBar.Size = UDim2.new(1, 0, 0, 25)
+TitleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = MainFrame
 
-TabButtons.Size = UDim2.new(0, 120, 1, -30)
-TabButtons.Position = UDim2.new(0, 0, 0, 30)
-TabButtons.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+TitleLabel.Size = UDim2.new(1, 0, 1, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "CreonX"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.TextSize = 14
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.Parent = TitleBar
+
+TabButtons.Size = UDim2.new(0, 130, 1, -25)
+TabButtons.Position = UDim2.new(0, 0, 0, 25)
+TabButtons.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+TabButtons.BorderSizePixel = 0
 TabButtons.Parent = MainFrame
 
-ContentFrame.Size = UDim2.new(1, -120, 1, -30)
-ContentFrame.Position = UDim2.new(0, 120, 0, 30)
-ContentFrame.BackgroundColor3 = Color3.new(0.05, 0.05, 0.05)
+ContentFrame.Size = UDim2.new(1, -130, 1, -25)
+ContentFrame.Position = UDim2.new(0, 130, 0, 25)
+ContentFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+ContentFrame.BorderSizePixel = 0
 ContentFrame.Parent = MainFrame
 
 SoonLabel.Size = UDim2.new(1, 0, 1, 0)
 SoonLabel.BackgroundTransparency = 1
 SoonLabel.Text = "Soon...."
-SoonLabel.TextColor3 = Color3.new(1, 1, 1)
-SoonLabel.TextSize = 28
+SoonLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+SoonLabel.TextSize = 24
 SoonLabel.Font = Enum.Font.Gotham
 SoonLabel.Parent = ContentFrame
 
-local tabs = {"Main", "Combat", "Misc", "Settings"}
-local buttons = {}
-local currentContent = {}
+-- Функция для перемещения GUI
+local dragging = false
+local dragInput, dragStart, startPos
+
+local function update(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+TitleBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- Функция для создания красивого элемента
+local function CreateButton(text, position, size)
+    local button = Instance.new("TextButton")
+    button.Size = size or UDim2.new(0.85, 0, 0, 35)
+    button.Position = position
+    button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    button.BorderSizePixel = 0
+    button.Text = text
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 12
+    button.Font = Enum.Font.Gotham
+    button.AutoButtonColor = false
+    button.Parent = ContentFrame
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = button
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(80, 80, 80)
+    stroke.Thickness = 1
+    stroke.Parent = button
+    
+    -- Анимация при наведении
+    button.MouseEnter:Connect(function()
+        game:GetService("TweenService"):Create(button, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+        }):Play()
+    end)
+    
+    button.MouseLeave:Connect(function()
+        game:GetService("TweenService"):Create(button, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+        }):Play()
+    end)
+    
+    button.MouseButton1Down:Connect(function()
+        game:GetService("TweenService"):Create(button, TweenInfo.new(0.1), {
+            BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        }):Play()
+    end)
+    
+    button.MouseButton1Up:Connect(function()
+        game:GetService("TweenService"):Create(button, TweenInfo.new(0.1), {
+            BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+        }):Play()
+    end)
+    
+    return button
+end
+
+-- Функция для создания слайдера скорости
+local function CreateSpeedSlider()
+    local sliderContainer = Instance.new("Frame")
+    sliderContainer.Size = UDim2.new(0.85, 0, 0, 60)
+    sliderContainer.Position = UDim2.new(0.075, 0, 0.25, 0)
+    sliderContainer.BackgroundTransparency = 1
+    sliderContainer.Parent = ContentFrame
+    
+    local speedLabel = Instance.new("TextLabel")
+    speedLabel.Size = UDim2.new(1, 0, 0, 20)
+    speedLabel.BackgroundTransparency = 1
+    speedLabel.Text = "Speed: " .. MainModule.SpeedHack.CurrentSpeed
+    speedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    speedLabel.TextSize = 14
+    speedLabel.Font = Enum.Font.Gotham
+    speedLabel.Parent = sliderContainer
+    
+    local sliderBackground = Instance.new("Frame")
+    sliderBackground.Size = UDim2.new(1, 0, 0, 20)
+    sliderBackground.Position = UDim2.new(0, 0, 0, 25)
+    sliderBackground.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    sliderBackground.BorderSizePixel = 0
+    sliderBackground.Parent = sliderContainer
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = sliderBackground
+    
+    local sliderFill = Instance.new("Frame")
+    sliderFill.Size = UDim2.new((MainModule.SpeedHack.CurrentSpeed - MainModule.SpeedHack.MinSpeed) / (MainModule.SpeedHack.MaxSpeed - MainModule.SpeedHack.MinSpeed), 0, 1, 0)
+    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+    sliderFill.BorderSizePixel = 0
+    sliderFill.Parent = sliderBackground
+    
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(0, 10)
+    fillCorner.Parent = sliderFill
+    
+    local sliderButton = Instance.new("TextButton")
+    sliderButton.Size = UDim2.new(0, 20, 0, 20)
+    sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -10, 0, 0)
+    sliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    sliderButton.Text = ""
+    sliderButton.BorderSizePixel = 0
+    sliderButton.Parent = sliderBackground
+    
+    local buttonCorner = Instance.new("UICorner")
+    buttonCorner.CornerRadius = UDim.new(0, 10)
+    buttonCorner.Parent = sliderButton
+    
+    local dragging = false
+    
+    local function updateSpeed(value)
+        local newSpeed = MainModule.SetSpeed(value)
+        speedLabel.Text = "Speed: " .. newSpeed
+        sliderFill.Size = UDim2.new((newSpeed - MainModule.SpeedHack.MinSpeed) / (MainModule.SpeedHack.MaxSpeed - MainModule.SpeedHack.MinSpeed), 0, 1, 0)
+        sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -10, 0, 0)
+    end
+    
+    sliderButton.MouseButton1Down:Connect(function()
+        dragging = true
+    end)
+    
+    UIS.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local relativeX = (input.Position.X - sliderBackground.AbsolutePosition.X) / sliderBackground.AbsoluteSize.X
+            relativeX = math.clamp(relativeX, 0, 1)
+            local newSpeed = math.floor(MainModule.SpeedHack.MinSpeed + relativeX * (MainModule.SpeedHack.MaxSpeed - MainModule.SpeedHack.MinSpeed))
+            updateSpeed(newSpeed)
+        end
+    end)
+    
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    return speedLabel
+end
 
 -- Функция для создания элементов Main вкладки
 local function CreateMainContent()
@@ -202,97 +332,38 @@ local function CreateMainContent()
     end
     
     -- SpeedHack Toggle
-    local speedToggle = Instance.new("TextButton")
-    speedToggle.Size = UDim2.new(0.8, 0, 0, 30)
-    speedToggle.Position = UDim2.new(0.1, 0, 0.1, 0)
-    speedToggle.BackgroundColor3 = MainModule.SpeedHack.Enabled and Color3.new(0, 0.5, 0) or Color3.new(0.5, 0, 0)
-    speedToggle.BorderSizePixel = 0
-    speedToggle.Text = "SpeedHack: " .. (MainModule.SpeedHack.Enabled and "ON" or "OFF")
-    speedToggle.TextColor3 = Color3.new(1, 1, 1)
-    speedToggle.TextSize = 14
-    speedToggle.Font = Enum.Font.Gotham
-    speedToggle.Parent = ContentFrame
+    local speedToggle = CreateButton("SpeedHack: " .. (MainModule.SpeedHack.Enabled and "ON" or "OFF"), UDim2.new(0.075, 0, 0.1, 0))
     
     speedToggle.MouseButton1Click:Connect(function()
         MainModule.ToggleSpeedHack(not MainModule.SpeedHack.Enabled)
-        speedToggle.BackgroundColor3 = MainModule.SpeedHack.Enabled and Color3.new(0, 0.5, 0) or Color3.new(0.5, 0, 0)
         speedToggle.Text = "SpeedHack: " .. (MainModule.SpeedHack.Enabled and "ON" or "OFF")
+        speedToggle.BackgroundColor3 = MainModule.SpeedHack.Enabled and Color3.fromRGB(0, 100, 0) or Color3.fromRGB(45, 45, 45)
     end)
     
     -- Speed Slider
-    local speedValue = Instance.new("TextLabel")
-    speedValue.Size = UDim2.new(0.8, 0, 0, 20)
-    speedValue.Position = UDim2.new(0.1, 0, 0.2, 0)
-    speedValue.BackgroundTransparency = 1
-    speedValue.Text = "Speed: " .. MainModule.SpeedHack.CurrentSpeed
-    speedValue.TextColor3 = Color3.new(1, 1, 1)
-    speedValue.TextSize = 14
-    speedValue.Font = Enum.Font.Gotham
-    speedValue.Parent = ContentFrame
-    
-    local speedSlider = Instance.new("TextButton")
-    speedSlider.Size = UDim2.new(0.8, 0, 0, 20)
-    speedSlider.Position = UDim2.new(0.1, 0, 0.25, 0)
-    speedSlider.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-    speedSlider.BorderSizePixel = 0
-    speedSlider.Text = "▲ Increase Speed ▼"
-    speedSlider.TextColor3 = Color3.new(1, 1, 1)
-    speedSlider.TextSize = 12
-    speedSlider.Font = Enum.Font.Gotham
-    speedSlider.Parent = ContentFrame
-    
-    speedSlider.MouseButton1Click:Connect(function()
-        if MainModule.SpeedHack.CurrentSpeed < MainModule.SpeedHack.MaxSpeed then
-            MainModule.SetSpeed(MainModule.SpeedHack.CurrentSpeed + 5)
-            speedValue.Text = "Speed: " .. MainModule.SpeedHack.CurrentSpeed
-        end
-    end)
+    local speedLabel = CreateSpeedSlider()
     
     -- Noclip Label
-    local noclipLabel = Instance.new("TextLabel")
-    noclipLabel.Size = UDim2.new(0.8, 0, 0, 30)
-    noclipLabel.Position = UDim2.new(0.1, 0, 0.35, 0)
-    noclipLabel.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-    noclipLabel.BorderSizePixel = 0
-    noclipLabel.Text = "Noclip: " .. MainModule.Noclip.Status
-    noclipLabel.TextColor3 = Color3.new(1, 1, 1)
-    noclipLabel.TextSize = 14
-    noclipLabel.Font = Enum.Font.Gotham
-    noclipLabel.Parent = ContentFrame
+    local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status, UDim2.new(0.075, 0, 0.45, 0))
+    noclipLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    noclipLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
     
     -- Auto QTE Toggle
-    local qteToggle = Instance.new("TextButton")
-    qteToggle.Size = UDim2.new(0.8, 0, 0, 30)
-    qteToggle.Position = UDim2.new(0.1, 0, 0.5, 0)
-    qteToggle.BackgroundColor3 = MainModule.AutoQTE.Enabled and Color3.new(0, 0.5, 0) or Color3.new(0.5, 0, 0)
-    qteToggle.BorderSizePixel = 0
-    qteToggle.Text = "Auto QTE: " .. (MainModule.AutoQTE.Enabled and "ON" or "OFF")
-    qteToggle.TextColor3 = Color3.new(1, 1, 1)
-    qteToggle.TextSize = 14
-    qteToggle.Font = Enum.Font.Gotham
-    qteToggle.Parent = ContentFrame
+    local qteToggle = CreateButton("Auto QTE: " .. (MainModule.AutoQTE.Enabled and "ON" or "OFF"), UDim2.new(0.075, 0, 0.6, 0))
     
     qteToggle.MouseButton1Click:Connect(function()
         MainModule.ToggleAutoQTE(not MainModule.AutoQTE.Enabled)
-        qteToggle.BackgroundColor3 = MainModule.AutoQTE.Enabled and Color3.new(0, 0.5, 0) or Color3.new(0.5, 0, 0)
         qteToggle.Text = "Auto QTE: " .. (MainModule.AutoQTE.Enabled and "ON" or "OFF")
+        qteToggle.BackgroundColor3 = MainModule.AutoQTE.Enabled and Color3.fromRGB(0, 100, 0) or Color3.fromRGB(45, 45, 45)
     end)
-    
-    currentContent = {speedToggle, speedValue, speedSlider, noclipLabel, qteToggle}
 end
 
 -- Создание вкладок
+local tabs = {"Main", "Combat", "Misc", "Settings"}
 for i, name in pairs(tabs) do
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, 0, 0, 48)
-    button.Position = UDim2.new(0, 0, 0, (i-1)*48)
-    button.BackgroundColor3 = Color3.new(0.15, 0.15, 0.15)
-    button.BorderSizePixel = 0
-    button.Text = name
-    button.TextColor3 = Color3.new(1, 1, 1)
-    button.TextSize = 16
-    button.Font = Enum.Font.Gotham
+    local button = CreateButton(name, UDim2.new(0.05, 0, 0, (i-1)*55), UDim2.new(0.9, 0, 0, 45))
     button.Parent = TabButtons
+    button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
     
     if name == "Main" then
         button.MouseButton1Click:Connect(function()
@@ -308,38 +379,14 @@ for i, name in pairs(tabs) do
                 end
             end
             
-            local creatorLabel = Instance.new("TextLabel")
-            creatorLabel.Size = UDim2.new(1, -20, 0, 25)
-            creatorLabel.Position = UDim2.new(0, 10, 0, 50)
-            creatorLabel.BackgroundTransparency = 1
-            creatorLabel.Text = "Creator: Creon"
-            creatorLabel.TextColor3 = Color3.new(1, 1, 1)
-            creatorLabel.TextSize = 16
+            local creatorLabel = CreateButton("Creator: Creon", UDim2.new(0.075, 0, 0.1, 0))
             creatorLabel.TextXAlignment = Enum.TextXAlignment.Left
-            creatorLabel.Font = Enum.Font.Gotham
-            creatorLabel.Parent = ContentFrame
             
-            local versionLabel = Instance.new("TextLabel")
-            versionLabel.Size = UDim2.new(1, -20, 0, 25)
-            versionLabel.Position = UDim2.new(0, 10, 0, 80)
-            versionLabel.BackgroundTransparency = 1
-            versionLabel.Text = "Version: 1.0"
-            versionLabel.TextColor3 = Color3.new(1, 1, 1)
-            versionLabel.TextSize = 16
+            local versionLabel = CreateButton("Version: 1.0", UDim2.new(0.075, 0, 0.2, 0))
             versionLabel.TextXAlignment = Enum.TextXAlignment.Left
-            versionLabel.Font = Enum.Font.Gotham
-            versionLabel.Parent = ContentFrame
             
-            local executorLabel = Instance.new("TextLabel")
-            executorLabel.Size = UDim2.new(1, -20, 0, 25)
-            executorLabel.Position = UDim2.new(0, 10, 0, 110)
-            executorLabel.BackgroundTransparency = 1
-            executorLabel.Text = "Executor: " .. executorName
-            executorLabel.TextColor3 = Color3.new(1, 1, 1)
-            executorLabel.TextSize = 16
+            local executorLabel = CreateButton("Executor: " .. executorName, UDim2.new(0.075, 0, 0.3, 0))
             executorLabel.TextXAlignment = Enum.TextXAlignment.Left
-            executorLabel.Font = Enum.Font.Gotham
-            executorLabel.Parent = ContentFrame
         end)
     else
         button.MouseButton1Click:Connect(function()
@@ -356,8 +403,14 @@ end
 UIS.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.M then
         MainFrame.Visible = not MainFrame.Visible
+        if MainFrame.Visible then
+            -- Возвращаем в центр при открытии
+            MainFrame.Position = UDim2.new(0.5, -345, 0.5, -264)
+        end
     end
 end)
 
 -- Автоматически открываем Main вкладку
 CreateMainContent()
+
+print("CreonX загружен! Нажми M для открытия/закрытия")
