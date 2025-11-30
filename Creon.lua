@@ -72,11 +72,11 @@ if _G.ANypass then
     print("Unmatched Full Anti-Cheat Bypass Active")
 end
 
--- Загрузка Main модуля из того же репозитория
+-- Загрузка Main модуля из нового репозитория
 local MainModule
 local success, err = pcall(function()
-    -- Используем тот же базовый путь что и для этого скрипта
-    local mainUrl = "https://raw.githubusercontent.com/gosdinmadan-ops/creonxx/main/Main.lua"
+    local mainUrl = "https://raw.githubusercontent.com/gosdinmadan-ops/creonx/main/Main.lua"
+    print("Загружаем Main.lua по ссылке: " .. mainUrl)
     MainModule = loadstring(game:HttpGet(mainUrl))()
 end)
 
@@ -137,6 +137,8 @@ if not success then
         EnableAntiStunQTE = function() end,
         DisableAntiStunQTE = function() end
     }
+else
+    print("Main.lua успешно загружен!")
 end
 
 -- GUI
@@ -359,5 +361,3 @@ end)
 
 -- Автоматически открываем Main вкладку
 CreateMainContent()
-
-
