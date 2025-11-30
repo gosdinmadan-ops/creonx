@@ -28,8 +28,14 @@ MainModule.RLGL = {
     GodMode = false
 }
 
+MainModule.Guards = {
+    SelectedGuard = "Circle",
+    AutoFarm = false
+}
+
 -- Постоянное обновление скорости
 local speedConnection = nil
+local autoFarmConnection = nil
 
 function MainModule.ToggleSpeedHack(enabled)
     MainModule.SpeedHack.Enabled = enabled
@@ -239,6 +245,51 @@ function MainModule.ToggleGodMode(enabled)
         print("GodMode включен (не реализовано)")
     else
         print("GodMode выключен (не реализовано)")
+    end
+end
+
+-- Guards функции
+function MainModule.SetGuardType(guardType)
+    MainModule.Guards.SelectedGuard = guardType
+    print("Выбран гвард: " .. guardType)
+end
+
+function MainModule.SpawnAsGuard()
+    local args = {
+        {
+            AttemptToSpawnAsGuard = MainModule.Guards.SelectedGuard
+        }
+    }
+    
+    pcall(function()
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("PlayableGuardRemote"):FireServer(unpack(args))
+        print("Попытка стать гвардом: " .. MainModule.Guards.SelectedGuard)
+    end)
+end
+
+function MainModule.ToggleAutoFarm(enabled)
+    MainModule.Guards.AutoFarm = enabled
+    
+    if autoFarmConnection then
+        autoFarmConnection:Disconnect()
+        autoFarmConnection = nil
+    end
+    
+    if enabled then
+        autoFarmConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if MainModule.Guards.AutoFarm then
+                local args2 = {
+                    "GameOver",
+                    4450
+                }
+                pcall(function()
+                    game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("VideoGameRemote"):FireServer(unpack(args2))
+                end)
+            end
+        end)
+        print("AutoFarm включен")
+    else
+        print("AutoFarm выключен")
     end
 end
 
