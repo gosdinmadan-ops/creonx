@@ -29,6 +29,16 @@ if not mainSuccess then
     MainModule = {}
 end
 
+local SkySquidModule
+local skySuccess, skyErr = pcall(function()
+    SkySquidModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/gosdinmadan-ops/creonx/main/sky.lua"))()
+end)
+
+if not skySuccess then
+    warn("Не удалось загрузить sky.lua: " .. tostring(skyErr))
+    SkySquidModule = {}
+end
+
 local KillauraModule
 local killSuccess, killErr = pcall(function()
     KillauraModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/gosdinmadan-ops/creonx/main/killaura.lua"))()
@@ -1055,4 +1065,3 @@ ScreenGui.AncestryChanged:Connect(function()
 end)
 
 print("Creon X v2.1 загружен...")
-
