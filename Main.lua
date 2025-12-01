@@ -1,3 +1,4 @@
+-- Main.lua - Creon X v2.1
 local MainModule = {}
 
 -- Services
@@ -32,7 +33,8 @@ MainModule.Rebel = {
 
 MainModule.RLGL = {
     GodMode = false,
-    OriginalHeight = nil
+    OriginalHeight = nil,
+    RemoveInjured = false
 }
 
 MainModule.Guards = {
@@ -43,7 +45,7 @@ MainModule.Guards = {
     HitboxExpander = false,
     OriginalFireRates = {},
     OriginalAmmo = {},
-    OriginalHitboxes = {} -- Для восстановления хитбоксов
+    OriginalHitboxes = {}
 }
 
 MainModule.Dalgona = {
@@ -65,13 +67,19 @@ MainModule.TugOfWar = {
 
 MainModule.GlassBridge = {
     AntiBreak = false,
-    GlassESPEnabled = false
+    GlassESPEnabled = false,
+    GlassPlatform = false,
+    FakeGlassCover = false
 }
 
 MainModule.JumpRope = {
     AntiFail = false,
     TeleportToStart = false,
-    TeleportToEnd = false
+    TeleportToEnd = false,
+    AutoJump = false,
+    FreezeRope = false,
+    SafePlatform = false,
+    AntiFall = false
 }
 
 MainModule.Misc = {
@@ -96,11 +104,12 @@ MainModule.Misc = {
     AntiStunRagdoll = false
 }
 
--- ESP System (оптимизированная без лагов)
+-- ESP System (сильно оптимизированная без лагов)
 MainModule.ESPTable = {}
 MainModule.ESPFolder = nil
-MainModule.ESPUpdateRate = 0.3 -- Больше для оптимизации
+MainModule.ESPUpdateRate = 1.0 -- Очень большое время обновления для оптимизации
 MainModule.LastESPUpdate = 0
+MainModule.ESPConnection = nil
 
 -- HNS шипы
 MainModule.HNSSpikes = {
@@ -108,6 +117,19 @@ MainModule.HNSSpikes = {
     OriginalPositions = {},
     Disabled = false
 }
+
+-- Glass Bridge платформы
+MainModule.GlassBridgePlatforms = {}
+MainModule.GlassBridgeCover = nil
+MainModule.GlassBridgeAntiFallPlatform = nil
+
+-- Jump Rope платформы
+MainModule.JumpRopePlatform = nil
+MainModule.JumpRopeAntiFallPlatform = nil
+MainModule.JumpRopeFreezeConnection = nil
+
+-- RLGL объекты
+MainModule.RLGLObjects = {}
 
 -- Постоянные соединения
 local speedConnection = nil
@@ -121,7 +143,6 @@ local infiniteAmmoConnection = nil
 local hitboxConnection = nil
 local autoPullConnection = nil
 local antiBreakConnection = nil
-local espConnection = nil
 local hnsAutoPickupConnection = nil
 local hnsSpikesKillConnection = nil
 local hnsKillHidersConnection = nil
@@ -129,34 +150,26 @@ local hnsDisableSpikesConnection = nil
 local jumpRopeAntiFailConnection = nil
 local glassBridgeESPConnection = nil
 local antiStunRagdollConnection = nil
+local rlglRemoveInjuredConnection = nil
+local jumpRopeAutoJumpConnection = nil
+local jumpRopeAntiFallConnection = nil
 
 -- Локальный игрок
 local LocalPlayer = Players.LocalPlayer
 
--- Функция для получения расстояния
-local function GetDistanceFromCharacter(object)
-    local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then
-        return 0
-    end
-    
-    local objectPosition = object.PrimaryPart and object.PrimaryPart.Position or object.Position
-    return math.floor((character.HumanoidRootPart.Position - objectPosition).Magnitude)
-end
-
--- Оптимизированная ESP System (без лагов)
+-- Оптимизированная ESP System (без лагов, обновление каждые 1+ секунд)
 function MainModule.ToggleESP(enabled)
     MainModule.Misc.ESPEnabled = enabled
     
-    if espConnection then
-        espConnection:Disconnect()
-        espConnection = nil
+    if MainModule.ESPConnection then
+        MainModule.ESPConnection:Disconnect()
+        MainModule.ESPConnection = nil
     end
     
     -- Очищаем старые ESP
     for _, esp in pairs(MainModule.ESPTable) do
         if esp and esp.Destroy then
-            esp:Destroy()
+            pcall(function() esp:Destroy() end)
         end
     end
     MainModule.ESPTable = {}
@@ -173,236 +186,82 @@ function MainModule.ToggleESP(enabled)
         MainModule.ESPFolder.Name = "CreonESP"
         MainModule.ESPFolder.Parent = Workspace
         
-        -- Оптимизированное обновление ESP
-        espConnection = RunService.RenderStepped:Connect(function()
+        -- Сильно оптимизированное обновление ESP (1 раз в секунду)
+        MainModule.ESPConnection = RunService.Heartbeat:Connect(function()
             local currentTime = tick()
             if currentTime - MainModule.LastESPUpdate < MainModule.ESPUpdateRate then
                 return
             end
             MainModule.LastESPUpdate = currentTime
             
-            -- Обновляем ESP раз в 0.3 секунды для оптимизации
+            -- Обновляем ESP только раз в 1 секунду для оптимизации
             pcall(function()
                 -- Очищаем старые ESP
                 for _, esp in pairs(MainModule.ESPTable) do
                     if esp and esp.Destroy then
-                        esp:Destroy()
+                        pcall(function() esp:Destroy() end)
                     end
                 end
                 MainModule.ESPTable = {}
                 
-                -- ESP для игроков
+                -- ESP для игроков (только живые)
                 if MainModule.Misc.ESPPlayers then
                     for _, player in pairs(Players:GetPlayers()) do
-                        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") then
-                            local humanoid = player.Character.Humanoid
-                            if humanoid.Health > 0 then
-                                local highlight = Instance.new("Highlight")
-                                highlight.Name = "ESP_Highlight"
-                                highlight.Adornee = player.Character
-                                highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                                highlight.FillColor = Color3.fromRGB(0, 170, 255)
-                                highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
-                                highlight.OutlineColor = Color3.fromRGB(0, 170, 255)
-                                highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
-                                highlight.Enabled = MainModule.Misc.ESPHighlight and MainModule.Misc.ESPBoxes
-                                highlight.Parent = player.Character
-                                
-                                local billboard = Instance.new("BillboardGui")
-                                billboard.Name = "ESP_Billboard"
-                                billboard.Adornee = player.Character:FindFirstChild("HumanoidRootPart") or player.Character.PrimaryPart
-                                billboard.AlwaysOnTop = true
-                                billboard.Size = UDim2.new(0, 200, 0, 50)
-                                billboard.StudsOffset = Vector3.new(0, 3, 0)
-                                billboard.Parent = MainModule.ESPFolder
-                                
-                                local textLabel = Instance.new("TextLabel")
-                                textLabel.Name = "ESP_Text"
-                                textLabel.BackgroundTransparency = 1
-                                textLabel.Size = UDim2.new(1, 0, 1, 0)
-                                textLabel.Text = player.DisplayName .. " [HP: " .. math.floor(humanoid.Health) .. "]"
-                                textLabel.TextColor3 = Color3.fromRGB(0, 170, 255)
-                                textLabel.TextSize = MainModule.Misc.ESPTextSize
-                                textLabel.Font = Enum.Font.GothamBold
-                                textLabel.TextStrokeTransparency = 0.3
-                                textLabel.Parent = billboard
-                                
-                                -- Сохраняем в таблицу
-                                MainModule.ESPTable[player] = {
-                                    Highlight = highlight,
-                                    Billboard = billboard,
-                                    TextLabel = textLabel,
-                                    Destroy = function()
-                                        if highlight then highlight:Destroy() end
-                                        if billboard then billboard:Destroy() end
-                                    end
-                                }
-                            end
-                        end
-                    end
-                end
-                
-                -- ESP для HNS (Hiders и Seekers)
-                if MainModule.Misc.ESPHiders or MainModule.Misc.ESPSeekers then
-                    for _, player in pairs(Players:GetPlayers()) do
                         if player ~= LocalPlayer and player.Character then
-                            local isHider = player:GetAttribute("IsHider")
-                            local isHunter = player:GetAttribute("IsHunter")
-                            
-                            if (isHider and MainModule.Misc.ESPHiders) or (isHunter and MainModule.Misc.ESPSeekers) then
-                                local color = isHider and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-                                local text = player.DisplayName .. (isHider and " (Hider)" or " (Seeker)")
+                            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+                            if humanoid and humanoid.Health > 0 then
+                                -- Только подсветка для оптимизации
+                                if MainModule.Misc.ESPHighlight and MainModule.Misc.ESPBoxes then
+                                    local highlight = Instance.new("Highlight")
+                                    highlight.Name = "ESP_Highlight"
+                                    highlight.Adornee = player.Character
+                                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                                    highlight.FillColor = Color3.fromRGB(0, 170, 255)
+                                    highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+                                    highlight.OutlineColor = Color3.fromRGB(0, 170, 255)
+                                    highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+                                    highlight.Parent = MainModule.ESPFolder
+                                    
+                                    MainModule.ESPTable[player] = {
+                                        Highlight = highlight,
+                                        Destroy = function()
+                                            if highlight then highlight:Destroy() end
+                                        end
+                                    }
+                                end
                                 
-                                local highlight = Instance.new("Highlight")
-                                highlight.Name = "ESP_Highlight"
-                                highlight.Adornee = player.Character
-                                highlight.FillColor = color
-                                highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
-                                highlight.OutlineColor = color
-                                highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
-                                highlight.Enabled = MainModule.Misc.ESPHighlight and MainModule.Misc.ESPBoxes
-                                highlight.Parent = player.Character
-                                
-                                local billboard = Instance.new("BillboardGui")
-                                billboard.Name = "ESP_Billboard"
-                                billboard.Adornee = player.Character:FindFirstChild("HumanoidRootPart") or player.Character.PrimaryPart
-                                billboard.AlwaysOnTop = true
-                                billboard.Size = UDim2.new(0, 200, 0, 50)
-                                billboard.StudsOffset = Vector3.new(0, 3, 0)
-                                billboard.Parent = MainModule.ESPFolder
-                                
-                                local textLabel = Instance.new("TextLabel")
-                                textLabel.Name = "ESP_Text"
-                                textLabel.BackgroundTransparency = 1
-                                textLabel.Size = UDim2.new(1, 0, 1, 0)
-                                textLabel.Text = text
-                                textLabel.TextColor3 = color
-                                textLabel.TextSize = MainModule.Misc.ESPTextSize
-                                textLabel.Font = Enum.Font.GothamBold
-                                textLabel.TextStrokeTransparency = 0.3
-                                textLabel.Parent = billboard
-                                
-                                MainModule.ESPTable[player .. "_hns"] = {
-                                    Highlight = highlight,
-                                    Billboard = billboard,
-                                    TextLabel = textLabel,
-                                    Destroy = function()
-                                        if highlight then highlight:Destroy() end
-                                        if billboard then billboard:Destroy() end
+                                -- Billboard только если нужно
+                                if MainModule.Misc.ESPNames then
+                                    local billboard = Instance.new("BillboardGui")
+                                    billboard.Name = "ESP_Billboard"
+                                    local root = player.Character:FindFirstChild("HumanoidRootPart") or player.Character.PrimaryPart
+                                    if root then
+                                        billboard.Adornee = root
+                                        billboard.AlwaysOnTop = true
+                                        billboard.Size = UDim2.new(0, 200, 0, 50)
+                                        billboard.StudsOffset = Vector3.new(0, 3, 0)
+                                        billboard.Parent = MainModule.ESPFolder
+                                        
+                                        local textLabel = Instance.new("TextLabel")
+                                        textLabel.Name = "ESP_Text"
+                                        textLabel.BackgroundTransparency = 1
+                                        textLabel.Size = UDim2.new(1, 0, 1, 0)
+                                        textLabel.Text = player.DisplayName .. " [HP: " .. math.floor(humanoid.Health) .. "]"
+                                        textLabel.TextColor3 = Color3.fromRGB(0, 170, 255)
+                                        textLabel.TextSize = MainModule.Misc.ESPTextSize
+                                        textLabel.Font = Enum.Font.GothamBold
+                                        textLabel.TextStrokeTransparency = 0.3
+                                        textLabel.Parent = billboard
+                                        
+                                        MainModule.ESPTable[player .. "_text"] = {
+                                            Billboard = billboard,
+                                            Destroy = function()
+                                                if billboard then billboard:Destroy() end
+                                            end
+                                        }
                                     end
-                                }
+                                end
                             end
-                        end
-                    end
-                end
-                
-                -- ESP для конфет
-                if MainModule.Misc.ESPCandies then
-                    for _, obj in pairs(Workspace:GetDescendants()) do
-                        if obj:IsA("Model") and obj.Name:lower():find("candy") and obj.PrimaryPart then
-                            local billboard = Instance.new("BillboardGui")
-                            billboard.Name = "ESP_Billboard"
-                            billboard.Adornee = obj.PrimaryPart
-                            billboard.AlwaysOnTop = true
-                            billboard.Size = UDim2.new(0, 200, 0, 50)
-                            billboard.StudsOffset = Vector3.new(0, 2, 0)
-                            billboard.Parent = MainModule.ESPFolder
-                            
-                            local textLabel = Instance.new("TextLabel")
-                            textLabel.Name = "ESP_Text"
-                            textLabel.BackgroundTransparency = 1
-                            textLabel.Size = UDim2.new(1, 0, 1, 0)
-                            textLabel.Text = "Candy"
-                            textLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
-                            textLabel.TextSize = MainModule.Misc.ESPTextSize
-                            textLabel.Font = Enum.Font.GothamBold
-                            textLabel.TextStrokeTransparency = 0.3
-                            textLabel.Parent = billboard
-                            
-                            MainModule.ESPTable[obj] = {
-                                Billboard = billboard,
-                                Destroy = function()
-                                    if billboard then billboard:Destroy() end
-                                end
-                            }
-                        end
-                    end
-                end
-                
-                -- ESP для ключей
-                if MainModule.Misc.ESPKeys then
-                    for _, obj in pairs(Workspace:GetDescendants()) do
-                        if obj:IsA("Model") and obj.Name:lower():find("key") and obj.PrimaryPart then
-                            local billboard = Instance.new("BillboardGui")
-                            billboard.Name = "ESP_Billboard"
-                            billboard.Adornee = obj.PrimaryPart
-                            billboard.AlwaysOnTop = true
-                            billboard.Size = UDim2.new(0, 200, 0, 50)
-                            billboard.StudsOffset = Vector3.new(0, 2, 0)
-                            billboard.Parent = MainModule.ESPFolder
-                            
-                            local textLabel = Instance.new("TextLabel")
-                            textLabel.Name = "ESP_Text"
-                            textLabel.BackgroundTransparency = 1
-                            textLabel.Size = UDim2.new(1, 0, 1, 0)
-                            textLabel.Text = "Key"
-                            textLabel.TextColor3 = Color3.fromRGB(255, 165, 0)
-                            textLabel.TextSize = MainModule.Misc.ESPTextSize
-                            textLabel.Font = Enum.Font.GothamBold
-                            textLabel.TextStrokeTransparency = 0.3
-                            textLabel.Parent = billboard
-                            
-                            MainModule.ESPTable[obj] = {
-                                Billboard = billboard,
-                                Destroy = function()
-                                    if billboard then billboard:Destroy() end
-                                end
-                            }
-                        end
-                    end
-                end
-                
-                -- ESP для охранников
-                if MainModule.Misc.ESPGuards then
-                    for _, obj in pairs(Workspace:GetDescendants()) do
-                        if obj:IsA("Model") and obj.Name:lower():find("guard") and obj:FindFirstChild("HumanoidRootPart") then
-                            local highlight = Instance.new("Highlight")
-                            highlight.Name = "ESP_Highlight"
-                            highlight.Adornee = obj
-                            highlight.FillColor = Color3.fromRGB(255, 0, 0)
-                            highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
-                            highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
-                            highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
-                            highlight.Enabled = MainModule.Misc.ESPHighlight and MainModule.Misc.ESPBoxes
-                            highlight.Parent = obj
-                            
-                            local billboard = Instance.new("BillboardGui")
-                            billboard.Name = "ESP_Billboard"
-                            billboard.Adornee = obj.HumanoidRootPart
-                            billboard.AlwaysOnTop = true
-                            billboard.Size = UDim2.new(0, 200, 0, 50)
-                            billboard.StudsOffset = Vector3.new(0, 3, 0)
-                            billboard.Parent = MainModule.ESPFolder
-                            
-                            local textLabel = Instance.new("TextLabel")
-                            textLabel.Name = "ESP_Text"
-                            textLabel.BackgroundTransparency = 1
-                            textLabel.Size = UDim2.new(1, 0, 1, 0)
-                            textLabel.Text = "Guard"
-                            textLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-                            textLabel.TextSize = MainModule.Misc.ESPTextSize
-                            textLabel.Font = Enum.Font.GothamBold
-                            textLabel.TextStrokeTransparency = 0.3
-                            textLabel.Parent = billboard
-                            
-                            MainModule.ESPTable[obj] = {
-                                Highlight = highlight,
-                                Billboard = billboard,
-                                Destroy = function()
-                                    if highlight then highlight:Destroy() end
-                                    if billboard then billboard:Destroy() end
-                                end
-                            }
                         end
                     end
                 end
@@ -412,7 +271,7 @@ function MainModule.ToggleESP(enabled)
         -- Очищаем все ESP
         for _, esp in pairs(MainModule.ESPTable) do
             if esp and esp.Destroy then
-                esp:Destroy()
+                pcall(function() esp:Destroy() end)
             end
         end
         MainModule.ESPTable = {}
@@ -423,6 +282,418 @@ function MainModule.ToggleESP(enabled)
         end
     end
 end
+
+-- Функция для удаления Injured и Stun объектов
+function MainModule.RemoveInjuredStun()
+    local count = 0
+    
+    -- Проходим по всем объектам в workspace
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        local nameLower = obj.Name:lower()
+        
+        -- Проверяем, содержит ли имя "injuredwalking" или "stun"
+        if nameLower == "injuredwalking" or nameLower == "stun" then
+            pcall(function() obj:Destroy() end)
+            count += 1
+        end
+    end
+    
+    return count
+end
+
+-- Toggle для постоянного удаления Injured/Stun
+function MainModule.ToggleRemoveInjured(enabled)
+    MainModule.RLGL.RemoveInjured = enabled
+    
+    if rlglRemoveInjuredConnection then
+        rlglRemoveInjuredConnection:Disconnect()
+        rlglRemoveInjuredConnection = nil
+    end
+    
+    if enabled then
+        rlglRemoveInjuredConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.RLGL.RemoveInjured then return end
+            
+            pcall(function()
+                -- Ищем и удаляем Injured/Stun каждые 0.5 секунд
+                for _, obj in ipairs(Workspace:GetDescendants()) do
+                    local nameLower = obj.Name:lower()
+                    if nameLower == "injuredwalking" or nameLower == "stun" then
+                        obj:Destroy()
+                    end
+                end
+            end)
+        end)
+    end
+end
+
+-- Jump Rope функции
+function MainModule.TeleportToJumpRopeStart()
+    local player = LocalPlayer
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = CFrame.new(615.284424, 192.274277, 920.952515)
+    end
+end
+
+function MainModule.TeleportToJumpRopeEnd()
+    local player = LocalPlayer
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = CFrame.new(737.156372, 193.805084, 920.952515)
+    end
+end
+
+function MainModule.DeleteJumpRope()
+    if Workspace:FindFirstChild("Effects") then
+        local rope = Workspace.Effects:FindFirstChild("rope")
+        if rope then
+            rope:Destroy()
+        end
+    end
+end
+
+function MainModule.ToggleAutoJump(enabled)
+    MainModule.JumpRope.AutoJump = enabled
+    
+    if jumpRopeAutoJumpConnection then
+        jumpRopeAutoJumpConnection:Disconnect()
+        jumpRopeAutoJumpConnection = nil
+    end
+    
+    if enabled then
+        jumpRopeAutoJumpConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.JumpRope.AutoJump then return end
+            
+            pcall(function()
+                local character = LocalPlayer.Character
+                if not character then return end
+                
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if not humanoid or humanoid.Health <= 0 then return end
+                
+                local rootPart = character:FindFirstChild("HumanoidRootPart")
+                if not rootPart then return end
+                
+                -- Проверяем позицию для автоматического прыжка
+                if rootPart.Position.Y > 190 and rootPart.Position.Y < 210 then
+                    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end)
+        end)
+    end
+end
+
+function MainModule.ToggleFreezeRope(enabled)
+    MainModule.JumpRope.FreezeRope = enabled
+    
+    if MainModule.JumpRopeFreezeConnection then
+        MainModule.JumpRopeFreezeConnection:Disconnect()
+        MainModule.JumpRopeFreezeConnection = nil
+    end
+    
+    if enabled then
+        MainModule.JumpRopeFreezeConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.JumpRope.FreezeRope then return end
+            
+            pcall(function()
+                local rope = Workspace:FindFirstChild("Effects") and Workspace.Effects:FindFirstChild("rope")
+                if rope then
+                    for _, v in ipairs(rope:GetDescendants()) do
+                        if v:IsA("BasePart") then
+                            v.Anchored = true
+                            v.Velocity = Vector3.zero
+                            v.RotVelocity = Vector3.zero
+                        elseif v:IsA("Constraint") or v:IsA("RopeConstraint") or v:IsA("Motor6D") then
+                            v.Enabled = false
+                        end
+                    end
+                end
+            end)
+        end)
+    else
+        -- Размораживаем веревку
+        pcall(function()
+            local rope = Workspace:FindFirstChild("Effects") and Workspace.Effects:FindFirstChild("rope")
+            if rope then
+                for _, v in ipairs(rope:GetDescendants()) do
+                    if v:IsA("BasePart") then
+                        v.Anchored = false
+                    elseif v:IsA("Constraint") or v:IsA("RopeConstraint") or v:IsA("Motor6D") then
+                        v.Enabled = true
+                    end
+                end
+            end
+        end)
+    end
+end
+
+function MainModule.ToggleAntiFailJumpRope(enabled)
+    MainModule.JumpRope.AntiFail = enabled
+    
+    if jumpRopeAntiFailConnection then
+        jumpRopeAntiFailConnection:Disconnect()
+        jumpRopeAntiFailConnection = nil
+    end
+    
+    if enabled then
+        jumpRopeAntiFailConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.JumpRope.AntiFail then return end
+            
+            pcall(function()
+                -- Удаляем объекты FailDetection
+                for _, obj in pairs(Workspace:GetDescendants()) do
+                    if obj.Name == "FailDetection" or obj.Name:lower():find("fail") then
+                        obj:Destroy()
+                    end
+                end
+            end)
+        end)
+    end
+end
+
+function MainModule.ToggleJumpRopeAntiFall(enabled)
+    MainModule.JumpRope.AntiFall = enabled
+    
+    if jumpRopeAntiFallConnection then
+        jumpRopeAntiFallConnection:Disconnect()
+        jumpRopeAntiFallConnection = nil
+    end
+    
+    if enabled then
+        jumpRopeAntiFallConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.JumpRope.AntiFall then return end
+            
+            pcall(function()
+                local character = LocalPlayer.Character
+                if not character then return end
+                
+                local rootPart = character:FindFirstChild("HumanoidRootPart")
+                if not rootPart then return end
+                
+                -- Анти-падение для Jump Rope
+                if rootPart.Position.Y < 190 then
+                    rootPart.CFrame = CFrame.new(720.896057, 198.628311, 921.170654)
+                end
+            end)
+        end)
+    end
+end
+
+function MainModule.ToggleJumpRopeSafePlatform(enabled)
+    MainModule.JumpRope.SafePlatform = enabled
+    
+    if MainModule.JumpRopePlatform then
+        MainModule.JumpRopePlatform:Destroy()
+        MainModule.JumpRopePlatform = nil
+    end
+    
+    if enabled then
+        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local HRP = character:WaitForChild("HumanoidRootPart")
+        
+        MainModule.JumpRopePlatform = Instance.new("Part")
+        MainModule.JumpRopePlatform.Name = "JumpRopePlatform"
+        MainModule.JumpRopePlatform.Size = Vector3.new(50, 1, 50)
+        MainModule.JumpRopePlatform.Anchored = true
+        MainModule.JumpRopePlatform.CanCollide = true
+        MainModule.JumpRopePlatform.Transparency = 0.6
+        MainModule.JumpRopePlatform.Material = Enum.Material.Neon
+        MainModule.JumpRopePlatform.Color = Color3.fromRGB(0, 255, 0)
+        MainModule.JumpRopePlatform.Position = Vector3.new(720.896057, 192, 921.170654)
+        MainModule.JumpRopePlatform.Parent = Workspace
+    end
+end
+
+-- Glass Bridge функции
+function MainModule.TeleportToGlassBridgeEnd()
+    local player = LocalPlayer
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = CFrame.new(-196.372467, 522.192139, -1534.20984)
+    end
+end
+
+function MainModule.ToggleAntiBreak(enabled)
+    MainModule.GlassBridge.AntiBreak = enabled
+    
+    if antiBreakConnection then
+        antiBreakConnection:Disconnect()
+        antiBreakConnection = nil
+    end
+    
+    if enabled then
+        antiBreakConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.GlassBridge.AntiBreak then return end
+            
+            pcall(function()
+                local GlassHolder = Workspace:FindFirstChild("GlassBridge") and Workspace.GlassBridge:FindFirstChild("GlassHolder")
+                if not GlassHolder then return end
+                
+                -- Создаем защитные платформы под стеклами
+                for _, v in pairs(GlassHolder:GetChildren()) do
+                    for _, j in pairs(v:GetChildren()) do
+                        if j:IsA("Model") and j.PrimaryPart then
+                            -- Удаляем атрибут ломания
+                            if j.PrimaryPart:GetAttribute("exploitingisevil") ~= nil then
+                                j.PrimaryPart:SetAttribute("exploitingisevil", nil)
+                            end
+                            
+                            -- Создаем защитную платформу под стеклом
+                            local platformExists = false
+                            for _, platform in pairs(MainModule.GlassBridgePlatforms) do
+                                if platform and platform.Parent and platform.Name == "GlassBridgeProtection_" .. j.Name then
+                                    platformExists = true
+                                    break
+                                end
+                            end
+                            
+                            if not platformExists then
+                                local protection = Instance.new("Part")
+                                protection.Name = "GlassBridgeProtection_" .. j.Name
+                                protection.Size = Vector3.new(10, 2, 10)
+                                protection.CFrame = j.PrimaryPart.CFrame * CFrame.new(0, -3, 0)
+                                protection.Anchored = true
+                                protection.CanCollide = true
+                                protection.Transparency = 0.8
+                                protection.Material = Enum.Material.Neon
+                                protection.Color = Color3.fromRGB(0, 255, 0)
+                                protection.Parent = Workspace
+                                table.insert(MainModule.GlassBridgePlatforms, protection)
+                            end
+                        end
+                    end
+                end
+            end)
+        end)
+    else
+        -- Удаляем защитные платформы
+        for _, platform in pairs(MainModule.GlassBridgePlatforms) do
+            if platform and platform.Parent then
+                platform:Destroy()
+            end
+        end
+        MainModule.GlassBridgePlatforms = {}
+    end
+end
+
+function MainModule.ToggleGlassBridgeESP(enabled)
+    MainModule.GlassBridge.GlassESPEnabled = enabled
+    
+    if glassBridgeESPConnection then
+        glassBridgeESPConnection:Disconnect()
+        glassBridgeESPConnection = nil
+    end
+    
+    if enabled then
+        local function updateGlassESP()
+            pcall(function()
+                local glassHolder = Workspace:FindFirstChild("GlassBridge") and Workspace.GlassBridge:FindFirstChild("GlassHolder")
+                if not glassHolder then return end
+
+                for _, tilePair in pairs(glassHolder:GetChildren()) do
+                    for _, tileModel in pairs(tilePair:GetChildren()) do
+                        if tileModel:IsA("Model") and tileModel.PrimaryPart then
+                            local isBreakable = tileModel.PrimaryPart:GetAttribute("exploitingisevil") == true
+                            local targetColor = isBreakable and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
+
+                            for _, part in pairs(tileModel:GetDescendants()) do
+                                if part:IsA("BasePart") then
+                                    part.Color = targetColor
+                                    part.Transparency = 0.5
+                                    part.Material = Enum.Material.Neon
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+        
+        -- Однократное применение ESP
+        updateGlassESP()
+    else
+        -- Восстанавливаем оригинальный вид
+        pcall(function()
+            local glassHolder = Workspace:FindFirstChild("GlassBridge") and Workspace.GlassBridge:FindFirstChild("GlassHolder")
+            if not glassHolder then return end
+
+            for _, tilePair in pairs(glassHolder:GetChildren()) do
+                for _, tileModel in pairs(tilePair:GetChildren()) do
+                    if tileModel:IsA("Model") and tileModel.PrimaryPart then
+                        for _, part in pairs(tileModel:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                part.Color = Color3.fromRGB(163, 162, 165)
+                                part.Transparency = 0
+                                part.Material = Enum.Material.Glass
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end
+
+function MainModule.ToggleGlassBridgePlatform(enabled)
+    MainModule.GlassBridge.GlassPlatform = enabled
+    
+    if enabled then
+        -- Создаем защитную платформу под всем мостом
+        if MainModule.GlassBridgeAntiFallPlatform then
+            MainModule.GlassBridgeAntiFallPlatform:Destroy()
+        end
+        
+        MainModule.GlassBridgeAntiFallPlatform = Instance.new("Part")
+        MainModule.GlassBridgeAntiFallPlatform.Name = "GlassBridgeAntiFallPlatform"
+        MainModule.GlassBridgeAntiFallPlatform.Size = Vector3.new(200, 5, 200)
+        MainModule.GlassBridgeAntiFallPlatform.Position = Vector3.new(-200, 510, -1534)
+        MainModule.GlassBridgeAntiFallPlatform.Anchored = true
+        MainModule.GlassBridgeAntiFallPlatform.CanCollide = true
+        MainModule.GlassBridgeAntiFallPlatform.Transparency = 0.7
+        MainModule.GlassBridgeAntiFallPlatform.Material = Enum.Material.Neon
+        MainModule.GlassBridgeAntiFallPlatform.Color = Color3.fromRGB(0, 0, 255)
+        MainModule.GlassBridgeAntiFallPlatform.Parent = Workspace
+    else
+        if MainModule.GlassBridgeAntiFallPlatform then
+            MainModule.GlassBridgeAntiFallPlatform:Destroy()
+            MainModule.GlassBridgeAntiFallPlatform = nil
+        end
+    end
+end
+
+function MainModule.CreateGlassBridgeCover()
+    if MainModule.GlassBridgeCover then
+        MainModule.GlassBridgeCover:Destroy()
+        MainModule.GlassBridgeCover = nil
+    end
+    
+    local glassHolder = Workspace:FindFirstChild("GlassBridge") and Workspace.GlassBridge:FindFirstChild("GlassHolder")
+    if not glassHolder then return end
+
+    -- Создаем защитное покрытие
+    MainModule.GlassBridgeCover = Instance.new("Part")
+    MainModule.GlassBridgeCover.Name = "GlassBridgeCover"
+    MainModule.GlassBridgeCover.Size = Vector3.new(150, 0.5, 150)
+    MainModule.GlassBridgeCover.Position = Vector3.new(-200, 525, -1534)
+    MainModule.GlassBridgeCover.Anchored = true
+    MainModule.GlassBridgeCover.CanCollide = true
+    MainModule.GlassBridgeCover.Transparency = 0.5
+    MainModule.GlassBridgeCover.Material = Enum.Material.SmoothPlastic
+    MainModule.GlassBridgeCover.Color = Color3.fromRGB(100, 100, 255)
+    MainModule.GlassBridgeCover.Parent = Workspace
+    
+    MainModule.GlassBridge.FakeGlassCover = true
+end
+
+function MainModule.RemoveGlassBridgeCover()
+    if MainModule.GlassBridgeCover then
+        MainModule.GlassBridgeCover:Destroy()
+        MainModule.GlassBridgeCover = nil
+    end
+    
+    MainModule.GlassBridge.FakeGlassCover = false
+end
+
+-- Остальные функции остаются без изменений (Speed, Guards, HNS, Dalgona, etc.)
+-- ...
 
 -- Функции скорости
 function MainModule.ToggleSpeedHack(enabled)
@@ -769,7 +1040,7 @@ function MainModule.ToggleInfiniteAmmo(enabled)
     end
 end
 
--- Hitbox Expander функция (ИСПРАВЛЕНА - изменяет тело, а не голову)
+-- Hitbox Expander функция
 function MainModule.ToggleHitboxExpander(enabled)
     MainModule.Guards.HitboxExpander = enabled
     
@@ -796,7 +1067,7 @@ function MainModule.ToggleHitboxExpander(enabled)
     end
     
     if enabled then
-        local HITBOX_SIZE = 1000 -- Очень большой размер для хитбокса
+        local HITBOX_SIZE = 1000
         
         hitboxConnection = RunService.RenderStepped:Connect(function()
             if not MainModule.Guards.HitboxExpander then return end
@@ -825,9 +1096,9 @@ function MainModule.ToggleHitboxExpander(enabled)
                             if part and part:IsA("BasePart") then
                                 -- Увеличиваем размер до HITBOX_SIZE
                                 part.Size = Vector3.new(HITBOX_SIZE, HITBOX_SIZE, HITBOX_SIZE)
-                                -- Делаем полностью прозрачным чтобы не было заметно
+                                -- Делаем полностью прозрачным
                                 part.Transparency = 1
-                                -- Отключаем коллизию чтобы не мешать
+                                -- Отключаем коллизию
                                 part.CanCollide = false
                             end
                         end
@@ -1019,7 +1290,7 @@ function MainModule.ToggleDisableSpikes(enabled)
                     if spike:IsA("BasePart") then
                         table.insert(MainModule.HNSSpikes.Positions, spike.Position)
                         MainModule.HNSSpikes.OriginalPositions[spike] = spike.Position
-                        spike:Destroy() -- Удаляем шипы
+                        spike:Destroy()
                     end
                 end
             end
@@ -1121,7 +1392,6 @@ end
 
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.HNS.AutoDodge = enabled
-    -- Временно не реализовано
 end
 
 -- Tug Of War функции
@@ -1145,117 +1415,6 @@ function MainModule.ToggleAutoPull(enabled)
                 end)
                 task.wait(0.25)
             end
-        end)
-    end
-end
-
--- Glass Bridge функции
-function MainModule.ToggleAntiBreak(enabled)
-    MainModule.GlassBridge.AntiBreak = enabled
-    
-    if antiBreakConnection then
-        antiBreakConnection:Disconnect()
-        antiBreakConnection = nil
-    end
-    
-    if enabled then
-        antiBreakConnection = RunService.Heartbeat:Connect(function()
-            if not MainModule.GlassBridge.AntiBreak then return end
-            
-            pcall(function()
-                local GlassHolder = Workspace:FindFirstChild("GlassBridge") and Workspace.GlassBridge:FindFirstChild("GlassHolder")
-                if not GlassHolder then return end
-                for _, v in pairs(GlassHolder:GetChildren()) do
-                    for _, j in pairs(v:GetChildren()) do
-                        if j:IsA("Model") and j.PrimaryPart then
-                            if j.PrimaryPart:GetAttribute("exploitingisevil") ~= nil then
-                                j.PrimaryPart:SetAttribute("exploitingisevil", nil)
-                            end
-                        end
-                    end
-                end
-            end)
-        end)
-    end
-end
-
-function MainModule.ToggleGlassBridgeESP(enabled)
-    MainModule.GlassBridge.GlassESPEnabled = enabled
-    
-    if glassBridgeESPConnection then
-        glassBridgeESPConnection:Disconnect()
-        glassBridgeESPConnection = nil
-    end
-    
-    if enabled then
-        glassBridgeESPConnection = RunService.Heartbeat:Connect(function()
-            if not MainModule.GlassBridge.GlassESPEnabled then return end
-            
-            pcall(function()
-                local glassHolder = Workspace:FindFirstChild("GlassBridge") and Workspace.GlassBridge:FindFirstChild("GlassHolder")
-                if not glassHolder then return end
-
-                for _, tilePair in pairs(glassHolder:GetChildren()) do
-                    for _, tileModel in pairs(tilePair:GetChildren()) do
-                        if tileModel:IsA("Model") and tileModel.PrimaryPart then
-                            local isBreakable = tileModel.PrimaryPart:GetAttribute("exploitingisevil") == true
-                            local targetColor = isBreakable and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
-
-                            for _, part in pairs(tileModel:GetDescendants()) do
-                                if part:IsA("BasePart") then
-                                    TweenService:Create(part, TweenInfo.new(0.5), {
-                                        Transparency = 0.5,
-                                        Color = targetColor
-                                    }):Play()
-                                end
-                            end
-                        end
-                    end
-                end
-            end)
-        end)
-    end
-end
-
--- Jump Rope функции
-function MainModule.TeleportToJumpRopeStart()
-    local player = LocalPlayer
-    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        player.Character.HumanoidRootPart.CFrame = CFrame.new(700.123, 198.456, 920.789)
-    end
-end
-
-function MainModule.TeleportToJumpRopeEnd()
-    local player = LocalPlayer
-    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        player.Character.HumanoidRootPart.CFrame = CFrame.new(750.654, 198.512, 921.234)
-    end
-end
-
-function MainModule.ToggleAntiFailJumpRope(enabled)
-    MainModule.JumpRope.AntiFail = enabled
-    
-    if jumpRopeAntiFailConnection then
-        jumpRopeAntiFailConnection:Disconnect()
-        jumpRopeAntiFailConnection = nil
-    end
-    
-    if enabled then
-        jumpRopeAntiFailConnection = RunService.Heartbeat:Connect(function()
-            if not MainModule.JumpRope.AntiFail then return end
-            
-            pcall(function()
-                if Workspace:FindFirstChild("Values") then
-                    local currentGame = Workspace.Values:FindFirstChild("CurrentGame")
-                    if currentGame and currentGame.Value == "JumpRope" then
-                        for _, obj in pairs(Workspace:GetDescendants()) do
-                            if obj.Name == "FailDetection" or obj.Name:lower():find("fail") then
-                                obj:Destroy()
-                            end
-                        end
-                    end
-                end
-            end)
         end)
     end
 end
@@ -1331,10 +1490,11 @@ function MainModule.Cleanup()
     local connections = {
         speedConnection, autoFarmConnection, godModeConnection, instaInteractConnection,
         noCooldownConnection, antiStunConnection, rapidFireConnection, infiniteAmmoConnection,
-        hitboxConnection, autoPullConnection, antiBreakConnection, espConnection,
+        hitboxConnection, autoPullConnection, antiBreakConnection, MainModule.ESPConnection,
         hnsAutoPickupConnection, hnsSpikesKillConnection, hnsKillHidersConnection,
         hnsDisableSpikesConnection, jumpRopeAntiFailConnection, glassBridgeESPConnection,
-        antiStunRagdollConnection
+        antiStunRagdollConnection, rlglRemoveInjuredConnection, jumpRopeAutoJumpConnection,
+        jumpRopeAntiFallConnection, MainModule.JumpRopeFreezeConnection
     }
     
     for _, conn in pairs(connections) do
@@ -1375,6 +1535,30 @@ function MainModule.Cleanup()
     if MainModule.HNS.DisableSpikes then
         MainModule.ToggleDisableSpikes(false)
     end
+    
+    -- Удаляем платформы
+    if MainModule.JumpRopePlatform then
+        MainModule.JumpRopePlatform:Destroy()
+        MainModule.JumpRopePlatform = nil
+    end
+    
+    if MainModule.GlassBridgeCover then
+        MainModule.GlassBridgeCover:Destroy()
+        MainModule.GlassBridgeCover = nil
+    end
+    
+    if MainModule.GlassBridgeAntiFallPlatform then
+        MainModule.GlassBridgeAntiFallPlatform:Destroy()
+        MainModule.GlassBridgeAntiFallPlatform = nil
+    end
+    
+    -- Удаляем защитные платформы Glass Bridge
+    for _, platform in pairs(MainModule.GlassBridgePlatforms) do
+        if platform and platform.Parent then
+            platform:Destroy()
+        end
+    end
+    MainModule.GlassBridgePlatforms = {}
 end
 
 -- Автоматическая очистка при выходе
