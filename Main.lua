@@ -45,7 +45,6 @@ MainModule.Dalgona = {
 MainModule.HNS = {
     AutoPickup = false,
     SpikesKill = false,
-    DeleteSpikes = false,
     KillHiders = false,
     AutoDodge = false,
     DisableSpikes = false
@@ -61,7 +60,6 @@ MainModule.GlassBridge = {
 }
 
 MainModule.JumpRope = {
-    AutoJump = false,
     AntiFail = false,
     TeleportToStart = false,
     TeleportToEnd = false
@@ -83,13 +81,24 @@ MainModule.Misc = {
 }
 
 -- ESP System (оптимизированная без лагов)
-MainModule.ESPTable = {}
-MainModule.ESPConnections = {}
+MainModule.ESP = {
+    Table = {},
+    Players = {},
+    Hiders = {},
+    Seekers = {},
+    Guards = {},
+    Keys = {},
+    Doors = {},
+    Items = {},
+    Connections = {},
+    Enabled = false
+}
 
 -- HNS шипы
 MainModule.HNSSpikes = {
     Positions = {},
-    OriginalPositions = {}
+    OriginalPositions = {},
+    DisabledPositions = {}
 }
 
 -- Постоянные соединения
@@ -109,7 +118,6 @@ local hnsAutoPickupConnection = nil
 local hnsSpikesKillConnection = nil
 local hnsKillHidersConnection = nil
 local hnsDisableSpikesConnection = nil
-local jumpRopeConnection = nil
 local jumpRopeAntiFailConnection = nil
 local glassBridgeESPConnection = nil
 local antiStunRagdollConnection = nil
@@ -579,6 +587,312 @@ function MainModule.FreeLighter()
     player:SetAttribute("HasLighter", true)
 end
 
+-- ESP System функции
+function MainModule.ESP.Initialize()
+    MainModule.ESP.Cleanup()
+    
+    local Players = game:GetService("Players")
+    local localPlayer = Players.LocalPlayer
+    
+    -- ESP для игроков
+    MainModule.ESP.Connections["PlayersAdded"] = Players.PlayerAdded:Connect(function(player)
+        MainModule.ESP.AddPlayerESP(player)
+    end)
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        MainModule.ESP.AddPlayerESP(player)
+    end
+    
+    -- ESP для предметов
+    MainModule.ESP.Connections["Workspace"] = workspace.DescendantAdded:Connect(function(obj)
+        if MainModule.ESP.Enabled then
+            MainModule.ESP.CheckObject(obj)
+        end
+    end)
+    
+    -- Проверяем существующие объекты
+    for _, obj in pairs(workspace:GetDescendants()) do
+        MainModule.ESP.CheckObject(obj)
+    end
+end
+
+function MainModule.ESP.AddPlayerESP(player)
+    if player == game:GetService("Players").LocalPlayer then return end
+    
+    MainModule.ESP.Connections["CharacterAdded_"..player.Name] = player.CharacterAdded:Connect(function(char)
+        MainModule.ESP.CreatePlayerESP(player, char)
+    end)
+    
+    if player.Character then
+        MainModule.ESP.CreatePlayerESP(player, player.Character)
+    end
+end
+
+function MainModule.ESP.CreatePlayerESP(player, character)
+    if not MainModule.ESP.Enabled then return end
+    
+    -- Ждем полной загрузки персонажа
+    repeat task.wait() until character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("Humanoid")
+    
+    local espKey = "player_" .. player.Name
+    
+    -- Удаляем старый ESP если есть
+    if MainModule.ESP.Table[espKey] then
+        MainModule.ESP.Table[espKey]:Destroy()
+    end
+    
+    -- Создаем BillboardGui для текста
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESP_" .. player.Name
+    billboard.AlwaysOnTop = true
+    billboard.Size = UDim2.new(0, 200, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.Adornee = character:WaitForChild("HumanoidRootPart")
+    billboard.Parent = character:WaitForChild("HumanoidRootPart")
+    
+    -- Имя игрока
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Name = "Name"
+    nameLabel.Size = UDim2.new(1, 0, 0, 20)
+    nameLabel.Position = UDim2.new(0, 0, 0, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = player.Name
+    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameLabel.TextSize = 14
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    nameLabel.TextStrokeTransparency = 0
+    nameLabel.Parent = billboard
+    
+    -- Дистанция
+    local distanceLabel = Instance.new("TextLabel")
+    distanceLabel.Name = "Distance"
+    distanceLabel.Size = UDim2.new(1, 0, 0, 20)
+    distanceLabel.Position = UDim2.new(0, 0, 0, 20)
+    distanceLabel.BackgroundTransparency = 1
+    distanceLabel.Text = "0 studs"
+    distanceLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    distanceLabel.TextSize = 12
+    distanceLabel.Font = Enum.Font.Gotham
+    distanceLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    distanceLabel.TextStrokeTransparency = 0
+    distanceLabel.Parent = billboard
+    
+    -- Роль (Hider/Seeker/Player)
+    local roleLabel = Instance.new("TextLabel")
+    roleLabel.Name = "Role"
+    roleLabel.Size = UDim2.new(1, 0, 0, 20)
+    roleLabel.Position = UDim2.new(0, 0, 0, 40)
+    roleLabel.BackgroundTransparency = 1
+    roleLabel.Text = "Player"
+    roleLabel.TextColor3 = Color3.fromRGB(180, 180, 255)
+    roleLabel.TextSize = 12
+    roleLabel.Font = Enum.Font.Gotham
+    roleLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    roleLabel.TextStrokeTransparency = 0
+    roleLabel.Parent = billboard
+    
+    -- Highlight для визуализации
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "ESP_Highlight"
+    highlight.Adornee = character
+    highlight.FillColor = Color3.fromRGB(0, 170, 255)
+    highlight.FillTransparency = 0.7
+    highlight.OutlineColor = Color3.fromRGB(0, 170, 255)
+    highlight.OutlineTransparency = 0
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent = character
+    
+    -- Функция обновления
+    local function updateESP()
+        if not character or not character.Parent or not character:FindFirstChild("HumanoidRootPart") then
+            billboard:Destroy()
+            highlight:Destroy()
+            return false
+        end
+        
+        -- Обновляем дистанцию
+        local localPlayer = game:GetService("Players").LocalPlayer
+        local localChar = localPlayer.Character
+        if localChar and localChar:FindFirstChild("HumanoidRootPart") then
+            local distance = (localChar.HumanoidRootPart.Position - character.HumanoidRootPart.Position).Magnitude
+            distanceLabel.Text = math.floor(distance) .. " studs"
+            
+            -- Меняем цвет в зависимости от дистанции
+            if distance < 20 then
+                distanceLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            elseif distance < 50 then
+                distanceLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+            else
+                distanceLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+            end
+        end
+        
+        -- Определяем роль игрока
+        if player:GetAttribute("IsHider") then
+            roleLabel.Text = "Hider"
+            highlight.FillColor = Color3.fromRGB(0, 255, 0) -- Зеленый для хайдеров
+            highlight.OutlineColor = Color3.fromRGB(0, 255, 0)
+            nameLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+        elseif player:GetAttribute("IsHunter") then
+            roleLabel.Text = "Seeker"
+            highlight.FillColor = Color3.fromRGB(255, 0, 0) -- Красный для сикеров
+            highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
+            nameLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        else
+            roleLabel.Text = "Player"
+            highlight.FillColor = Color3.fromRGB(0, 170, 255) -- Синий для обычных игроков
+            highlight.OutlineColor = Color3.fromRGB(0, 170, 255)
+            nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        end
+        
+        -- Проверяем здоровье
+        local humanoid = character:FindFirstChild("Humanoid")
+        if humanoid then
+            if humanoid.Health <= 0 then
+                highlight.FillTransparency = 0.9
+                highlight.OutlineTransparency = 0.5
+                nameLabel.Text = player.Name .. " [DEAD]"
+            else
+                highlight.FillTransparency = 0.7
+                highlight.OutlineTransparency = 0
+                nameLabel.Text = player.Name .. " [" .. math.floor(humanoid.Health) .. " HP]"
+            end
+        end
+        
+        return true
+    end
+    
+    -- Сохраняем ESP объект
+    MainModule.ESP.Table[espKey] = {
+        Billboard = billboard,
+        Highlight = highlight,
+        Update = updateESP,
+        Destroy = function()
+            if billboard and billboard.Parent then
+                billboard:Destroy()
+            end
+            if highlight and highlight.Parent then
+                highlight:Destroy()
+            end
+            MainModule.ESP.Table[espKey] = nil
+        end
+    }
+    
+    -- Запускаем обновление
+    task.spawn(function()
+        while MainModule.ESP.Table[espKey] and MainModule.ESP.Enabled do
+            if not updateESP() then
+                break
+            end
+            task.wait(0.1)
+        end
+    end)
+end
+
+function MainModule.ESP.CheckObject(obj)
+    if obj:IsA("Model") then
+        -- Ключи в HNS
+        if obj.Name:lower():find("key") and obj.PrimaryPart then
+            MainModule.ESP.CreateItemESP(obj, "Key", Color3.fromRGB(255, 255, 0))
+        end
+        
+        -- Двери в HNS
+        if obj.Name == "FullDoorAnimated" and obj.PrimaryPart then
+            MainModule.ESP.CreateItemESP(obj, "Door", Color3.fromRGB(255, 150, 0))
+        end
+        
+        -- Выходные двери
+        if obj.Name == "EXITDOOR" and obj.PrimaryPart and obj:GetAttribute("CANESCAPE") then
+            MainModule.ESP.CreateItemESP(obj, "Exit", Color3.fromRGB(0, 255, 0))
+        end
+    end
+end
+
+function MainModule.ESP.CreateItemESP(obj, type, color)
+    local espKey = "item_" .. obj.Name .. "_" .. obj:GetDebugId()
+    
+    if MainModule.ESP.Table[espKey] then return end
+    
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESP_Item_" .. type
+    billboard.AlwaysOnTop = true
+    billboard.Size = UDim2.new(0, 150, 0, 30)
+    billboard.StudsOffset = Vector3.new(0, 2, 0)
+    billboard.Adornee = obj.PrimaryPart
+    billboard.Parent = obj.PrimaryPart
+    
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(1, 0, 1, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = type
+    nameLabel.TextColor3 = color
+    nameLabel.TextSize = 14
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    nameLabel.TextStrokeTransparency = 0
+    nameLabel.Parent = billboard
+    
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "ESP_Highlight"
+    highlight.Adornee = obj
+    highlight.FillColor = color
+    highlight.FillTransparency = 0.8
+    highlight.OutlineColor = color
+    highlight.OutlineTransparency = 0.3
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent = obj
+    
+    MainModule.ESP.Table[espKey] = {
+        Billboard = billboard,
+        Highlight = highlight,
+        Destroy = function()
+            if billboard and billboard.Parent then
+                billboard:Destroy()
+            end
+            if highlight and highlight.Parent then
+                highlight:Destroy()
+            end
+            MainModule.ESP.Table[espKey] = nil
+        end
+    }
+    
+    -- Удаляем ESP при удалении объекта
+    obj.AncestryChanged:Connect(function()
+        if not obj.Parent then
+            if MainModule.ESP.Table[espKey] then
+                MainModule.ESP.Table[espKey]:Destroy()
+            end
+        end
+    end)
+end
+
+function MainModule.ESP.Cleanup()
+    -- Отключаем все соединения
+    for name, conn in pairs(MainModule.ESP.Connections) do
+        conn:Disconnect()
+    end
+    MainModule.ESP.Connections = {}
+    
+    -- Удаляем все ESP объекты
+    for key, espData in pairs(MainModule.ESP.Table) do
+        if espData and type(espData.Destroy) == "function" then
+            espData:Destroy()
+        end
+    end
+    MainModule.ESP.Table = {}
+end
+
+function MainModule.ESP.Toggle(enabled)
+    MainModule.ESP.Enabled = enabled
+    
+    if enabled then
+        MainModule.ESP.Initialize()
+    else
+        MainModule.ESP.Cleanup()
+    end
+end
+
 -- HNS функции (исправленные)
 function MainModule.ToggleAutoPickup(enabled)
     MainModule.HNS.AutoPickup = enabled
@@ -683,6 +997,10 @@ function MainModule.ToggleSpikesKill(enabled)
                     if spike:IsA("BasePart") then
                         table.insert(MainModule.HNSSpikes.Positions, spike.Position)
                         MainModule.HNSSpikes.OriginalPositions[spike] = spike.Position
+                        
+                        -- Делаем шипы безопасными для нас
+                        spike.CanTouch = false
+                        spike.CanCollide = false
                     end
                 end
             end
@@ -725,7 +1043,7 @@ function MainModule.ToggleSpikesKill(enabled)
                     end
                 end
                 
-                -- Делаем шипы безопасными для нас
+                -- Всегда делаем шипы безопасными для нас
                 local spikes = workspace:FindFirstChild("HideAndSeekMap") and 
                               workspace.HideAndSeekMap:FindFirstChild("KillingParts")
                 
@@ -768,6 +1086,9 @@ function MainModule.ToggleDisableSpikes(enabled)
     end
     
     if enabled then
+        -- Сохраняем позиции отключенных шипов
+        MainModule.HNSSpikes.DisabledPositions = {}
+        
         hnsDisableSpikesConnection = game:GetService("RunService").Heartbeat:Connect(function()
             if not MainModule.HNS.DisableSpikes then return end
             
@@ -778,40 +1099,49 @@ function MainModule.ToggleDisableSpikes(enabled)
                 if spikes then
                     for _, spike in pairs(spikes:GetChildren()) do
                         if spike:IsA("BasePart") then
+                            -- Сохраняем позицию если еще не сохранена
+                            if not MainModule.HNSSpikes.DisabledPositions[spike] then
+                                MainModule.HNSSpikes.DisabledPositions[spike] = spike.Position
+                            end
+                            
+                            -- Отключаем шипы
                             spike.CanTouch = false
                             spike.CanCollide = false
                             spike.Transparency = 0.8
+                            
+                            -- Делаем невидимыми
+                            for _, child in pairs(spike:GetChildren()) do
+                                if child:IsA("Decal") or child:IsA("Texture") then
+                                    child.Transparency = 0.8
+                                end
+                            end
                         end
                     end
                 end
             end)
         end)
     else
+        -- Восстанавливаем шипы
         pcall(function()
             local spikes = workspace:FindFirstChild("HideAndSeekMap") and 
                           workspace.HideAndSeekMap:FindFirstChild("KillingParts")
             
             if spikes then
-                for _, spike in pairs(spikes:GetChildren()) do
-                    if spike:IsA("BasePart") then
+                for spike, originalPos in pairs(MainModule.HNSSpikes.DisabledPositions) do
+                    if spike and spike.Parent then
                         spike.CanTouch = true
                         spike.CanCollide = true
                         spike.Transparency = 0
+                        
+                        for _, child in pairs(spike:GetChildren()) do
+                            if child:IsA("Decal") or child:IsA("Texture") then
+                                child.Transparency = 0
+                            end
+                        end
                     end
                 end
             end
-        end)
-    end
-end
-
-function MainModule.ToggleDeleteSpikes(enabled)
-    MainModule.HNS.DeleteSpikes = enabled
-    
-    if enabled then
-        pcall(function()
-            if workspace:FindFirstChild("HideAndSeekMap") and workspace.HideAndSeekMap:FindFirstChild("KillingParts") then
-                workspace.HideAndSeekMap.KillingParts:ClearAllChildren()
-            end
+            MainModule.HNSSpikes.DisabledPositions = {}
         end)
     end
 end
@@ -1019,34 +1349,6 @@ function MainModule.TeleportToJumpRopeEnd()
     end
 end
 
-function MainModule.ToggleAutoJump(enabled)
-    MainModule.JumpRope.AutoJump = enabled
-    
-    if jumpRopeConnection then
-        jumpRopeConnection:Disconnect()
-        jumpRopeConnection = nil
-    end
-    
-    if enabled then
-        jumpRopeConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if not MainModule.JumpRope.AutoJump then return end
-            
-            local player = game:GetService("Players").LocalPlayer
-            local character = player.Character
-            if not character then return end
-            
-            local humanoid = character:FindFirstChild("Humanoid")
-            if not humanoid then return end
-            
-            -- Автоматическое прыганье
-            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-            
-            -- Ждем перед следующим прыжком
-            task.wait(0.5)
-        end)
-    end
-end
-
 function MainModule.ToggleAntiFailJumpRope(enabled)
     MainModule.JumpRope.AntiFail = enabled
     
@@ -1074,76 +1376,6 @@ function MainModule.ToggleAntiFailJumpRope(enabled)
                 end
             end)
         end)
-    end
-end
-
--- ESP System (оптимизированная без лагов)
-function MainModule.ToggleESP(enabled)
-    MainModule.Misc.ESPEnabled = enabled
-    
-    if espConnection then
-        espConnection:Disconnect()
-        espConnection = nil
-    end
-    
-    -- Очищаем старые ESP
-    for _, esp in pairs(MainModule.ESPTable) do
-        if esp and esp.Destroy then
-            esp:Destroy()
-        end
-    end
-    MainModule.ESPTable = {}
-    
-    if enabled then
-        -- Оптимизированная ESP с минимальной нагрузкой
-        espConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if not MainModule.Misc.ESPEnabled then return end
-            
-            pcall(function()
-                local player = game:GetService("Players").LocalPlayer
-                
-                -- ESP для игроков (оптимизированная)
-                if MainModule.Misc.ESPPlayers and tick() % 0.3 < 0.05 then
-                    for _, targetPlayer in pairs(game:GetService("Players"):GetPlayers()) do
-                        if targetPlayer ~= player and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                            local character = targetPlayer.Character
-                            local humanoid = character:FindFirstChild("Humanoid")
-                            
-                            if humanoid and humanoid.Health > 0 then
-                                local espKey = "player_" .. targetPlayer.Name
-                                
-                                if not MainModule.ESPTable[espKey] then
-                                    local highlight = Instance.new("Highlight")
-                                    highlight.Adornee = character
-                                    highlight.FillColor = Color3.fromRGB(0, 170, 255)
-                                    highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
-                                    highlight.OutlineColor = Color3.fromRGB(0, 170, 255)
-                                    highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
-                                    highlight.Parent = character
-                                    
-                                    MainModule.ESPTable[espKey] = highlight
-                                end
-                            else
-                                -- Удаляем ESP если игрок мертв
-                                local espKey = "player_" .. targetPlayer.Name
-                                if MainModule.ESPTable[espKey] then
-                                    MainModule.ESPTable[espKey]:Destroy()
-                                    MainModule.ESPTable[espKey] = nil
-                                end
-                            end
-                        end
-                    end
-                end
-            end)
-        end)
-    else
-        -- Очищаем все ESP при выключении
-        for _, esp in pairs(MainModule.ESPTable) do
-            if esp then
-                esp:Destroy()
-            end
-        end
-        MainModule.ESPTable = {}
     end
 end
 
@@ -1211,6 +1443,12 @@ function MainModule.GetPlayerPosition()
         return string.format("X: %.1f, Y: %.1f, Z: %.1f", position.X, position.Y, position.Z)
     end
     return "Не доступно"
+end
+
+-- ESP функция для GUI
+function MainModule.ToggleESP(enabled)
+    MainModule.Misc.ESPEnabled = enabled
+    MainModule.ESP.Toggle(enabled)
 end
 
 return MainModule
