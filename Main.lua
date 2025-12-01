@@ -54,14 +54,24 @@ MainModule.Dalgona = {
 }
 
 MainModule.HNS = {
-    AutoPickup = false,
     SpikesKill = false,
     DisableSpikes = false,
     KillHiders = false,
     AutoDodge = false,
     LastDodgeTime = 0,
     DodgeCooldown = 1.0,
-    DodgeRange = 15
+    DodgeRange = 15,
+    -- Новые переменные для Spike Kill
+    LastSpikeKillTime = 0,
+    SpikeKillCooldown = 3,
+    CurrentSpikeKillTarget = nil,
+    IsInSpikeKillProcess = false,
+    OriginalSpikeKillPosition = nil,
+    -- Новые переменные для Kill Hiders
+    KillHidersRange = 100,
+    CurrentKillTarget = nil,
+    LastKillTime = 0,
+    KillCooldown = 0.3
 }
 
 MainModule.TugOfWar = {
@@ -85,8 +95,7 @@ MainModule.SkySquid = {
     AntiFall = false,
     VoidKill = false,
     AntiFallPlatform = nil,
-    SafePlatform = nil,
-    VoidKillConnection = nil
+    SafePlatform = nil
 }
 
 MainModule.Misc = {
@@ -114,10 +123,10 @@ MainModule.Misc = {
 -- ESP System (оптимизированная без лагов)
 MainModule.ESPTable = {}
 MainModule.ESPFolder = nil
-MainModule.ESPUpdateRate = 0.5 -- Оптимизировано: обновление каждые 0.5 секунд
+MainModule.ESPUpdateRate = 0.5
 MainModule.LastESPUpdate = 0
 MainModule.ESPConnection = nil
-MainModule.ESPCache = {} -- Кэш для оптимизации
+MainModule.ESPCache = {}
 
 -- HNS шипы
 MainModule.HNSSpikes = {
@@ -132,7 +141,6 @@ MainModule.GlassBridgeCover = nil
 
 -- Auto Dodge tracking
 MainModule.HNSTrackedAttackers = {}
-MainModule.LastAttackCheck = 0
 
 -- Постоянные соединения
 local speedConnection = nil
@@ -146,7 +154,6 @@ local infiniteAmmoConnection = nil
 local hitboxConnection = nil
 local autoPullConnection = nil
 local antiBreakConnection = nil
-local hnsAutoPickupConnection = nil
 local hnsSpikesKillConnection = nil
 local hnsKillHidersConnection = nil
 local hnsAutoDodgeConnection = nil
@@ -437,11 +444,187 @@ function MainModule.DeleteJumpRope()
     end
 end
 
--- HNS функции
+-- HNS функции (исправленные)
+function MainModule.ToggleSpikesKill(enabled)
+    MainModule.HNS.SpikesKill = enabled
+    
+    if hnsSpikesKillConnection then
+        hnsSpikesKillConnection:Disconnect()
+        hnsSpikesKillConnection = nil
+    end
+    
+    if enabled then
+        -- При включении Spike Kill автоматически выключаем Disable Spikes если он был включен
+        if MainModule.HNS.DisableSpikes then
+            MainModule.HNS.DisableSpikes = false
+            MainModule.ToggleDisableSpikes(false)
+        end
+        
+        -- Сохраняем позиции шипов
+        MainModule.HNSSpikes.Positions = {}
+        MainModule.HNSSpikes.OriginalPositions = {}
+        
+        pcall(function()
+            local spikes = Workspace:FindFirstChild("HideAndSeekMap") and 
+                          Workspace.HideAndSeekMap:FindFirstChild("KillingParts")
+            
+            if spikes then
+                for _, spike in pairs(spikes:GetChildren()) do
+                    if spike:IsA("BasePart") then
+                        table.insert(MainModule.HNSSpikes.Positions, spike.Position)
+                        MainModule.HNSSpikes.OriginalPositions[spike] = spike.Position
+                    end
+                end
+            end
+        end)
+        
+        -- Запускаем процесс Spike Kill
+        hnsSpikesKillConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.HNS.SpikesKill then return end
+            if MainModule.HNS.IsInSpikeKillProcess then return end
+            
+            local currentTime = tick()
+            if currentTime - MainModule.HNS.LastSpikeKillTime < MainModule.HNS.SpikeKillCooldown then return end
+            
+            local character = LocalPlayer.Character
+            if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+            
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if not humanoid or humanoid.Health <= 0 then return end
+            
+            -- Проверяем, держим ли мы нож
+            local hasKnife = false
+            local knifeTool = nil
+            
+            for _, tool in pairs(character:GetChildren()) do
+                if tool:IsA("Tool") and (tool.Name:lower():find("knife") or tool.Name:lower():find("dagger") or tool.Name:lower():find("fork") or tool.Name:lower():find("нож")) then
+                    hasKnife = true
+                    knifeTool = tool
+                    break
+                end
+            end
+            
+            -- Также проверяем Backpack
+            if not hasKnife and LocalPlayer:FindFirstChild("Backpack") then
+                for _, tool in pairs(LocalPlayer.Backpack:GetChildren()) do
+                    if tool:IsA("Tool") and (tool.Name:lower():find("knife") or tool.Name:lower():find("dagger") or tool.Name:lower():find("fork") or tool.Name:lower():find("нож")) then
+                        hasKnife = true
+                        knifeTool = tool
+                        break
+                    end
+                end
+            end
+            
+            if not hasKnife then return end
+            
+            -- Ищем ближайшего живого игрока-прячущегося (радиус 100)
+            local nearestHider = nil
+            local nearestDistance = math.huge
+            local targetRootPart = nil
+            
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    local targetCharacter = player.Character
+                    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+                    local targetHumanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+                    
+                    -- Проверяем, является ли игрок прячущимся (хайдером)
+                    local isHider = player:GetAttribute("IsHider") or false
+                    
+                    if targetRoot and targetHumanoid and targetHumanoid.Health > 0 and isHider then
+                        local distance = (rootPart.Position - targetRoot.Position).Magnitude
+                        
+                        -- Если это наш текущий таргет или новый ближайший в радиусе 100
+                        if (MainModule.HNS.CurrentSpikeKillTarget and player == MainModule.HNS.CurrentSpikeKillTarget) or 
+                           (distance < nearestDistance and distance < 100) then
+                            nearestDistance = distance
+                            nearestHider = player
+                            targetRootPart = targetRoot
+                        end
+                    end
+                end
+            end
+            
+            -- Если нашли живого прячущегося в радиусе 100
+            if nearestHider and targetRootPart and nearestDistance < 100 then
+                MainModule.HNS.CurrentSpikeKillTarget = nearestHider
+                MainModule.HNS.IsInSpikeKillProcess = true
+                
+                -- Сохраняем оригинальную позицию
+                local originalCFrame = rootPart.CFrame
+                local originalTargetCFrame = targetRootPart.CFrame
+                MainModule.HNS.OriginalSpikeKillPosition = originalCFrame
+                
+                -- 1. Телепортируемся за спину цели
+                local teleportCFrame = targetRootPart.CFrame * CFrame.new(0, 0, -2)
+                rootPart.CFrame = teleportCFrame
+                
+                task.wait(0.2)
+                
+                -- 2. Атакуем ножом
+                if knifeTool then
+                    local remoteEvent = knifeTool:FindFirstChild("RemoteEvent")
+                    if remoteEvent then
+                        pcall(function()
+                            remoteEvent:FireServer()
+                        end)
+                    end
+                    
+                    -- Также кликаем мышью
+                    local virtualInputManager = game:GetService("VirtualInputManager")
+                    pcall(function()
+                        virtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+                        task.wait(0.05)
+                        virtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+                    end)
+                end
+                
+                -- 3. Ждем немного чтобы анимация удара сработала
+                task.wait(0.5)
+                
+                -- 4. Проверяем жив ли еще таргет
+                local targetHumanoid = nearestHider.Character:FindFirstChildOfClass("Humanoid")
+                if targetHumanoid and targetHumanoid.Health > 0 then
+                    -- 5. Телепортируем цель к шипам (если есть позиции шипов)
+                    if #MainModule.HNSSpikes.Positions > 0 then
+                        local randomSpike = MainModule.HNSSpikes.Positions[math.random(1, #MainModule.HNSSpikes.Positions)]
+                        targetRootPart.CFrame = CFrame.new(randomSpike)
+                        
+                        -- 6. Ждем 2 секунды для гарантированного убийства
+                        task.wait(2)
+                        
+                        -- 7. Возвращаемся на оригинальную позицию
+                        rootPart.CFrame = originalCFrame
+                    end
+                else
+                    -- Если цель уже умерла, просто возвращаемся
+                    rootPart.CFrame = originalCFrame
+                end
+                
+                -- Сбрасываем состояние
+                MainModule.HNS.LastSpikeKillTime = tick()
+                MainModule.HNS.IsInSpikeKillProcess = false
+                
+                -- Проверяем умер ли таргет, если умер - сбрасываем
+                if not nearestHider.Character or not nearestHider.Character:FindFirstChildOfClass("Humanoid") or 
+                   nearestHider.Character:FindFirstChildOfClass("Humanoid").Health <= 0 then
+                    MainModule.HNS.CurrentSpikeKillTarget = nil
+                end
+            end
+        end)
+    else
+        -- Сбрасываем состояние
+        MainModule.HNS.CurrentSpikeKillTarget = nil
+        MainModule.HNS.IsInSpikeKillProcess = false
+        MainModule.HNS.OriginalSpikeKillPosition = nil
+    end
+end
+
 function MainModule.ToggleDisableSpikes(enabled)
     MainModule.HNS.DisableSpikes = enabled
     
-    -- Одноразовая функция, не нужно постоянное соединение
+    -- Одноразовая функция
     if enabled then
         pcall(function()
             local spikes = Workspace:FindFirstChild("HideAndSeekMap") and 
@@ -470,6 +653,130 @@ function MainModule.ToggleDisableSpikes(enabled)
                 end
             end
         end)
+    end
+end
+
+function MainModule.ToggleKillHiders(enabled)
+    MainModule.HNS.KillHiders = enabled
+    
+    if hnsKillHidersConnection then
+        hnsKillHidersConnection:Disconnect()
+        hnsKillHidersConnection = nil
+    end
+    
+    if enabled then
+        hnsKillHidersConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.HNS.KillHiders then return end
+            
+            local currentTime = tick()
+            if currentTime - MainModule.HNS.LastKillTime < MainModule.HNS.KillCooldown then return end
+            
+            local character = LocalPlayer.Character
+            if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+            
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if not humanoid or humanoid.Health <= 0 then return end
+            
+            -- Проверяем, держим ли мы нож
+            local hasKnife = false
+            local knifeTool = nil
+            
+            for _, tool in pairs(character:GetChildren()) do
+                if tool:IsA("Tool") and (tool.Name:lower():find("knife") or tool.Name:lower():find("dagger") or tool.Name:lower():find("fork") or tool.Name:lower():find("нож")) then
+                    hasKnife = true
+                    knifeTool = tool
+                    break
+                end
+            end
+            
+            -- Также проверяем Backpack
+            if not hasKnife and LocalPlayer:FindFirstChild("Backpack") then
+                for _, tool in pairs(LocalPlayer.Backpack:GetChildren()) do
+                    if tool:IsA("Tool") and (tool.Name:lower():find("knife") or tool.Name:lower():find("dagger") or tool.Name:lower():find("fork") or tool.Name:lower():find("нож")) then
+                        hasKnife = true
+                        knifeTool = tool
+                        break
+                    end
+                end
+            end
+            
+            if not hasKnife then return end
+            
+            -- Ищем ближайшего живого игрока-прячущегося (радиус 100)
+            local nearestHider = nil
+            local nearestDistance = math.huge
+            local targetRootPart = nil
+            
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    local targetCharacter = player.Character
+                    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+                    local targetHumanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+                    
+                    -- Проверяем, является ли игрок прячущимся (хайдером)
+                    local isHider = player:GetAttribute("IsHider") or false
+                    
+                    if targetRoot and targetHumanoid and targetHumanoid.Health > 0 and isHider then
+                        local distance = (rootPart.Position - targetRoot.Position).Magnitude
+                        
+                        -- Если это наш текущий таргет или новый ближайший в радиусе 100
+                        if (MainModule.HNS.CurrentKillTarget and player == MainModule.HNS.CurrentKillTarget) or 
+                           (distance < nearestDistance and distance < 100) then
+                            nearestDistance = distance
+                            nearestHider = player
+                            targetRootPart = targetRoot
+                        end
+                    end
+                end
+            end
+            
+            -- Если нашли живого прячущегося в радиусе 100
+            if nearestHider and targetRootPart and nearestDistance < 100 then
+                MainModule.HNS.CurrentKillTarget = nearestHider
+                
+                -- Поворачиваемся к цели
+                local direction = (targetRootPart.Position - rootPart.Position).Unit
+                local lookVector = Vector3.new(direction.X, 0, direction.Z)
+                if lookVector.Magnitude > 0 then
+                    rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + lookVector)
+                end
+                
+                -- Если близко, телепортируемся за спину
+                if nearestDistance > 3 then
+                    local teleportCFrame = targetRootPart.CFrame * CFrame.new(0, 0, -2)
+                    rootPart.CFrame = teleportCFrame
+                end
+                
+                -- Атакуем ножом
+                if knifeTool then
+                    local remoteEvent = knifeTool:FindFirstChild("RemoteEvent")
+                    if remoteEvent then
+                        pcall(function()
+                            remoteEvent:FireServer()
+                        end)
+                    end
+                    
+                    -- Также кликаем мышью
+                    local virtualInputManager = game:GetService("VirtualInputManager")
+                    pcall(function()
+                        virtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+                        task.wait(0.05)
+                        virtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+                    end)
+                end
+                
+                MainModule.HNS.LastKillTime = tick()
+                
+                -- Проверяем умер ли таргет, если умер - сбрасываем
+                if not nearestHider.Character or not nearestHider.Character:FindFirstChildOfClass("Humanoid") or 
+                   nearestHider.Character:FindFirstChildOfClass("Humanoid").Health <= 0 then
+                    MainModule.HNS.CurrentKillTarget = nil
+                end
+            end
+        end)
+    else
+        MainModule.HNS.CurrentKillTarget = nil
     end
 end
 
@@ -556,7 +863,7 @@ function MainModule.CreateHugeAntiFallPlatform()
     -- Создаем ОГРОМНУЮ платформу (200%)
     MainModule.GlassBridge.AntiFallPlatform = Instance.new("Part")
     MainModule.GlassBridge.AntiFallPlatform.Name = "HugeGlassBridgeAntiFallPlatform"
-    MainModule.GlassBridge.AntiFallPlatform.Size = Vector3.new(1000, 10, 1000) -- Очень большая платформа
+    MainModule.GlassBridge.AntiFallPlatform.Size = Vector3.new(1000, 10, 1000)
     MainModule.GlassBridge.AntiFallPlatform.Position = Vector3.new(-200, 510, -1534)
     MainModule.GlassBridge.AntiFallPlatform.Anchored = true
     MainModule.GlassBridge.AntiFallPlatform.CanCollide = true
@@ -678,8 +985,8 @@ function MainModule.CreateSkySquidAntiFallPlatform()
     -- Создаем ОГРОМНУЮ Anti-Fall платформу для Sky Squid (200%)
     MainModule.SkySquid.AntiFallPlatform = Instance.new("Part")
     MainModule.SkySquid.AntiFallPlatform.Name = "HugeSkySquidAntiFallPlatform"
-    MainModule.SkySquid.AntiFallPlatform.Size = Vector3.new(500, 10, 500) -- Очень большая платформа
-    MainModule.SkySquid.AntiFallPlatform.Position = Vector3.new(0, 90, 0) -- Немного ниже стартовой позиции
+    MainModule.SkySquid.AntiFallPlatform.Size = Vector3.new(500, 10, 500)
+    MainModule.SkySquid.AntiFallPlatform.Position = Vector3.new(0, 90, 0)
     MainModule.SkySquid.AntiFallPlatform.Anchored = true
     MainModule.SkySquid.AntiFallPlatform.CanCollide = true
     MainModule.SkySquid.AntiFallPlatform.Transparency = 0.7
@@ -775,7 +1082,7 @@ function MainModule.CreateSkySquidSafePlatform()
     MainModule.SkySquid.SafePlatform.Parent = Workspace
 end
 
--- HNS Auto Dodge функция (исправленная)
+-- HNS Auto Dodge функция
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.HNS.AutoDodge = enabled
     
@@ -948,7 +1255,7 @@ function MainModule.PerformDodge()
     local teleportDistance = 5
     local offset = Vector3.new(
         math.cos(randomAngle) * teleportDistance,
-        3, -- Немного вверх
+        3,
         math.sin(randomAngle) * teleportDistance
     )
     
@@ -1444,139 +1751,6 @@ function MainModule.FreeLighter()
     LocalPlayer:SetAttribute("HasLighter", true)
 end
 
--- HNS функции (убрана AutoPickup)
-function MainModule.ToggleSpikesKill(enabled)
-    MainModule.HNS.SpikesKill = enabled
-    
-    if hnsSpikesKillConnection then
-        hnsSpikesKillConnection:Disconnect()
-        hnsSpikesKillConnection = nil
-    end
-    
-    if enabled then
-        -- Сохраняем позиции шипов
-        MainModule.HNSSpikes.Positions = {}
-        MainModule.HNSSpikes.OriginalPositions = {}
-        
-        pcall(function()
-            local spikes = Workspace:FindFirstChild("HideAndSeekMap") and 
-                          Workspace.HideAndSeekMap:FindFirstChild("KillingParts")
-            
-            if spikes then
-                for _, spike in pairs(spikes:GetChildren()) do
-                    if spike:IsA("BasePart") then
-                        table.insert(MainModule.HNSSpikes.Positions, spike.Position)
-                        MainModule.HNSSpikes.OriginalPositions[spike] = spike.Position
-                        
-                        -- Делаем шипы безопасными для нас
-                        spike.CanTouch = false
-                    end
-                end
-            end
-        end)
-        
-        hnsSpikesKillConnection = RunService.Heartbeat:Connect(function()
-            if not MainModule.HNS.SpikesKill then return end
-            
-            pcall(function()
-                local character = LocalPlayer.Character
-                if not character or not character:FindFirstChild("HumanoidRootPart") then return end
-                
-                local isHunter = LocalPlayer:GetAttribute("IsHunter")
-                if isHunter and #MainModule.HNSSpikes.Positions > 0 then
-                    -- Ищем хайдеров для телепортации в шипы
-                    for _, player in pairs(Players:GetPlayers()) do
-                        if player ~= LocalPlayer and player:GetAttribute("IsHider") and 
-                           player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                           
-                            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-                            if humanoid and humanoid.Health > 0 then
-                                local randomSpike = MainModule.HNSSpikes.Positions[math.random(1, #MainModule.HNSSpikes.Positions)]
-                                player.Character.HumanoidRootPart.CFrame = CFrame.new(randomSpike)
-                            end
-                        end
-                    end
-                end
-                
-                -- Продолжаем защищать себя от шипов
-                local spikes = Workspace:FindFirstChild("HideAndSeekMap") and 
-                              Workspace.HideAndSeekMap:FindFirstChild("KillingParts")
-                
-                if spikes then
-                    for _, spike in pairs(spikes:GetChildren()) do
-                        if spike:IsA("BasePart") then
-                            spike.CanTouch = false
-                        end
-                    end
-                end
-            end)
-        end)
-    else
-        -- Восстанавливаем шипы
-        pcall(function()
-            local spikes = Workspace:FindFirstChild("HideAndSeekMap") and 
-                          Workspace.HideAndSeekMap:FindFirstChild("KillingParts")
-            
-            if spikes then
-                for _, spike in pairs(spikes:GetChildren()) do
-                    if spike:IsA("BasePart") then
-                        spike.CanTouch = true
-                    end
-                end
-            end
-            MainModule.HNSSpikes.Positions = {}
-            MainModule.HNSSpikes.OriginalPositions = {}
-        end)
-    end
-end
-
-function MainModule.ToggleKillHiders(enabled)
-    MainModule.HNS.KillHiders = enabled
-    
-    if hnsKillHidersConnection then
-        hnsKillHidersConnection:Disconnect()
-        hnsKillHidersConnection = nil
-    end
-    
-    if enabled then
-        hnsKillHidersConnection = RunService.Heartbeat:Connect(function()
-            if not MainModule.HNS.KillHiders then return end
-            
-            pcall(function()
-                local character = LocalPlayer.Character
-                if not character or not character:FindFirstChild("HumanoidRootPart") then return end
-                
-                local isHunter = LocalPlayer:GetAttribute("IsHunter")
-                if not isHunter then return end
-                
-                -- Ищем ближайшего хайдера
-                local targetPlayer = nil
-                local closestDistance = math.huge
-                
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player ~= LocalPlayer and player:GetAttribute("IsHider") and 
-                       player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                       
-                        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-                        if humanoid and humanoid.Health > 0 then
-                            local distance = (character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
-                            if distance < closestDistance then
-                                closestDistance = distance
-                                targetPlayer = player
-                            end
-                        end
-                    end
-                end
-                
-                -- Телепортируемся к цели и атакуем
-                if targetPlayer and targetPlayer.Character and closestDistance < 50 then
-                    character.HumanoidRootPart.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -2)
-                end
-            end)
-        end)
-    end
-end
-
 -- Tug Of War функции
 function MainModule.ToggleAutoPull(enabled)
     MainModule.TugOfWar.AutoPull = enabled
@@ -1755,6 +1929,12 @@ function MainModule.Cleanup()
         end
     end
     MainModule.GlassBridgePlatforms = {}
+    
+    -- Сбрасываем HNS состояния
+    MainModule.HNS.CurrentSpikeKillTarget = nil
+    MainModule.HNS.IsInSpikeKillProcess = false
+    MainModule.HNS.OriginalSpikeKillPosition = nil
+    MainModule.HNS.CurrentKillTarget = nil
 end
 
 -- Автоматическая очистка при выходе
