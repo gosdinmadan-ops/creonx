@@ -100,22 +100,29 @@ if not success then
             SpikesKill = false, 
             DeleteSpikes = false, 
             KillHiders = false, 
-            AutoDodge = false
+            AutoDodge = false,
+            DisableSpikes = false
         },
         TugOfWar = {AutoPull = false},
         GlassBridge = {AntiBreak = false, GlassESPEnabled = false},
         JumpRope = {
             AutoJump = false,
-            GodMode = false,
-            DeleteRope = false,
-            AntiFall = false,
-            AutoBalance = false
+            AntiFail = false,
+            TeleportToStart = false,
+            TeleportToEnd = false
         },
         Misc = {
             InstaInteract = false, 
             NoCooldownProximity = false,
-            EnableDash = false,
             ESPEnabled = false,
+            ESPHighlight = true,
+            ESPDistance = true,
+            ESPFillTransparency = 0.7,
+            ESPOutlineTransparency = 0,
+            ESPTextSize = 18,
+            ESPPlayers = true,
+            ESPNPCs = true,
+            ESPItems = true,
             AntiStunRagdoll = false
         },
         
@@ -143,9 +150,6 @@ if not success then
         ToggleGodMode = function(enabled)
             MainModule.RLGL.GodMode = enabled
         end,
-        ToggleEnableDash = function(enabled)
-            MainModule.Misc.EnableDash = enabled
-        end,
         SetGuardType = function(guardType)
             MainModule.Guards.SelectedGuard = guardType
         end,
@@ -170,6 +174,9 @@ if not success then
         ToggleSpikesKill = function(enabled)
             MainModule.HNS.SpikesKill = enabled
         end,
+        ToggleDisableSpikes = function(enabled)
+            MainModule.HNS.DisableSpikes = enabled
+        end,
         ToggleDeleteSpikes = function(enabled)
             MainModule.HNS.DeleteSpikes = enabled
         end,
@@ -188,19 +195,13 @@ if not success then
         ToggleGlassBridgeESP = function(enabled)
             MainModule.GlassBridge.GlassESPEnabled = enabled
         end,
+        TeleportToJumpRopeStart = function() end,
         TeleportToJumpRopeEnd = function() end,
-        DeleteJumpRope = function() end,
         ToggleAutoJump = function(enabled)
             MainModule.JumpRope.AutoJump = enabled
         end,
-        ToggleJumpRopeGodMode = function(enabled)
-            MainModule.JumpRope.GodMode = enabled
-        end,
-        ToggleJumpRopeAntiFall = function(enabled)
-            MainModule.JumpRope.AntiFall = enabled
-        end,
-        ToggleAutoBalance = function(enabled)
-            MainModule.JumpRope.AutoBalance = enabled
+        ToggleAntiFailJumpRope = function(enabled)
+            MainModule.JumpRope.AntiFail = enabled
         end,
         ToggleInstaInteract = function(enabled)
             MainModule.Misc.InstaInteract = enabled
@@ -249,11 +250,11 @@ ScreenGui.Name = "CreonX"
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 -- Стиль для округлений
-local cornerRadius = UDim.new(0, 12)
+local cornerRadius = UDim.new(0, 8)
 
--- Увеличенные размеры с улучшенным дизайном
-MainFrame.Size = UDim2.new(0, 700, 0, 500)
-MainFrame.Position = UDim2.new(0.5, -350, 0.5, -250)
+-- Компактные размеры
+MainFrame.Size = UDim2.new(0, 650, 0, 450)
+MainFrame.Position = UDim2.new(0.5, -325, 0.5, -225)
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
 MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
@@ -268,21 +269,21 @@ mainStroke.Thickness = 2
 mainStroke.Parent = MainFrame
 
 -- TitleBar для перемещения
-TitleBar.Size = UDim2.new(1, 0, 0, 30)
+TitleBar.Size = UDim2.new(1, 0, 0, 28)
 TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 TitleBar.BorderSizePixel = 0
 TitleBar.Parent = MainFrame
 
 local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 12)
+titleCorner.CornerRadius = UDim.new(0, 8)
 titleCorner.Parent = TitleBar
 
 TitleLabel.Size = UDim2.new(0.8, 0, 1, 0)
 TitleLabel.Position = UDim2.new(0.1, 0, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "CreonX v2.0"
+TitleLabel.Text = "CreonX"
 TitleLabel.TextColor3 = Color3.fromRGB(220, 220, 255)
-TitleLabel.TextSize = 14
+TitleLabel.TextSize = 13
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.Parent = TitleBar
 
@@ -293,7 +294,7 @@ CloseButton.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
 CloseButton.BorderSizePixel = 0
 CloseButton.Text = "×"
 CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseButton.TextSize = 16
+CloseButton.TextSize = 14
 CloseButton.Font = Enum.Font.GothamBold
 CloseButton.Parent = TitleBar
 
@@ -308,50 +309,50 @@ CloseButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Увеличенные табы
-TabButtons.Size = UDim2.new(0, 150, 1, -30)
-TabButtons.Position = UDim2.new(0, 0, 0, 30)
+-- Компактные табы
+TabButtons.Size = UDim2.new(0, 140, 1, -28)
+TabButtons.Position = UDim2.new(0, 0, 0, 28)
 TabButtons.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
 TabButtons.BorderSizePixel = 0
 TabButtons.Parent = MainFrame
 
 local tabCorner = Instance.new("UICorner")
-tabCorner.CornerRadius = UDim.new(0, 12)
+tabCorner.CornerRadius = UDim.new(0, 8)
 tabCorner.Parent = TabButtons
 
-ContentFrame.Size = UDim2.new(1, -150, 1, -30)
-ContentFrame.Position = UDim2.new(0, 150, 0, 30)
+ContentFrame.Size = UDim2.new(1, -140, 1, -28)
+ContentFrame.Position = UDim2.new(0, 140, 0, 28)
 ContentFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 ContentFrame.BorderSizePixel = 0
 ContentFrame.Parent = MainFrame
 
 local contentCorner = Instance.new("UICorner")
-contentCorner.CornerRadius = UDim.new(0, 12)
+contentCorner.CornerRadius = UDim.new(0, 8)
 contentCorner.Parent = ContentFrame
 
 SoonLabel.Size = UDim2.new(1, 0, 1, 0)
 SoonLabel.BackgroundTransparency = 1
 SoonLabel.Text = "Soon...."
 SoonLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-SoonLabel.TextSize = 20
+SoonLabel.TextSize = 18
 SoonLabel.Font = Enum.Font.Gotham
 SoonLabel.Visible = false
 SoonLabel.Parent = ContentFrame
 
 -- Кнопка для мобильных устройств
 if UIS.TouchEnabled then
-    MobileButton.Size = UDim2.new(0, 100, 0, 35)
-    MobileButton.Position = UDim2.new(0.5, -50, 0, 10)
+    MobileButton.Size = UDim2.new(0, 90, 0, 32)
+    MobileButton.Position = UDim2.new(0.5, -45, 0, 8)
     MobileButton.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
     MobileButton.BorderSizePixel = 0
     MobileButton.Text = "CreonX"
     MobileButton.TextColor3 = Color3.fromRGB(220, 220, 255)
-    MobileButton.TextSize = 12
+    MobileButton.TextSize = 11
     MobileButton.Font = Enum.Font.GothamBold
     MobileButton.Parent = ScreenGui
     
     local mobileCorner = Instance.new("UICorner")
-    mobileCorner.CornerRadius = cornerRadius
+    mobileCorner.CornerRadius = UDim.new(0, 6)
     mobileCorner.Parent = MobileButton
     
     local mobileStroke = Instance.new("UIStroke")
@@ -405,27 +406,27 @@ UIS.InputChanged:Connect(function(input)
     end
 end)
 
--- Функция для создания красивого элемента с меньшими кнопками
+-- Функция для создания очень маленьких кнопок
 local function CreateButton(text, position, size)
     local button = Instance.new("TextButton")
-    button.Size = size or UDim2.new(0.9, 0, 0, 32) -- Уменьшена высота
+    button.Size = size or UDim2.new(0.9, 0, 0, 26)
     button.Position = position
     button.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
     button.BorderSizePixel = 0
     button.Text = text
     button.TextColor3 = Color3.fromRGB(240, 240, 255)
-    button.TextSize = 11
+    button.TextSize = 10
     button.Font = Enum.Font.Gotham
     button.AutoButtonColor = false
     button.Parent = ContentFrame
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
+    corner.CornerRadius = UDim.new(0, 6)
     corner.Parent = button
     
     local stroke = Instance.new("UIStroke")
     stroke.Color = Color3.fromRGB(80, 80, 100)
-    stroke.Thickness = 1.5
+    stroke.Thickness = 1.2
     stroke.Parent = button
     
     -- Анимация при наведении
@@ -458,22 +459,22 @@ local function CreateButton(text, position, size)
     return button
 end
 
--- Функция для создания красивого переключателя с меньшими размерами
+-- Функция для создания маленьких переключателей
 local function CreateToggle(text, position, enabled, callback)
     local toggleContainer = Instance.new("Frame")
-    toggleContainer.Size = UDim2.new(0.9, 0, 0, 32)
+    toggleContainer.Size = UDim2.new(0.9, 0, 0, 26)
     toggleContainer.Position = position
     toggleContainer.BackgroundTransparency = 1
     toggleContainer.Parent = ContentFrame
     
     -- Текст
     local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(0.65, 0, 1, 0)
+    textLabel.Size = UDim2.new(0.7, 0, 1, 0)
     textLabel.Position = UDim2.new(0, 0, 0, 0)
     textLabel.BackgroundTransparency = 1
     textLabel.Text = text
     textLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
-    textLabel.TextSize = 12
+    textLabel.TextSize = 10
     textLabel.Font = Enum.Font.Gotham
     textLabel.TextXAlignment = Enum.TextXAlignment.Left
     textLabel.Parent = toggleContainer
@@ -481,7 +482,7 @@ local function CreateToggle(text, position, enabled, callback)
     -- Переключатель
     local toggleBackground = Instance.new("Frame")
     toggleBackground.Size = UDim2.new(0.25, 0, 0.5, 0)
-    toggleBackground.Position = UDim2.new(0.72, 0, 0.25, 0)
+    toggleBackground.Position = UDim2.new(0.73, 0, 0.25, 0)
     toggleBackground.BackgroundColor3 = enabled and Color3.fromRGB(0, 140, 255) or Color3.fromRGB(80, 80, 100)
     toggleBackground.BorderSizePixel = 0
     toggleBackground.Parent = toggleContainer
@@ -495,11 +496,11 @@ local function CreateToggle(text, position, enabled, callback)
     
     -- Закругления
     local corner1 = Instance.new("UICorner")
-    corner1.CornerRadius = UDim.new(0, 12)
+    corner1.CornerRadius = UDim.new(0, 10)
     corner1.Parent = toggleBackground
     
     local corner2 = Instance.new("UICorner")
-    corner2.CornerRadius = UDim.new(0, 10)
+    corner2.CornerRadius = UDim.new(0, 8)
     corner2.Parent = toggleCircle
     
     local stroke = Instance.new("UIStroke")
@@ -538,29 +539,29 @@ end
 -- Функция для создания слайдера скорости
 local function CreateSpeedSlider()
     local sliderContainer = Instance.new("Frame")
-    sliderContainer.Size = UDim2.new(0.9, 0, 0, 60)
+    sliderContainer.Size = UDim2.new(0.9, 0, 0, 50)
     sliderContainer.Position = UDim2.new(0.05, 0, 0.05, 0)
     sliderContainer.BackgroundTransparency = 1
     sliderContainer.Parent = ContentFrame
     
     local speedLabel = Instance.new("TextLabel")
-    speedLabel.Size = UDim2.new(1, 0, 0, 20)
+    speedLabel.Size = UDim2.new(1, 0, 0, 18)
     speedLabel.BackgroundTransparency = 1
     speedLabel.Text = "Speed: " .. MainModule.SpeedHack.CurrentSpeed
     speedLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
-    speedLabel.TextSize = 13
+    speedLabel.TextSize = 11
     speedLabel.Font = Enum.Font.Gotham
     speedLabel.Parent = sliderContainer
     
     local sliderBackground = Instance.new("Frame")
-    sliderBackground.Size = UDim2.new(1, 0, 0, 20)
-    sliderBackground.Position = UDim2.new(0, 0, 0, 25)
+    sliderBackground.Size = UDim2.new(1, 0, 0, 18)
+    sliderBackground.Position = UDim2.new(0, 0, 0, 20)
     sliderBackground.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
     sliderBackground.BorderSizePixel = 0
     sliderBackground.Parent = sliderContainer
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
+    corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = sliderBackground
     
     local sliderFill = Instance.new("Frame")
@@ -570,19 +571,19 @@ local function CreateSpeedSlider()
     sliderFill.Parent = sliderBackground
     
     local fillCorner = Instance.new("UICorner")
-    fillCorner.CornerRadius = UDim.new(0, 10)
+    fillCorner.CornerRadius = UDim.new(0, 8)
     fillCorner.Parent = sliderFill
     
     local sliderButton = Instance.new("TextButton")
-    sliderButton.Size = UDim2.new(0, 20, 0, 20)
-    sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -10, 0, 0)
+    sliderButton.Size = UDim2.new(0, 18, 0, 18)
+    sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -9, 0, 0)
     sliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     sliderButton.Text = ""
     sliderButton.BorderSizePixel = 0
     sliderButton.Parent = sliderBackground
     
     local buttonCorner = Instance.new("UICorner")
-    buttonCorner.CornerRadius = UDim.new(0, 10)
+    buttonCorner.CornerRadius = UDim.new(0, 8)
     buttonCorner.Parent = sliderButton
     
     local dragging = false
@@ -591,7 +592,7 @@ local function CreateSpeedSlider()
         local newSpeed = MainModule.SetSpeed(value)
         speedLabel.Text = "Speed: " .. newSpeed
         sliderFill.Size = UDim2.new((newSpeed - MainModule.SpeedHack.MinSpeed) / (MainModule.SpeedHack.MaxSpeed - MainModule.SpeedHack.MinSpeed), 0, 1, 0)
-        sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -10, 0, 0)
+        sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -9, 0, 0)
     end
     
     sliderButton.MouseButton1Down:Connect(function()
@@ -619,7 +620,7 @@ end
 -- Функция для создания выпадающего списка
 local function CreateDropdown(options, default, position, callback)
     local dropdownContainer = Instance.new("Frame")
-    dropdownContainer.Size = UDim2.new(0.9, 0, 0, 32)
+    dropdownContainer.Size = UDim2.new(0.9, 0, 0, 26)
     dropdownContainer.Position = position
     dropdownContainer.BackgroundTransparency = 1
     dropdownContainer.Parent = ContentFrame
@@ -631,7 +632,7 @@ local function CreateDropdown(options, default, position, callback)
     dropdownButton.ZIndex = 11
     
     local dropdownList = Instance.new("Frame")
-    dropdownList.Size = UDim2.new(1, 0, 0, #options * 30)
+    dropdownList.Size = UDim2.new(1, 0, 0, #options * 26)
     dropdownList.Position = UDim2.new(0, 0, 1, 5)
     dropdownList.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
     dropdownList.BorderSizePixel = 0
@@ -649,7 +650,7 @@ local function CreateDropdown(options, default, position, callback)
     listStroke.Parent = dropdownList
     
     for i, option in ipairs(options) do
-        local optionButton = CreateButton(option, UDim2.new(0, 5, 0, (i-1)*30), UDim2.new(1, -10, 0, 25))
+        local optionButton = CreateButton(option, UDim2.new(0, 4, 0, (i-1)*26), UDim2.new(1, -8, 0, 22))
         optionButton.Parent = dropdownList
         optionButton.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
         optionButton.ZIndex = 21
@@ -666,6 +667,37 @@ local function CreateDropdown(options, default, position, callback)
     end)
     
     return dropdownContainer
+end
+
+-- Функция для создания ESP настроек
+local function CreateESPSettings()
+    local settingsContainer = Instance.new("Frame")
+    settingsContainer.Size = UDim2.new(0.9, 0, 0, 120)
+    settingsContainer.Position = UDim2.new(0.05, 0, 0.2, 0)
+    settingsContainer.BackgroundTransparency = 1
+    settingsContainer.Parent = ContentFrame
+    
+    local espToggle = CreateToggle("ESP System", UDim2.new(0, 0, 0, 0), MainModule.Misc.ESPEnabled, function(enabled)
+        MainModule.ToggleESP(enabled)
+    end)
+    espToggle.Parent = settingsContainer
+    
+    local espPlayersToggle = CreateToggle("Show Players", UDim2.new(0, 0, 0.25, 0), MainModule.Misc.ESPPlayers, function(enabled)
+        MainModule.Misc.ESPPlayers = enabled
+    end)
+    espPlayersToggle.Parent = settingsContainer
+    
+    local espHighlightToggle = CreateToggle("ESP Highlight", UDim2.new(0, 0, 0.5, 0), MainModule.Misc.ESPHighlight, function(enabled)
+        MainModule.Misc.ESPHighlight = enabled
+    end)
+    espHighlightToggle.Parent = settingsContainer
+    
+    local espDistanceToggle = CreateToggle("Show Distance", UDim2.new(0, 0, 0.75, 0), MainModule.Misc.ESPDistance, function(enabled)
+        MainModule.Misc.ESPDistance = enabled
+    end)
+    espDistanceToggle.Parent = settingsContainer
+    
+    return settingsContainer
 end
 
 -- Функции для создания контента вкладок
@@ -690,33 +722,25 @@ local function CreateMainContent()
         MainModule.ToggleAntiStunRagdoll(enabled)
     end)
     
-    local enableDashToggle = CreateToggle("Unlock Dash", UDim2.new(0.05, 0, 0.42, 0), MainModule.Misc.EnableDash, function(enabled)
-        MainModule.ToggleEnableDash(enabled)
-    end)
-    
-    local instaInteractToggle = CreateToggle("Insta Interact", UDim2.new(0.05, 0, 0.5, 0), MainModule.Misc.InstaInteract, function(enabled)
+    local instaInteractToggle = CreateToggle("Insta Interact", UDim2.new(0.05, 0, 0.42, 0), MainModule.Misc.InstaInteract, function(enabled)
         MainModule.ToggleInstaInteract(enabled)
     end)
     
-    local noCooldownToggle = CreateToggle("No Cooldown Proximity", UDim2.new(0.05, 0, 0.58, 0), MainModule.Misc.NoCooldownProximity, function(enabled)
+    local noCooldownToggle = CreateToggle("No Cooldown Proximity", UDim2.new(0.05, 0, 0.5, 0), MainModule.Misc.NoCooldownProximity, function(enabled)
         MainModule.ToggleNoCooldownProximity(enabled)
     end)
     
-    local espToggle = CreateToggle("ESP System", UDim2.new(0.05, 0, 0.66, 0), MainModule.Misc.ESPEnabled, function(enabled)
-        MainModule.ToggleESP(enabled)
-    end)
-    
-    local tpUpBtn = CreateButton("TP 100 blocks up", UDim2.new(0.05, 0, 0.74, 0))
+    local tpUpBtn = CreateButton("TP 100 blocks up", UDim2.new(0.05, 0, 0.58, 0))
     tpUpBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportUp100()
     end)
     
-    local tpDownBtn = CreateButton("TP 40 blocks down", UDim2.new(0.05, 0, 0.82, 0))
+    local tpDownBtn = CreateButton("TP 40 blocks down", UDim2.new(0.05, 0, 0.66, 0))
     tpDownBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportDown40()
     end)
     
-    local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status, UDim2.new(0.05, 0, 0.9, 0))
+    local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status, UDim2.new(0.05, 0, 0.74, 0))
     noclipLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     noclipLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
 end
@@ -732,13 +756,16 @@ local function CreateCombatContent()
 end
 
 local function CreateMiscContent()
-    SoonLabel.Visible = true
-    SoonLabel.Text = "Misc Features Coming Soon"
     for _, child in pairs(ContentFrame:GetChildren()) do
         if child ~= SoonLabel then
             child:Destroy()
         end
     end
+    
+    SoonLabel.Visible = false
+    
+    -- ESP System в Misc
+    CreateESPSettings()
 end
 
 local function CreateRebelContent()
@@ -749,12 +776,12 @@ local function CreateRebelContent()
     end
     
     local rebelTitle = Instance.new("TextLabel")
-    rebelTitle.Size = UDim2.new(0.9, 0, 0, 40)
+    rebelTitle.Size = UDim2.new(0.9, 0, 0, 30)
     rebelTitle.Position = UDim2.new(0.05, 0, 0.05, 0)
     rebelTitle.BackgroundTransparency = 1
     rebelTitle.Text = "REBEL"
     rebelTitle.TextColor3 = Color3.fromRGB(255, 80, 80)
-    rebelTitle.TextSize = 20
+    rebelTitle.TextSize = 16
     rebelTitle.Font = Enum.Font.GothamBold
     rebelTitle.Parent = ContentFrame
     
@@ -775,12 +802,12 @@ local function CreateRLGLContent()
         MainModule.TeleportToEnd()
     end)
     
-    local tpStartBtn = CreateButton("TP TO START", UDim2.new(0.05, 0, 0.2, 0))
+    local tpStartBtn = CreateButton("TP TO START", UDim2.new(0.05, 0, 0.22, 0))
     tpStartBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportToStart()
     end)
     
-    local godModeToggle = CreateToggle("GodMode", UDim2.new(0.05, 0, 0.3, 0), MainModule.RLGL.GodMode, function(enabled)
+    local godModeToggle = CreateToggle("GodMode", UDim2.new(0.05, 0, 0.34, 0), MainModule.RLGL.GodMode, function(enabled)
         MainModule.ToggleGodMode(enabled)
     end)
 end
@@ -851,15 +878,21 @@ local function CreateHNSContent()
         MainModule.ToggleSpikesKill(enabled)
     end)
     
-    local deleteSpikesToggle = CreateToggle("Delete Spikes", UDim2.new(0.05, 0, 0.34, 0), MainModule.HNS.DeleteSpikes, function(enabled)
+    local disableSpikesBtn = CreateButton("Disable Spikes", UDim2.new(0.05, 0, 0.34, 0))
+    disableSpikesBtn.MouseButton1Click:Connect(function()
+        MainModule.ToggleDisableSpikes(not MainModule.HNS.DisableSpikes)
+        disableSpikesBtn.Text = MainModule.HNS.DisableSpikes and "Disable Spikes ✓" or "Disable Spikes"
+    end)
+    
+    local deleteSpikesToggle = CreateToggle("Delete Spikes", UDim2.new(0.05, 0, 0.46, 0), MainModule.HNS.DeleteSpikes, function(enabled)
         MainModule.ToggleDeleteSpikes(enabled)
     end)
     
-    local killHidersToggle = CreateToggle("Kill Hiders", UDim2.new(0.05, 0, 0.46, 0), MainModule.HNS.KillHiders, function(enabled)
+    local killHidersToggle = CreateToggle("Kill Hiders", UDim2.new(0.05, 0, 0.58, 0), MainModule.HNS.KillHiders, function(enabled)
         MainModule.ToggleKillHiders(enabled)
     end)
     
-    local autoDodgeToggle = CreateToggle("AutoDodge", UDim2.new(0.05, 0, 0.58, 0), MainModule.HNS.AutoDodge, function(enabled)
+    local autoDodgeToggle = CreateToggle("AutoDodge", UDim2.new(0.05, 0, 0.7, 0), MainModule.HNS.AutoDodge, function(enabled)
         MainModule.ToggleAutoDodge(enabled)
     end)
 end
@@ -899,30 +932,22 @@ local function CreateJumpRopeContent()
         end
     end
     
-    local tpEndBtn = CreateButton("Teleport To End", UDim2.new(0.05, 0, 0.1, 0))
-    tpEndBtn.MouseButton1Click:Connect(function()
-        MainModule.TeleportToJumpRopeEnd()
+    local tpStartBtn = CreateButton("Teleport to Start", UDim2.new(0.05, 0, 0.1, 0))
+    tpStartBtn.MouseButton1Click:Connect(function()
+        MainModule.TeleportToJumpRopeStart()
     end)
     
-    local deleteRopeBtn = CreateButton("Delete The Rope", UDim2.new(0.05, 0, 0.22, 0))
-    deleteRopeBtn.MouseButton1Click:Connect(function()
-        MainModule.DeleteJumpRope()
+    local tpEndBtn = CreateButton("Teleport to End", UDim2.new(0.05, 0, 0.22, 0))
+    tpEndBtn.MouseButton1Click:Connect(function()
+        MainModule.TeleportToJumpRopeEnd()
     end)
     
     local autoJumpToggle = CreateToggle("Auto Jump", UDim2.new(0.05, 0, 0.34, 0), MainModule.JumpRope.AutoJump, function(enabled)
         MainModule.ToggleAutoJump(enabled)
     end)
     
-    local godModeToggle = CreateToggle("GodMode", UDim2.new(0.05, 0, 0.46, 0), MainModule.JumpRope.GodMode, function(enabled)
-        MainModule.ToggleJumpRopeGodMode(enabled)
-    end)
-    
-    local antiFallToggle = CreateToggle("Anti Fall", UDim2.new(0.05, 0, 0.58, 0), MainModule.JumpRope.AntiFall, function(enabled)
-        MainModule.ToggleJumpRopeAntiFall(enabled)
-    end)
-    
-    local autoBalanceToggle = CreateToggle("Auto Balance", UDim2.new(0.05, 0, 0.7, 0), MainModule.JumpRope.AutoBalance, function(enabled)
-        MainModule.ToggleAutoBalance(enabled)
+    local antiFailToggle = CreateToggle("Anti-Fail", UDim2.new(0.05, 0, 0.46, 0), MainModule.JumpRope.AntiFail, function(enabled)
+        MainModule.ToggleAntiFailJumpRope(enabled)
     end)
 end
 
@@ -950,13 +975,13 @@ local function CreateSettingsContent()
     end)
 end
 
--- Создание вкладок с меньшими кнопками
+-- Создание вкладок с очень маленькими кнопками
 local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Settings"}
 for i, name in pairs(tabs) do
-    local button = CreateButton(name, UDim2.new(0.05, 0, 0, (i-1)*32), UDim2.new(0.9, 0, 0, 28))
+    local button = CreateButton(name, UDim2.new(0.05, 0, 0, (i-1)*28), UDim2.new(0.9, 0, 0, 24))
     button.Parent = TabButtons
     button.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-    button.TextSize = 11
+    button.TextSize = 10
     
     if name == "Main" then
         button.MouseButton1Click:Connect(function()
@@ -969,6 +994,7 @@ for i, name in pairs(tabs) do
         end)
     elseif name == "Misc" then
         button.MouseButton1Click:Connect(function()
+            SoonLabel.Visible = false
             CreateMiscContent()
         end)
     elseif name == "Rebel" then
@@ -1024,7 +1050,7 @@ UIS.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.M then
         MainFrame.Visible = not MainFrame.Visible
         if MainFrame.Visible then
-            MainFrame.Position = UDim2.new(0.5, -350, 0.5, -250)
+            MainFrame.Position = UDim2.new(0.5, -325, 0.5, -225)
         end
     end
 end)
