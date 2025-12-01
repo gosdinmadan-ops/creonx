@@ -37,8 +37,7 @@ if not success then
         Rebel = {Enabled = false},
         RLGL = {
             GodMode = false, 
-            OriginalHeight = nil,
-            RemoveInjured = false
+            OriginalHeight = nil
         },
         Guards = {
             SelectedGuard = "Circle", 
@@ -52,27 +51,31 @@ if not success then
         },
         Dalgona = {CompleteEnabled = false, FreeLighterEnabled = false},
         HNS = {
-            AutoPickup = false, 
             SpikesKill = false, 
             DisableSpikes = false, 
             KillHiders = false, 
-            AutoDodge = false
+            AutoDodge = false,
+            LastDodgeTime = 0,
+            DodgeCooldown = 1.0,
+            DodgeRange = 15
         },
         TugOfWar = {AutoPull = false},
         GlassBridge = {
             AntiBreak = false, 
             GlassESPEnabled = false,
             GlassPlatform = false,
-            FakeGlassCover = false
+            FakeGlassCover = false,
+            AntiFallPlatform = nil
         },
         JumpRope = {
-            AntiFail = false,
-            TeleportToStart = false,
             TeleportToEnd = false,
-            AutoJump = false,
-            FreezeRope = false,
-            SafePlatform = false,
-            AntiFall = false
+            DeleteRope = false
+        },
+        SkySquid = {
+            AntiFall = false,
+            VoidKill = false,
+            AntiFallPlatform = nil,
+            SafePlatform = nil
         },
         Misc = {
             InstaInteract = false, 
@@ -120,13 +123,6 @@ if not success then
         ToggleGodMode = function(enabled)
             MainModule.RLGL.GodMode = enabled
         end,
-        -- RLGL новые функции
-        RemoveInjuredStun = function()
-            return 0
-        end,
-        ToggleRemoveInjured = function(enabled)
-            MainModule.RLGL.RemoveInjured = enabled
-        end,
         SetGuardType = function(guardType)
             MainModule.Guards.SelectedGuard = guardType
         end,
@@ -145,9 +141,6 @@ if not success then
         end,
         CompleteDalgona = function() end,
         FreeLighter = function() end,
-        ToggleAutoPickup = function(enabled)
-            MainModule.HNS.AutoPickup = enabled
-        end,
         ToggleSpikesKill = function(enabled)
             MainModule.HNS.SpikesKill = enabled
         end,
@@ -163,37 +156,26 @@ if not success then
         ToggleAutoPull = function(enabled)
             MainModule.TugOfWar.AutoPull = enabled
         end,
+        -- Glass Bridge функции
         ToggleAntiBreak = function(enabled)
             MainModule.GlassBridge.AntiBreak = enabled
         end,
-        -- Glass Bridge новые функции
-        TeleportToGlassBridgeEnd = function() end,
         ToggleGlassBridgeESP = function(enabled)
             MainModule.GlassBridge.GlassESPEnabled = enabled
         end,
-        ToggleGlassBridgePlatform = function(enabled)
-            MainModule.GlassBridge.GlassPlatform = enabled
-        end,
         CreateGlassBridgeCover = function() end,
         RemoveGlassBridgeCover = function() end,
-        -- Jump Rope новые функции
-        TeleportToJumpRopeStart = function() end,
+        CreateHugeAntiFallPlatform = function() end,
+        RemoveHugeAntiFallPlatform = function() end,
+        -- Jump Rope функции
         TeleportToJumpRopeEnd = function() end,
         DeleteJumpRope = function() end,
-        ToggleAutoJump = function(enabled)
-            MainModule.JumpRope.AutoJump = enabled
+        -- Sky Squid функции
+        ToggleSkySquidAntiFall = function(enabled)
+            MainModule.SkySquid.AntiFall = enabled
         end,
-        ToggleFreezeRope = function(enabled)
-            MainModule.JumpRope.FreezeRope = enabled
-        end,
-        ToggleAntiFailJumpRope = function(enabled)
-            MainModule.JumpRope.AntiFail = enabled
-        end,
-        ToggleJumpRopeAntiFall = function(enabled)
-            MainModule.JumpRope.AntiFall = enabled
-        end,
-        ToggleJumpRopeSafePlatform = function(enabled)
-            MainModule.JumpRope.SafePlatform = enabled
+        ToggleSkySquidVoidKill = function(enabled)
+            MainModule.SkySquid.VoidKill = enabled
         end,
         ToggleInstaInteract = function(enabled)
             MainModule.Misc.InstaInteract = enabled
@@ -245,9 +227,9 @@ ScreenGui.Name = "CreonXv21"
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.ResetOnSpawn = false
 
--- Увеличенные размеры на 30% (еще +15% от предыдущего)
-local GUI_WIDTH = 860  -- 748 * 1.15
-local GUI_HEIGHT = 595 -- 518 * 1.15
+-- Увеличенные размеры
+local GUI_WIDTH = 860
+local GUI_HEIGHT = 595
 
 -- Сохраняем исходное состояние мыши
 local originalMouseBehavior = nil
@@ -925,18 +907,6 @@ local function CreateRLGLContent()
     local godModeToggle = CreateToggle("GodMode", MainModule.RLGL.GodMode, function(enabled)
         MainModule.ToggleGodMode(enabled)
     end)
-    
-    -- НОВАЯ КНОПКА: Destroy Injured + Stun
-    local removeInjuredBtn = CreateButton("DESTROY INJURED + STUN")
-    removeInjuredBtn.MouseButton1Click:Connect(function()
-        local count = MainModule.RemoveInjuredStun()
-        -- Можно добавить уведомление в будущем
-    end)
-    
-    -- ТОГГЛ для постоянного удаления Injured/Stun
-    local removeInjuredToggle = CreateToggle("Auto Remove Injured/Stun", MainModule.RLGL.RemoveInjured, function(enabled)
-        MainModule.ToggleRemoveInjured(enabled)
-    end)
 end
 
 local function CreateGuardsContent()
@@ -985,23 +955,26 @@ end
 local function CreateHNSContent()
     ClearContent()
     
-    local autoPickupToggle = CreateToggle("Auto Pickup", MainModule.HNS.AutoPickup, function(enabled)
-        MainModule.ToggleAutoPickup(enabled)
-    end)
-    
     local spikesKillToggle = CreateToggle("Spikes Kill", MainModule.HNS.SpikesKill, function(enabled)
         MainModule.ToggleSpikesKill(enabled)
     end)
     
-    local disableSpikesToggle = CreateToggle("Disable Spikes", MainModule.HNS.DisableSpikes, function(enabled)
-        MainModule.ToggleDisableSpikes(enabled)
+    -- Disable Spikes как кликабельная кнопка
+    local disableSpikesBtn = CreateButton("Disable Spikes")
+    disableSpikesBtn.MouseButton1Click:Connect(function()
+        MainModule.ToggleDisableSpikes(not MainModule.HNS.DisableSpikes)
+        if MainModule.HNS.DisableSpikes then
+            disableSpikesBtn.Text = "Disable Spikes (ON)"
+        else
+            disableSpikesBtn.Text = "Disable Spikes"
+        end
     end)
     
     local killHidersToggle = CreateToggle("Kill Hiders", MainModule.HNS.KillHiders, function(enabled)
         MainModule.ToggleKillHiders(enabled)
     end)
     
-    local autoDodgeToggle = CreateToggle("AutoDodge", MainModule.HNS.AutoDodge, function(enabled)
+    local autoDodgeToggle = CreateToggle("Auto Dodge", MainModule.HNS.AutoDodge, function(enabled)
         MainModule.ToggleAutoDodge(enabled)
     end)
 end
@@ -1011,10 +984,10 @@ local function CreateGlassBridgeContent()
     
     local tpEndBtn = CreateButton("TP END")
     tpEndBtn.MouseButton1Click:Connect(function()
-        MainModule.TeleportToGlassBridgeEnd()
+        -- Для Glass Bridge тоже нужна функция телепортации
+        MainModule.TeleportToEnd()
     end)
     
-    -- Кнопка GLASS ESP (кликабельная)
     local glassEspBtn = CreateButton("GLASS ESP")
     glassEspBtn.MouseButton1Click:Connect(function()
         MainModule.ToggleGlassBridgeESP(not MainModule.GlassBridge.GlassESPEnabled)
@@ -1028,20 +1001,7 @@ local function CreateGlassBridgeContent()
     
     local antiBreakToggle = CreateToggle("Anti Break", MainModule.GlassBridge.AntiBreak, function(enabled)
         MainModule.ToggleAntiBreak(enabled)
-    end)
-    
-    local glassPlatformToggle = CreateToggle("Anti-Fall Platform", MainModule.GlassBridge.GlassPlatform, function(enabled)
-        MainModule.ToggleGlassBridgePlatform(enabled)
-    end)
-    
-    local createCoverBtn = CreateButton("Create Fake Glass Cover")
-    createCoverBtn.MouseButton1Click:Connect(function()
-        MainModule.CreateGlassBridgeCover()
-    end)
-    
-    local removeCoverBtn = CreateButton("Remove Glass Cover")
-    removeCoverBtn.MouseButton1Click:Connect(function()
-        MainModule.RemoveGlassBridgeCover()
+        -- Fake Glass и огромная платформа автоматически создаются при включении
     end)
 end
 
@@ -1056,11 +1016,6 @@ end
 local function CreateJumpRopeContent()
     ClearContent()
     
-    local tpStartBtn = CreateButton("Teleport to Start")
-    tpStartBtn.MouseButton1Click:Connect(function()
-        MainModule.TeleportToJumpRopeStart()
-    end)
-    
     local tpEndBtn = CreateButton("Teleport to End")
     tpEndBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportToJumpRopeEnd()
@@ -1070,25 +1025,18 @@ local function CreateJumpRopeContent()
     deleteRopeBtn.MouseButton1Click:Connect(function()
         MainModule.DeleteJumpRope()
     end)
+end
+
+local function CreateSkySquidContent()
+    ClearContent()
     
-    local freezeRopeToggle = CreateToggle("FREEZE ROPE", MainModule.JumpRope.FreezeRope, function(enabled)
-        MainModule.ToggleFreezeRope(enabled)
+    local antiFallToggle = CreateToggle("Anti Fall", MainModule.SkySquid.AntiFall, function(enabled)
+        MainModule.ToggleSkySquidAntiFall(enabled)
     end)
     
-    local autoJumpToggle = CreateToggle("Auto Jump", MainModule.JumpRope.AutoJump, function(enabled)
-        MainModule.ToggleAutoJump(enabled)
-    end)
-    
-    local antiFailToggle = CreateToggle("Anti-Fail", MainModule.JumpRope.AntiFail, function(enabled)
-        MainModule.ToggleAntiFailJumpRope(enabled)
-    end)
-    
-    local antiFallToggle = CreateToggle("Anti Fall", MainModule.JumpRope.AntiFall, function(enabled)
-        MainModule.ToggleJumpRopeAntiFall(enabled)
-    end)
-    
-    local safePlatformToggle = CreateToggle("SAFE PLATFORM", MainModule.JumpRope.SafePlatform, function(enabled)
-        MainModule.ToggleJumpRopeSafePlatform(enabled)
+    local voidKillToggle = CreateToggle("Void Kill", MainModule.SkySquid.VoidKill, function(enabled)
+        MainModule.ToggleSkySquidVoidKill(enabled)
+        -- Safe Platform автоматически создается при включении Void Kill
     end)
 end
 
@@ -1120,7 +1068,7 @@ local function CreateSettingsContent()
 end
 
 -- Создание вкладок
-local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Settings"}
+local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Sky Squid", "Settings"}
 local tabButtons = {}
 local tabContainers = {}
 
@@ -1174,6 +1122,8 @@ for i, name in pairs(tabs) do
             CreateTugOfWarContent()
         elseif name == "Jump Rope" then
             CreateJumpRopeContent()
+        elseif name == "Sky Squid" then
+            CreateSkySquidContent()
         elseif name == "Settings" then
             CreateSettingsContent()
         end
