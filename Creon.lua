@@ -1,4 +1,4 @@
--- Creon X v2.1
+-- Creon X v2.1 (обновленный)
 -- Проверка исполнителя
 local executorName = "Unknown"
 if identifyexecutor then
@@ -33,8 +33,8 @@ if not success then
     MainModule = {
         SpeedHack = {Enabled = false, DefaultSpeed = 16, CurrentSpeed = 16, MaxSpeed = 150, MinSpeed = 16},
         Noclip = {Enabled = false, Status = "Don't work, Disabled"},
-        AutoQTE = {AntiStunEnabled = false},
-        Rebel = {Enabled = false},
+        AutoQTE = {AntiStunEnabled = false, SkySquidQTEEnabled = false},
+        Rebel = {Enabled = false, InfiniteAmmo = false, RapidFire = false},
         RLGL = {GodMode = false, OriginalHeight = nil},
         Guards = {
             SelectedGuard = "Circle", 
@@ -60,6 +60,13 @@ if not success then
             TeleportToStart = false,
             TeleportToEnd = false
         },
+        SkySquid = {
+            AntiFall = false,
+            AutoQTE = false,
+            SafePlatform = false,
+            VoidKill = false
+        },
+        SquidGame = {},
         Misc = {
             InstaInteract = false, 
             NoCooldownProximity = false,
@@ -95,11 +102,20 @@ if not success then
         ToggleAntiStunQTE = function(enabled)
             MainModule.AutoQTE.AntiStunEnabled = enabled
         end,
+        ToggleSkySquidQTE = function(enabled)
+            MainModule.AutoQTE.SkySquidQTEEnabled = enabled
+        end,
         ToggleAntiStunRagdoll = function(enabled)
             MainModule.Misc.AntiStunRagdoll = enabled
         end,
         ToggleRebel = function(enabled)
             MainModule.Rebel.Enabled = enabled
+        end,
+        ToggleRebelInfiniteAmmo = function(enabled)
+            MainModule.Rebel.InfiniteAmmo = enabled
+        end,
+        ToggleRebelRapidFire = function(enabled)
+            MainModule.Rebel.RapidFire = enabled
         end,
         TeleportToEnd = function() end,
         TeleportToStart = function() end,
@@ -152,6 +168,15 @@ if not success then
         TeleportToJumpRopeEnd = function() end,
         ToggleAntiFailJumpRope = function(enabled)
             MainModule.JumpRope.AntiFail = enabled
+        end,
+        ToggleSkySquidAntiFall = function(enabled)
+            MainModule.SkySquid.AntiFall = enabled
+        end,
+        ToggleSkySquidSafePlatform = function(enabled)
+            MainModule.SkySquid.SafePlatform = enabled
+        end,
+        ToggleSkySquidVoidKill = function(enabled)
+            MainModule.SkySquid.VoidKill = enabled
         end,
         ToggleInstaInteract = function(enabled)
             MainModule.Misc.InstaInteract = enabled
@@ -462,6 +487,34 @@ local function CreateButton(text)
     return button
 end
 
+-- Функция для создания заголовка
+local function CreateTitle(text)
+    local titleContainer = Instance.new("Frame")
+    titleContainer.Size = UDim2.new(1, -10, 0, 40)
+    titleContainer.BackgroundTransparency = 1
+    titleContainer.Parent = ContentScrolling
+    
+    local titleText = Instance.new("TextLabel")
+    titleText.Size = UDim2.new(1, 0, 1, 0)
+    titleText.BackgroundTransparency = 1
+    titleText.Text = text
+    titleText.TextColor3 = Color3.fromRGB(255, 80, 80)
+    titleText.TextSize = 16
+    titleText.Font = Enum.Font.GothamBold
+    titleText.TextStrokeTransparency = 0.5
+    titleText.TextStrokeColor3 = Color3.fromRGB(50, 50, 50)
+    titleText.Parent = titleContainer
+    
+    local underline = Instance.new("Frame")
+    underline.Size = UDim2.new(1, 0, 0, 2)
+    underline.Position = UDim2.new(0, 0, 1, -2)
+    underline.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+    underline.BorderSizePixel = 0
+    underline.Parent = titleContainer
+    
+    return titleContainer
+end
+
 -- Функция для создания переключателей (исправленная)
 local function CreateToggle(text, enabled, callback)
     local toggleContainer = Instance.new("Frame")
@@ -732,64 +785,10 @@ local function CreateESPSettings()
     espBoxesToggle.Parent = settingsContainer
     espBoxesToggle.Position = UDim2.new(0, 0, 0, yPosition)
     
-    yPosition = yPosition + toggleHeight + 10
-    
-    -- Типы объектов ESP
-    local typesTitle = Instance.new("TextLabel")
-    typesTitle.Size = UDim2.new(1, 0, 0, 20)
-    typesTitle.Position = UDim2.new(0, 0, 0, yPosition)
-    typesTitle.BackgroundTransparency = 1
-    typesTitle.Text = "ESP Types:"
-    typesTitle.TextColor3 = Color3.fromRGB(200, 200, 255)
-    typesTitle.TextSize = 12
-    typesTitle.Font = Enum.Font.GothamBold
-    typesTitle.TextXAlignment = Enum.TextXAlignment.Left
-    typesTitle.Parent = settingsContainer
-    
-    yPosition = yPosition + 25
-    
-    local espPlayersToggle, updatePlayersToggle = CreateToggle("Players", MainModule.Misc.ESPPlayers, function(enabled)
-        MainModule.Misc.ESPPlayers = enabled
-    end)
-    espPlayersToggle.Parent = settingsContainer
-    espPlayersToggle.Position = UDim2.new(0, 0, 0, yPosition)
-    
-    yPosition = yPosition + toggleHeight
-    
-    local espHidersToggle, updateHidersToggle = CreateToggle("Hiders", MainModule.Misc.ESPHiders, function(enabled)
-        MainModule.Misc.ESPHiders = enabled
-    end)
-    espHidersToggle.Parent = settingsContainer
-    espHidersToggle.Position = UDim2.new(0, 0, 0, yPosition)
-    
-    yPosition = yPosition + toggleHeight
-    
-    local espSeekersToggle, updateSeekersToggle = CreateToggle("Seekers", MainModule.Misc.ESPSeekers, function(enabled)
-        MainModule.Misc.ESPSeekers = enabled
-    end)
-    espSeekersToggle.Parent = settingsContainer
-    espSeekersToggle.Position = UDim2.new(0, 0, 0, yPosition)
-    
-    yPosition = yPosition + toggleHeight
-    
-    local espCandiesToggle, updateCandiesToggle = CreateToggle("Candies", MainModule.Misc.ESPCandies, function(enabled)
-        MainModule.Misc.ESPCandies = enabled
-    end)
-    espCandiesToggle.Parent = settingsContainer
-    espCandiesToggle.Position = UDim2.new(0, 0, 0, yPosition)
-    
-    yPosition = yPosition + toggleHeight
-    
-    local espKeysToggle, updateKeysToggle = CreateToggle("Keys", MainModule.Misc.ESPKeys, function(enabled)
-        MainModule.Misc.ESPKeys = enabled
-    end)
-    espKeysToggle.Parent = settingsContainer
-    espKeysToggle.Position = UDim2.new(0, 0, 0, yPosition)
-    
     return settingsContainer
 end
 
--- Функции для создания контента вкладок (ИСПРАВЛЕНЫ)
+-- Функции для создания контента вкладок
 local function ClearContent()
     for _, child in pairs(ContentScrolling:GetChildren()) do
         if child:IsA("Frame") or child:IsA("TextButton") or child:IsA("TextLabel") then
@@ -801,8 +800,13 @@ local function ClearContent()
     SoonLabel.Visible = false
 end
 
+-- ===================================================================
+-- MAIN CONTENT
+-- ===================================================================
 local function CreateMainContent()
     ClearContent()
+    
+    CreateTitle("MAIN FUNCTIONS")
     
     local speedLabel = CreateSpeedSlider()
     
@@ -812,6 +816,10 @@ local function CreateMainContent()
     
     local antiStunToggle = CreateToggle("Anti Stun QTE", MainModule.AutoQTE.AntiStunEnabled, function(enabled)
         MainModule.ToggleAntiStunQTE(enabled)
+    end)
+    
+    local skySquidQteToggle = CreateToggle("Sky Squid QTE", MainModule.AutoQTE.SkySquidQTEEnabled, function(enabled)
+        MainModule.ToggleSkySquidQTE(enabled)
     end)
     
     local antiStunRagdollToggle = CreateToggle("Anti Stun + Ragdoll", MainModule.Misc.AntiStunRagdoll, function(enabled)
@@ -841,34 +849,83 @@ local function CreateMainContent()
     noclipLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
 end
 
+-- ===================================================================
+-- COMBAT CONTENT
+-- ===================================================================
 local function CreateCombatContent()
     ClearContent()
     SoonLabel.Visible = true
     SoonLabel.Text = "Combat Features Coming Soon"
 end
 
+-- ===================================================================
+-- MISC CONTENT
+-- ===================================================================
 local function CreateMiscContent()
     ClearContent()
+    
+    CreateTitle("MISCELLANEOUS")
     
     -- ESP System в Misc
     CreateESPSettings()
 end
 
+-- ===================================================================
+-- REBEL CONTENT (Исправленный - без кнопки, только заголовок)
+-- ===================================================================
 local function CreateRebelContent()
     ClearContent()
     
-    local rebelTitle = CreateButton("REBEL")
-    rebelTitle.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-    rebelTitle.TextColor3 = Color3.fromRGB(255, 80, 80)
-    rebelTitle.TextSize = 14
+    -- Большой заголовок REBEL по центру
+    CreateTitle("REBEL")
     
+    -- Подзаголовок
+    local subtitle = Instance.new("TextLabel")
+    subtitle.Size = UDim2.new(1, -10, 0, 25)
+    subtitle.Position = UDim2.new(0, 5, 0, 45)
+    subtitle.BackgroundTransparency = 1
+    subtitle.Text = "Instant Rebel Functions"
+    subtitle.TextColor3 = Color3.fromRGB(200, 200, 255)
+    subtitle.TextSize = 14
+    subtitle.Font = Enum.Font.Gotham
+    subtitle.TextXAlignment = Enum.TextXAlignment.Left
+    subtitle.Parent = ContentScrolling
+    
+    local yPos = 80
+    
+    -- Instant Rebel
     local rebelToggle = CreateToggle("Instant Rebel", MainModule.Rebel.Enabled, function(enabled)
         MainModule.ToggleRebel(enabled)
     end)
+    rebelToggle.Parent = ContentScrolling
+    rebelToggle.Position = UDim2.new(0, 5, 0, yPos)
+    
+    yPos = yPos + 40
+    
+    -- Inf Ammo
+    local infAmmoToggle = CreateToggle("Infinite Ammo", MainModule.Rebel.InfiniteAmmo, function(enabled)
+        MainModule.ToggleRebelInfiniteAmmo(enabled)
+    end)
+    infAmmoToggle.Parent = ContentScrolling
+    infAmmoToggle.Position = UDim2.new(0, 5, 0, yPos)
+    
+    yPos = yPos + 40
+    
+    -- Rapid Fire
+    local rapidFireToggle = CreateToggle("Rapid Fire", MainModule.Rebel.RapidFire, function(enabled)
+        MainModule.ToggleRebelRapidFire(enabled)
+    end)
+    rapidFireToggle.Parent = ContentScrolling
+    rapidFireToggle.Position = UDim2.new(0, 5, 0, yPos)
 end
 
+-- ===================================================================
+-- RLGL CONTENT
+-- ===================================================================
 local function CreateRLGLContent()
     ClearContent()
+    
+    CreateTitle("RED LIGHT GREEN LIGHT")
     
     local tpEndBtn = CreateButton("TP TO END")
     tpEndBtn.MouseButton1Click:Connect(function()
@@ -885,8 +942,13 @@ local function CreateRLGLContent()
     end)
 end
 
+-- ===================================================================
+-- GUARDS CONTENT
+-- ===================================================================
 local function CreateGuardsContent()
     ClearContent()
+    
+    CreateTitle("GUARDS")
     
     local guardDropdown = CreateDropdown({"Circle", "Triangle", "Square"}, MainModule.Guards.SelectedGuard, function(selected)
         MainModule.SetGuardType(selected)
@@ -914,8 +976,13 @@ local function CreateGuardsContent()
     end)
 end
 
+-- ===================================================================
+-- DALGONA CONTENT
+-- ===================================================================
 local function CreateDalgonaContent()
     ClearContent()
+    
+    CreateTitle("DALGONA GAME")
     
     local completeBtn = CreateButton("Complete Dalgona")
     completeBtn.MouseButton1Click:Connect(function()
@@ -928,8 +995,13 @@ local function CreateDalgonaContent()
     end)
 end
 
+-- ===================================================================
+-- HNS CONTENT
+-- ===================================================================
 local function CreateHNSContent()
     ClearContent()
+    
+    CreateTitle("HIDE AND SEEK")
     
     local autoPickupToggle = CreateToggle("Auto Pickup", MainModule.HNS.AutoPickup, function(enabled)
         MainModule.ToggleAutoPickup(enabled)
@@ -952,8 +1024,13 @@ local function CreateHNSContent()
     end)
 end
 
+-- ===================================================================
+-- GLASS BRIDGE CONTENT
+-- ===================================================================
 local function CreateGlassBridgeContent()
     ClearContent()
+    
+    CreateTitle("GLASS BRIDGE")
     
     local antiBreakToggle = CreateToggle("Anti Break", MainModule.GlassBridge.AntiBreak, function(enabled)
         MainModule.ToggleAntiBreak(enabled)
@@ -964,16 +1041,26 @@ local function CreateGlassBridgeContent()
     end)
 end
 
+-- ===================================================================
+-- TUG OF WAR CONTENT
+-- ===================================================================
 local function CreateTugOfWarContent()
     ClearContent()
+    
+    CreateTitle("TUG OF WAR")
     
     local autoPullToggle = CreateToggle("Auto Pull", MainModule.TugOfWar.AutoPull, function(enabled)
         MainModule.ToggleAutoPull(enabled)
     end)
 end
 
+-- ===================================================================
+-- JUMP ROPE CONTENT
+-- ===================================================================
 local function CreateJumpRopeContent()
     ClearContent()
+    
+    CreateTitle("JUMP ROPE")
     
     local tpStartBtn = CreateButton("Teleport to Start")
     tpStartBtn.MouseButton1Click:Connect(function()
@@ -990,8 +1077,60 @@ local function CreateJumpRopeContent()
     end)
 end
 
+-- ===================================================================
+-- SKY SQUID GAME CONTENT
+-- ===================================================================
+local function CreateSkySquidContent()
+    ClearContent()
+    
+    CreateTitle("SKY SQUID GAME")
+    
+    local antiFallToggle = CreateToggle("Anti Fall - Sky Squid", MainModule.SkySquid.AntiFall, function(enabled)
+        MainModule.ToggleSkySquidAntiFall(enabled)
+    end)
+    
+    local qteToggle = CreateToggle("Auto QTE - Sky Squid", MainModule.SkySquid.AutoQTE, function(enabled)
+        MainModule.ToggleSkySquidQTE(enabled)
+    end)
+    
+    local safePlatformToggle = CreateToggle("Safe Platform - Sky Squid", MainModule.SkySquid.SafePlatform, function(enabled)
+        MainModule.ToggleSkySquidSafePlatform(enabled)
+    end)
+    
+    local voidKillToggle = CreateToggle("Void Kill - Sky Squid", MainModule.SkySquid.VoidKill, function(enabled)
+        MainModule.ToggleSkySquidVoidKill(enabled)
+    end)
+end
+
+-- ===================================================================
+-- SQUID GAME CONTENT
+-- ===================================================================
+local function CreateSquidGameContent()
+    ClearContent()
+    
+    CreateTitle("SQUID GAME")
+    
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Size = UDim2.new(1, -10, 0, 100)
+    infoLabel.Position = UDim2.new(0, 5, 0, 50)
+    infoLabel.BackgroundTransparency = 1
+    infoLabel.Text = "Squid Game functions coming soon!\nCheck other tabs for specific minigames."
+    infoLabel.TextColor3 = Color3.fromRGB(200, 200, 255)
+    infoLabel.TextSize = 14
+    infoLabel.Font = Enum.Font.Gotham
+    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+    infoLabel.TextYAlignment = Enum.TextYAlignment.Top
+    infoLabel.TextWrapped = true
+    infoLabel.Parent = ContentScrolling
+end
+
+-- ===================================================================
+-- SETTINGS CONTENT
+-- ===================================================================
 local function CreateSettingsContent()
     ClearContent()
+    
+    CreateTitle("SETTINGS")
     
     local creatorLabel = CreateButton("Creator: Creon")
     creatorLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1011,13 +1150,16 @@ local function CreateSettingsContent()
         ScreenGui:Destroy()
     end)
     
+    -- Обновление позиции
     game:GetService("RunService").Heartbeat:Connect(function()
         positionLabel.Text = "Position: " .. MainModule.GetPlayerPosition()
     end)
 end
 
--- Создание вкладок (ИСПРАВЛЕНО позиционирование)
-local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Settings"}
+-- ===================================================================
+-- СОЗДАНИЕ ВКЛАДОК
+-- ===================================================================
+local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Sky Squid", "Squid Game", "Settings"}
 local tabButtons = {}
 local tabContainers = {}
 
@@ -1071,6 +1213,10 @@ for i, name in pairs(tabs) do
             CreateTugOfWarContent()
         elseif name == "Jump Rope" then
             CreateJumpRopeContent()
+        elseif name == "Sky Squid" then
+            CreateSkySquidContent()
+        elseif name == "Squid Game" then
+            CreateSquidGameContent()
         elseif name == "Settings" then
             CreateSettingsContent()
         end
@@ -1081,7 +1227,9 @@ for i, name in pairs(tabs) do
     button.MouseButton1Click:Connect(ActivateTab)
 end
 
--- Управление для ПК
+-- ===================================================================
+-- УПРАВЛЕНИЕ КЛАВИШАМИ
+-- ===================================================================
 UIS.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.M then
         MainFrame.Visible = not MainFrame.Visible
@@ -1102,6 +1250,9 @@ UIS.InputBegan:Connect(function(input)
     end
 end)
 
+-- ===================================================================
+-- ИНИЦИАЛИЗАЦИЯ
+-- ===================================================================
 -- Автоматически открываем Main вкладку и выделяем её
 if tabButtons["Main"] then
     tabButtons["Main"].BackgroundColor3 = Color3.fromRGB(0, 100, 200)
