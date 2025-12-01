@@ -35,7 +35,11 @@ if not success then
         Noclip = {Enabled = false, Status = "Don't work, Disabled"},
         AutoQTE = {AntiStunEnabled = false},
         Rebel = {Enabled = false},
-        RLGL = {GodMode = false, OriginalHeight = nil},
+        RLGL = {
+            GodMode = false, 
+            OriginalHeight = nil,
+            RemoveInjured = false
+        },
         Guards = {
             SelectedGuard = "Circle", 
             AutoFarm = false,
@@ -43,7 +47,8 @@ if not success then
             InfiniteAmmo = false,
             HitboxExpander = false,
             OriginalFireRates = {},
-            OriginalAmmo = {}
+            OriginalAmmo = {},
+            OriginalHitboxes = {}
         },
         Dalgona = {CompleteEnabled = false, FreeLighterEnabled = false},
         HNS = {
@@ -54,11 +59,20 @@ if not success then
             AutoDodge = false
         },
         TugOfWar = {AutoPull = false},
-        GlassBridge = {AntiBreak = false, GlassESPEnabled = false},
+        GlassBridge = {
+            AntiBreak = false, 
+            GlassESPEnabled = false,
+            GlassPlatform = false,
+            FakeGlassCover = false
+        },
         JumpRope = {
             AntiFail = false,
             TeleportToStart = false,
-            TeleportToEnd = false
+            TeleportToEnd = false,
+            AutoJump = false,
+            FreezeRope = false,
+            SafePlatform = false,
+            AntiFall = false
         },
         Misc = {
             InstaInteract = false, 
@@ -106,6 +120,13 @@ if not success then
         ToggleGodMode = function(enabled)
             MainModule.RLGL.GodMode = enabled
         end,
+        -- RLGL новые функции
+        RemoveInjuredStun = function()
+            return 0
+        end,
+        ToggleRemoveInjured = function(enabled)
+            MainModule.RLGL.RemoveInjured = enabled
+        end,
         SetGuardType = function(guardType)
             MainModule.Guards.SelectedGuard = guardType
         end,
@@ -145,13 +166,34 @@ if not success then
         ToggleAntiBreak = function(enabled)
             MainModule.GlassBridge.AntiBreak = enabled
         end,
+        -- Glass Bridge новые функции
+        TeleportToGlassBridgeEnd = function() end,
         ToggleGlassBridgeESP = function(enabled)
             MainModule.GlassBridge.GlassESPEnabled = enabled
         end,
+        ToggleGlassBridgePlatform = function(enabled)
+            MainModule.GlassBridge.GlassPlatform = enabled
+        end,
+        CreateGlassBridgeCover = function() end,
+        RemoveGlassBridgeCover = function() end,
+        -- Jump Rope новые функции
         TeleportToJumpRopeStart = function() end,
         TeleportToJumpRopeEnd = function() end,
+        DeleteJumpRope = function() end,
+        ToggleAutoJump = function(enabled)
+            MainModule.JumpRope.AutoJump = enabled
+        end,
+        ToggleFreezeRope = function(enabled)
+            MainModule.JumpRope.FreezeRope = enabled
+        end,
         ToggleAntiFailJumpRope = function(enabled)
             MainModule.JumpRope.AntiFail = enabled
+        end,
+        ToggleJumpRopeAntiFall = function(enabled)
+            MainModule.JumpRope.AntiFall = enabled
+        end,
+        ToggleJumpRopeSafePlatform = function(enabled)
+            MainModule.JumpRope.SafePlatform = enabled
         end,
         ToggleInstaInteract = function(enabled)
             MainModule.Misc.InstaInteract = enabled
@@ -462,7 +504,7 @@ local function CreateButton(text)
     return button
 end
 
--- Функция для создания переключателей (исправленная)
+-- Функция для создания переключателей
 local function CreateToggle(text, enabled, callback)
     local toggleContainer = Instance.new("Frame")
     toggleContainer.Size = UDim2.new(1, -10, 0, 32)
@@ -789,7 +831,7 @@ local function CreateESPSettings()
     return settingsContainer
 end
 
--- Функции для создания контента вкладок (ИСПРАВЛЕНЫ)
+-- Функции для создания контента вкладок
 local function ClearContent()
     for _, child in pairs(ContentScrolling:GetChildren()) do
         if child:IsA("Frame") or child:IsA("TextButton") or child:IsA("TextLabel") then
@@ -883,6 +925,18 @@ local function CreateRLGLContent()
     local godModeToggle = CreateToggle("GodMode", MainModule.RLGL.GodMode, function(enabled)
         MainModule.ToggleGodMode(enabled)
     end)
+    
+    -- НОВАЯ КНОПКА: Destroy Injured + Stun
+    local removeInjuredBtn = CreateButton("DESTROY INJURED + STUN")
+    removeInjuredBtn.MouseButton1Click:Connect(function()
+        local count = MainModule.RemoveInjuredStun()
+        -- Можно добавить уведомление в будущем
+    end)
+    
+    -- ТОГГЛ для постоянного удаления Injured/Stun
+    local removeInjuredToggle = CreateToggle("Auto Remove Injured/Stun", MainModule.RLGL.RemoveInjured, function(enabled)
+        MainModule.ToggleRemoveInjured(enabled)
+    end)
 end
 
 local function CreateGuardsContent()
@@ -955,12 +1009,39 @@ end
 local function CreateGlassBridgeContent()
     ClearContent()
     
+    local tpEndBtn = CreateButton("TP END")
+    tpEndBtn.MouseButton1Click:Connect(function()
+        MainModule.TeleportToGlassBridgeEnd()
+    end)
+    
+    -- Кнопка GLASS ESP (кликабельная)
+    local glassEspBtn = CreateButton("GLASS ESP")
+    glassEspBtn.MouseButton1Click:Connect(function()
+        MainModule.ToggleGlassBridgeESP(not MainModule.GlassBridge.GlassESPEnabled)
+        -- Обновляем текст кнопки
+        if MainModule.GlassBridge.GlassESPEnabled then
+            glassEspBtn.Text = "GLASS ESP (ON)"
+        else
+            glassEspBtn.Text = "GLASS ESP"
+        end
+    end)
+    
     local antiBreakToggle = CreateToggle("Anti Break", MainModule.GlassBridge.AntiBreak, function(enabled)
         MainModule.ToggleAntiBreak(enabled)
     end)
     
-    local glassESPToggle = CreateToggle("Glass Bridge ESP", MainModule.GlassBridge.GlassESPEnabled, function(enabled)
-        MainModule.ToggleGlassBridgeESP(enabled)
+    local glassPlatformToggle = CreateToggle("Anti-Fall Platform", MainModule.GlassBridge.GlassPlatform, function(enabled)
+        MainModule.ToggleGlassBridgePlatform(enabled)
+    end)
+    
+    local createCoverBtn = CreateButton("Create Fake Glass Cover")
+    createCoverBtn.MouseButton1Click:Connect(function()
+        MainModule.CreateGlassBridgeCover()
+    end)
+    
+    local removeCoverBtn = CreateButton("Remove Glass Cover")
+    removeCoverBtn.MouseButton1Click:Connect(function()
+        MainModule.RemoveGlassBridgeCover()
     end)
 end
 
@@ -985,8 +1066,29 @@ local function CreateJumpRopeContent()
         MainModule.TeleportToJumpRopeEnd()
     end)
     
+    local deleteRopeBtn = CreateButton("Delete The Rope")
+    deleteRopeBtn.MouseButton1Click:Connect(function()
+        MainModule.DeleteJumpRope()
+    end)
+    
+    local freezeRopeToggle = CreateToggle("FREEZE ROPE", MainModule.JumpRope.FreezeRope, function(enabled)
+        MainModule.ToggleFreezeRope(enabled)
+    end)
+    
+    local autoJumpToggle = CreateToggle("Auto Jump", MainModule.JumpRope.AutoJump, function(enabled)
+        MainModule.ToggleAutoJump(enabled)
+    end)
+    
     local antiFailToggle = CreateToggle("Anti-Fail", MainModule.JumpRope.AntiFail, function(enabled)
         MainModule.ToggleAntiFailJumpRope(enabled)
+    end)
+    
+    local antiFallToggle = CreateToggle("Anti Fall", MainModule.JumpRope.AntiFall, function(enabled)
+        MainModule.ToggleJumpRopeAntiFall(enabled)
+    end)
+    
+    local safePlatformToggle = CreateToggle("SAFE PLATFORM", MainModule.JumpRope.SafePlatform, function(enabled)
+        MainModule.ToggleJumpRopeSafePlatform(enabled)
     end)
 end
 
@@ -1011,12 +1113,13 @@ local function CreateSettingsContent()
         ScreenGui:Destroy()
     end)
     
+    -- Обновление позиции каждую секунду
     game:GetService("RunService").Heartbeat:Connect(function()
         positionLabel.Text = "Position: " .. MainModule.GetPlayerPosition()
     end)
 end
 
--- Создание вкладок (ИСПРАВЛЕНО позиционирование)
+-- Создание вкладок
 local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Settings"}
 local tabButtons = {}
 local tabContainers = {}
