@@ -1,4 +1,4 @@
--- Creon X v2.1 (обновленный)
+-- Creon X v2.1 (оптимизированный)
 -- Проверка исполнителя
 local executorName = "Unknown"
 if identifyexecutor then
@@ -76,7 +76,7 @@ if not success then
             ESPSeekers = true,
             ESPCandies = false,
             ESPKeys = true,
-            ESPDoors = true,
+            ESPDoors = false,
             ESPEscapeDoors = true,
             ESPGuards = true,
             ESPHighlight = true,
@@ -101,9 +101,6 @@ if not success then
         TeleportDown40 = function() end,
         ToggleAntiStunQTE = function(enabled)
             MainModule.AutoQTE.AntiStunEnabled = enabled
-        end,
-        ToggleSkySquidQTE = function(enabled)
-            MainModule.AutoQTE.SkySquidQTEEnabled = enabled
         end,
         ToggleAntiStunRagdoll = function(enabled)
             MainModule.Misc.AntiStunRagdoll = enabled
@@ -232,35 +229,6 @@ ScreenGui.ResetOnSpawn = false
 local GUI_WIDTH = 860  -- 748 * 1.15
 local GUI_HEIGHT = 595 -- 518 * 1.15
 
--- Сохраняем исходное состояние мыши
-local originalMouseBehavior = nil
-local originalIconEnabled = nil
-
--- Функции для управления мышкой
-local function SaveMouseState()
-    originalMouseBehavior = UIS.MouseBehavior
-    originalIconEnabled = UIS.MouseIconEnabled
-end
-
-local function RestoreMouseState()
-    if originalMouseBehavior then
-        UIS.MouseBehavior = originalMouseBehavior
-    end
-    if originalIconEnabled ~= nil then
-        UIS.MouseIconEnabled = originalIconEnabled
-    end
-end
-
-local function EnableMenuMouse()
-    SaveMouseState()
-    UIS.MouseBehavior = Enum.MouseBehavior.Default
-    UIS.MouseIconEnabled = true
-end
-
-local function DisableMenuMouse()
-    RestoreMouseState()
-end
-
 -- Основной фрейм
 MainFrame.Size = UDim2.new(0, GUI_WIDTH, 0, GUI_HEIGHT)
 MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
@@ -313,7 +281,6 @@ closeCorner.Parent = CloseButton
 
 CloseButton.MouseButton1Click:Connect(function()
     MainFrame.Visible = false
-    DisableMenuMouse()
     if UIS.TouchEnabled then
         MobileButton.Visible = true
     end
@@ -391,47 +358,35 @@ if UIS.TouchEnabled then
     MobileButton.MouseButton1Click:Connect(function()
         MainFrame.Visible = true
         MobileButton.Visible = false
-        EnableMenuMouse()
     end)
     
     MainFrame.Visible = false
 else
-    MainFrame.Visible = true
-    SaveMouseState()
+    MainFrame.Visible = false -- Скрываем по умолчанию, открывается на P
 end
 
--- Функция для перемещения GUI
+-- Функция для перемещения GUI (упрощенная)
 local dragging = false
-local dragInput, dragStart, startPos
-
-local function update(input)
-    local delta = input.Position - dragStart
-    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-end
+local dragStart, startPos
 
 TitleBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = true
         dragStart = input.Position
         startPos = MainFrame.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
     end
 end)
 
 TitleBar.InputChanged:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        dragInput = input
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
 
-UIS.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        update(input)
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
     end
 end)
 
@@ -457,33 +412,6 @@ local function CreateButton(text)
     stroke.Thickness = 1.2
     stroke.Parent = button
     
-    -- Анимация при наведении
-    button.MouseEnter:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(65, 65, 85),
-            TextColor3 = Color3.fromRGB(255, 255, 255)
-        }):Play()
-    end)
-    
-    button.MouseLeave:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(50, 50, 65),
-            TextColor3 = Color3.fromRGB(240, 240, 255)
-        }):Play()
-    end)
-    
-    button.MouseButton1Down:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.1), {
-            BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-        }):Play()
-    end)
-    
-    button.MouseButton1Up:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.1), {
-            BackgroundColor3 = Color3.fromRGB(65, 65, 85)
-        }):Play()
-    end)
-    
     return button
 end
 
@@ -501,8 +429,6 @@ local function CreateTitle(text)
     titleText.TextColor3 = Color3.fromRGB(255, 80, 80)
     titleText.TextSize = 16
     titleText.Font = Enum.Font.GothamBold
-    titleText.TextStrokeTransparency = 0.5
-    titleText.TextStrokeColor3 = Color3.fromRGB(50, 50, 50)
     titleText.Parent = titleContainer
     
     local underline = Instance.new("Frame")
@@ -515,7 +441,7 @@ local function CreateTitle(text)
     return titleContainer
 end
 
--- Функция для создания переключателей (исправленная)
+-- Функция для создания переключателей (упрощенная)
 local function CreateToggle(text, enabled, callback)
     local toggleContainer = Instance.new("Frame")
     toggleContainer.Size = UDim2.new(1, -10, 0, 32)
@@ -534,7 +460,7 @@ local function CreateToggle(text, enabled, callback)
     textLabel.TextXAlignment = Enum.TextXAlignment.Left
     textLabel.Parent = toggleContainer
     
-    -- Переключатель (компактный)
+    -- Переключатель
     local toggleBackground = Instance.new("Frame")
     toggleBackground.Size = UDim2.new(0, 50, 0, 22)
     toggleBackground.Position = UDim2.new(1, -52, 0.5, -11)
@@ -558,11 +484,6 @@ local function CreateToggle(text, enabled, callback)
     corner2.CornerRadius = UDim.new(0, 9)
     corner2.Parent = toggleCircle
     
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(120, 120, 140)
-    stroke.Thickness = 1
-    stroke.Parent = toggleBackground
-    
     -- Кнопка для переключения
     local toggleButton = Instance.new("TextButton")
     toggleButton.Size = UDim2.new(1, 0, 1, 0)
@@ -573,13 +494,8 @@ local function CreateToggle(text, enabled, callback)
     
     local function updateToggle(newState)
         enabled = newState
-        TweenService:Create(toggleBackground, TweenInfo.new(0.2), {
-            BackgroundColor3 = newState and Color3.fromRGB(0, 140, 255) or Color3.fromRGB(80, 80, 100)
-        }):Play()
-        
-        TweenService:Create(toggleCircle, TweenInfo.new(0.2), {
-            Position = newState and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
-        }):Play()
+        toggleBackground.BackgroundColor3 = newState and Color3.fromRGB(0, 140, 255) or Color3.fromRGB(80, 80, 100)
+        toggleCircle.Position = newState and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
         
         if callback then
             callback(newState)
@@ -698,11 +614,6 @@ local function CreateDropdown(options, default, callback)
     listCorner.CornerRadius = UDim.new(0, 6)
     listCorner.Parent = dropdownList
     
-    local listStroke = Instance.new("UIStroke")
-    listStroke.Color = Color3.fromRGB(80, 80, 100)
-    listStroke.Thickness = 1
-    listStroke.Parent = dropdownList
-    
     for i, option in ipairs(options) do
         local optionButton = CreateButton(option)
         optionButton.Parent = dropdownList
@@ -726,10 +637,10 @@ local function CreateDropdown(options, default, callback)
     return dropdownContainer
 end
 
--- Функция для создания ESP настроек (добавлены конфеты, двери и HNS)
+-- Функция для создания ESP настроек (оптимизированная)
 local function CreateESPSettings()
     local settingsContainer = Instance.new("Frame")
-    settingsContainer.Size = UDim2.new(1, -10, 0, 450)  -- Увеличил высоту
+    settingsContainer.Size = UDim2.new(1, -10, 0, 250)  -- Уменьшена высота
     settingsContainer.BackgroundTransparency = 1
     settingsContainer.Parent = ContentScrolling
     
@@ -755,52 +666,7 @@ local function CreateESPSettings()
     
     yPosition = yPosition + toggleHeight
     
-    local espHighlightToggle, updateHighlightToggle = CreateToggle("ESP Highlight", MainModule.Misc.ESPHighlight, function(enabled)
-        MainModule.Misc.ESPHighlight = enabled
-    end)
-    espHighlightToggle.Parent = settingsContainer
-    espHighlightToggle.Position = UDim2.new(0, 0, 0, yPosition)
-    
-    yPosition = yPosition + toggleHeight
-    
-    local espDistanceToggle, updateDistanceToggle = CreateToggle("Show Distance", MainModule.Misc.ESPDistance, function(enabled)
-        MainModule.Misc.ESPDistance = enabled
-    end)
-    espDistanceToggle.Parent = settingsContainer
-    espDistanceToggle.Position = UDim2.new(0, 0, 0, yPosition)
-    
-    yPosition = yPosition + toggleHeight
-    
-    local espNamesToggle, updateNamesToggle = CreateToggle("Show Names", MainModule.Misc.ESPNames, function(enabled)
-        MainModule.Misc.ESPNames = enabled
-    end)
-    espNamesToggle.Parent = settingsContainer
-    espNamesToggle.Position = UDim2.new(0, 0, 0, yPosition)
-    
-    yPosition = yPosition + toggleHeight
-    
-    local espBoxesToggle, updateBoxesToggle = CreateToggle("Show Boxes", MainModule.Misc.ESPBoxes, function(enabled)
-        MainModule.Misc.ESPBoxes = enabled
-    end)
-    espBoxesToggle.Parent = settingsContainer
-    espBoxesToggle.Position = UDim2.new(0, 0, 0, yPosition)
-    
-    yPosition = yPosition + toggleHeight + 10
-    
-    -- Типы объектов ESP
-    local typesTitle = Instance.new("TextLabel")
-    typesTitle.Size = UDim2.new(1, 0, 0, 20)
-    typesTitle.Position = UDim2.new(0, 0, 0, yPosition)
-    typesTitle.BackgroundTransparency = 1
-    typesTitle.Text = "ESP Types:"
-    typesTitle.TextColor3 = Color3.fromRGB(200, 200, 255)
-    typesTitle.TextSize = 12
-    typesTitle.Font = Enum.Font.GothamBold
-    typesTitle.TextXAlignment = Enum.TextXAlignment.Left
-    typesTitle.Parent = settingsContainer
-    
-    yPosition = yPosition + 25
-    
+    -- Типы объектов ESP (только нужные)
     local espPlayersToggle, updatePlayersToggle = CreateToggle("Players", MainModule.Misc.ESPPlayers, function(enabled)
         MainModule.Misc.ESPPlayers = enabled
     end)
@@ -825,27 +691,11 @@ local function CreateESPSettings()
     
     yPosition = yPosition + toggleHeight
     
-    local espCandiesToggle, updateCandiesToggle = CreateToggle("Candies", MainModule.Misc.ESPCandies, function(enabled)
-        MainModule.Misc.ESPCandies = enabled
-    end)
-    espCandiesToggle.Parent = settingsContainer
-    espCandiesToggle.Position = UDim2.new(0, 0, 0, yPosition)
-    
-    yPosition = yPosition + toggleHeight
-    
     local espKeysToggle, updateKeysToggle = CreateToggle("Keys", MainModule.Misc.ESPKeys, function(enabled)
         MainModule.Misc.ESPKeys = enabled
     end)
     espKeysToggle.Parent = settingsContainer
     espKeysToggle.Position = UDim2.new(0, 0, 0, yPosition)
-    
-    yPosition = yPosition + toggleHeight
-    
-    local espDoorsToggle, updateDoorsToggle = CreateToggle("Doors", MainModule.Misc.ESPDoors, function(enabled)
-        MainModule.Misc.ESPDoors = enabled
-    end)
-    espDoorsToggle.Parent = settingsContainer
-    espDoorsToggle.Position = UDim2.new(0, 0, 0, yPosition)
     
     yPosition = yPosition + toggleHeight
     
@@ -896,10 +746,6 @@ local function CreateMainContent()
         MainModule.ToggleAntiStunQTE(enabled)
     end)
     
-    local skySquidQteToggle = CreateToggle("Sky Squid QTE", MainModule.AutoQTE.SkySquidQTEEnabled, function(enabled)
-        MainModule.ToggleSkySquidQTE(enabled)
-    end)
-    
     local antiStunRagdollToggle = CreateToggle("Anti Stun + Ragdoll", MainModule.Misc.AntiStunRagdoll, function(enabled)
         MainModule.ToggleAntiStunRagdoll(enabled)
     end)
@@ -944,20 +790,18 @@ local function CreateMiscContent()
     
     CreateTitle("MISCELLANEOUS")
     
-    -- ESP System в Misc (с добавленными опциями)
+    -- ESP System в Misc (оптимизированная)
     CreateESPSettings()
 end
 
 -- ===================================================================
--- REBEL CONTENT (Исправленный - без кнопки, только заголовок)
+-- REBEL CONTENT
 -- ===================================================================
 local function CreateRebelContent()
     ClearContent()
     
-    -- Большой заголовок REBEL по центру
     CreateTitle("REBEL")
     
-    -- Подзаголовок
     local subtitle = Instance.new("TextLabel")
     subtitle.Size = UDim2.new(1, -10, 0, 25)
     subtitle.Position = UDim2.new(0, 5, 0, 45)
@@ -1156,7 +1000,7 @@ local function CreateJumpRopeContent()
 end
 
 -- ===================================================================
--- SKY SQUID GAME CONTENT
+-- SKY SQUID GAME CONTENT (оптимизированный)
 -- ===================================================================
 local function CreateSkySquidContent()
     ClearContent()
@@ -1167,9 +1011,7 @@ local function CreateSkySquidContent()
         MainModule.ToggleSkySquidAntiFall(enabled)
     end)
     
-    local qteToggle = CreateToggle("Auto QTE - Sky Squid", MainModule.SkySquid.AutoQTE, function(enabled)
-        MainModule.ToggleSkySquidQTE(enabled)
-    end)
+    -- QTE убран, используется общий из Main
     
     local safePlatformToggle = CreateToggle("Safe Platform - Sky Squid", MainModule.SkySquid.SafePlatform, function(enabled)
         MainModule.ToggleSkySquidSafePlatform(enabled)
@@ -1298,8 +1140,6 @@ for i, name in pairs(tabs) do
         elseif name == "Settings" then
             CreateSettingsContent()
         end
-        
-        EnableMenuMouse()
     end
     
     button.MouseButton1Click:Connect(ActivateTab)
@@ -1309,13 +1149,13 @@ end
 -- УПРАВЛЕНИЕ КЛАВИШАМИ (ИСПРАВЛЕННОЕ)
 -- ===================================================================
 local menuToggleCooldown = false
-local menuToggleCooldownTime = 0.5 -- 0.5 секунды кд
+local menuToggleCooldownTime = 0.3 -- 0.3 секунды кд
 
 UIS.InputBegan:Connect(function(input, processed)
     if processed then return end
     
-    -- Используем F2 для открытия/закрытия меню (вместо M)
-    if input.KeyCode == Enum.KeyCode.F2 then
+    -- Используем P для открытия/закрытия меню
+    if input.KeyCode == Enum.KeyCode.P then
         if menuToggleCooldown then return end
         
         menuToggleCooldown = true
@@ -1323,9 +1163,6 @@ UIS.InputBegan:Connect(function(input, processed)
         
         if MainFrame.Visible then
             MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
-            EnableMenuMouse()
-        else
-            DisableMenuMouse()
         end
         
         -- Сбрасываем кд через время
@@ -1336,7 +1173,6 @@ UIS.InputBegan:Connect(function(input, processed)
     -- ESC для закрытия меню
     if input.KeyCode == Enum.KeyCode.Escape and MainFrame.Visible then
         MainFrame.Visible = false
-        DisableMenuMouse()
     end
 end)
 
@@ -1349,17 +1185,12 @@ if tabButtons["Main"] then
     tabButtons["Main"].TextColor3 = Color3.fromRGB(255, 255, 255)
 end
 CreateMainContent()
-EnableMenuMouse()
 
 -- Очистка при удалении GUI
 ScreenGui.AncestryChanged:Connect(function()
     if not ScreenGui.Parent then
-        RestoreMouseState()
         MainModule.Cleanup()
     end
 end)
 
-print("Creon X v2.1 загружен...")
-print("Нажмите F2 для открытия/закрытия меню")
-print("Нажмите ESC для закрытия меню")
-print("Доступные игры: Sky Squid Game, Squid Game")
+print("Creon X v2.1 загружен")
