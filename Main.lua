@@ -1,7 +1,7 @@
--- Main.lua - Обновленная версия CreonX
+-- Main.lua - Creon X v2.1
 local MainModule = {}
 
--- Service
+-- Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -43,7 +43,8 @@ MainModule.Guards = {
     InfiniteAmmo = false,
     HitboxExpander = false,
     OriginalFireRates = {},
-    OriginalAmmo = {}
+    OriginalAmmo = {},
+    OriginalHitboxes = {} -- Для восстановления хитбоксов
 }
 
 MainModule.Dalgona = {
@@ -97,20 +98,10 @@ MainModule.Misc = {
 }
 
 -- ESP System (оптимизированная без лагов)
-MainModule.ESPTable = {
-    Player = {},
-    Hider = {},
-    Seeker = {},
-    Guard = {},
-    Key = {},
-    Door = {},
-    EscapeDoor = {},
-    Candy = {},
-    None = {}
-}
-MainModule.ESPConnections = {}
+MainModule.ESPTable = {}
 MainModule.ESPFolder = nil
-MainModule.ESPUpdateRate = 0.1 -- Уменьшаем частоту обновления для оптимизации
+MainModule.ESPUpdateRate = 0.3 -- Больше для оптимизации
+MainModule.LastESPUpdate = 0
 
 -- HNS шипы
 MainModule.HNSSpikes = {
@@ -154,347 +145,282 @@ local function GetDistanceFromCharacter(object)
     return math.floor((character.HumanoidRootPart.Position - objectPosition).Magnitude)
 end
 
--- ESP Manager System
-local function CreateESP(args)
-    if not args.Object then 
-        warn("ESP Object is nil")
-        return nil
+-- Оптимизированная ESP System (без лагов)
+function MainModule.ToggleESP(enabled)
+    MainModule.Misc.ESPEnabled = enabled
+    
+    if espConnection then
+        espConnection:Disconnect()
+        espConnection = nil
     end
-
-    local ESPManager = {
-        Object = args.Object,
-        Text = args.Text or "No Text",
-        TextParent = args.TextParent or args.Object,
-        Color = args.Color or Color3.fromRGB(255, 255, 255),
-        Offset = args.Offset or Vector3.new(0, 3, 0),
-        IsEntity = args.IsEntity or false,
-        Type = args.Type or "None",
-
-        Highlights = {},
-        Humanoid = nil,
-        Billboard = nil,
-        TextLabel = nil,
-        Connections = {}
-    }
-
-    local tableIndex = #MainModule.ESPTable[ESPManager.Type] + 1
-
-    -- Если объект является моделью с PrimaryPart
-    if ESPManager.Object:IsA("Model") and ESPManager.Object.PrimaryPart then
-        if ESPManager.IsEntity and ESPManager.Object.PrimaryPart.Transparency == 1 then
-            ESPManager.Object:SetAttribute("OriginalTransparency", ESPManager.Object.PrimaryPart.Transparency)
-            ESPManager.Humanoid = Instance.new("Humanoid")
-            ESPManager.Humanoid.Parent = ESPManager.Object
-            ESPManager.Object.PrimaryPart.Transparency = 0.99
+    
+    -- Очищаем старые ESP
+    for _, esp in pairs(MainModule.ESPTable) do
+        if esp and esp.Destroy then
+            esp:Destroy()
         end
     end
-
-    -- Создаем папку для ESP если её нет
-    if not MainModule.ESPFolder then
+    MainModule.ESPTable = {}
+    
+    -- Удаляем папку ESP
+    if MainModule.ESPFolder then
+        MainModule.ESPFolder:Destroy()
+        MainModule.ESPFolder = nil
+    end
+    
+    if enabled then
+        -- Создаем новую папку ESP
         MainModule.ESPFolder = Instance.new("Folder")
         MainModule.ESPFolder.Name = "CreonESP"
         MainModule.ESPFolder.Parent = Workspace
-    end
-
-    -- Highlight для боксов
-    if MainModule.Misc.ESPBoxes then
-        local highlight = Instance.new("Highlight")
-        highlight.Name = "ESP_Highlight"
-        highlight.Adornee = ESPManager.Object
-        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        highlight.FillColor = ESPManager.Color
-        highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
-        highlight.OutlineColor = ESPManager.Color
-        highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
-        highlight.Enabled = MainModule.Misc.ESPHighlight
-        highlight.Parent = ESPManager.Object
         
-        table.insert(ESPManager.Highlights, highlight)
-    end
-
-    -- Billboard для текста
-    local billboardGui = Instance.new("BillboardGui")
-    billboardGui.Name = "ESP_Billboard"
-    billboardGui.Adornee = ESPManager.TextParent
-    billboardGui.AlwaysOnTop = true
-    billboardGui.ClipsDescendants = false
-    billboardGui.Size = UDim2.new(0, 200, 0, 50)
-    billboardGui.StudsOffset = ESPManager.Offset
-    billboardGui.Parent = MainModule.ESPFolder
-
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Name = "ESP_TextLabel"
-    textLabel.BackgroundTransparency = 1
-    textLabel.Font = Enum.Font.GothamBold
-    textLabel.Size = UDim2.new(1, 0, 1, 0)
-    textLabel.Text = ESPManager.Text
-    textLabel.TextColor3 = ESPManager.Color
-    textLabel.TextSize = MainModule.Misc.ESPTextSize
-    textLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
-    textLabel.TextStrokeTransparency = 0.3
-    textLabel.Parent = billboardGui
-
-    ESPManager.Billboard = billboardGui
-    ESPManager.TextLabel = textLabel
-
-    -- Функция обновления текста
-    local function UpdateText()
-        if not ESPManager.Object or not ESPManager.Object.Parent then
-            return
-        end
-        
-        local distanceText = ""
-        if MainModule.Misc.ESPDistance then
-            distanceText = " [" .. tostring(GetDistanceFromCharacter(ESPManager.Object)) .. "m]"
-        end
-        
-        local nameText = MainModule.Misc.ESPNames and ESPManager.Text or ""
-        ESPManager.TextLabel.Text = nameText .. distanceText
-    end
-
-    -- Функция изменения цвета
-    function ESPManager.SetColor(newColor)
-        ESPManager.Color = newColor
-        for _, highlight in pairs(ESPManager.Highlights) do
-            highlight.FillColor = newColor
-            highlight.OutlineColor = newColor
-        end
-        if ESPManager.TextLabel then
-            ESPManager.TextLabel.TextColor3 = newColor
-        end
-    end
-
-    -- Функция удаления ESP
-    function ESPManager.Destroy()
-        -- Восстанавливаем прозрачность если была изменена
-        if ESPManager.IsEntity and ESPManager.Object and ESPManager.Object:IsA("Model") then
-            local originalTransparency = ESPManager.Object:GetAttribute("OriginalTransparency")
-            if originalTransparency and ESPManager.Object.PrimaryPart then
-                ESPManager.Object.PrimaryPart.Transparency = originalTransparency
+        -- Оптимизированное обновление ESP
+        espConnection = RunService.RenderStepped:Connect(function()
+            local currentTime = tick()
+            if currentTime - MainModule.LastESPUpdate < MainModule.ESPUpdateRate then
+                return
             end
-            if ESPManager.Humanoid then
-                ESPManager.Humanoid:Destroy()
-            end
-        end
-
-        -- Удаляем Highlight
-        for _, highlight in pairs(ESPManager.Highlights) do
-            highlight:Destroy()
-        end
-        ESPManager.Highlights = {}
-
-        -- Удаляем Billboard
-        if ESPManager.Billboard then
-            ESPManager.Billboard:Destroy()
-            ESPManager.Billboard = nil
-        end
-        if ESPManager.TextLabel then
-            ESPManager.TextLabel = nil
-        end
-
-        -- Отключаем соединения
-        for _, conn in pairs(ESPManager.Connections) do
+            MainModule.LastESPUpdate = currentTime
+            
+            -- Обновляем ESP раз в 0.3 секунды для оптимизации
             pcall(function()
-                conn:Disconnect()
+                -- Очищаем старые ESP
+                for _, esp in pairs(MainModule.ESPTable) do
+                    if esp and esp.Destroy then
+                        esp:Destroy()
+                    end
+                end
+                MainModule.ESPTable = {}
+                
+                -- ESP для игроков
+                if MainModule.Misc.ESPPlayers then
+                    for _, player in pairs(Players:GetPlayers()) do
+                        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") then
+                            local humanoid = player.Character.Humanoid
+                            if humanoid.Health > 0 then
+                                local highlight = Instance.new("Highlight")
+                                highlight.Name = "ESP_Highlight"
+                                highlight.Adornee = player.Character
+                                highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                                highlight.FillColor = Color3.fromRGB(0, 170, 255)
+                                highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+                                highlight.OutlineColor = Color3.fromRGB(0, 170, 255)
+                                highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+                                highlight.Enabled = MainModule.Misc.ESPHighlight and MainModule.Misc.ESPBoxes
+                                highlight.Parent = player.Character
+                                
+                                local billboard = Instance.new("BillboardGui")
+                                billboard.Name = "ESP_Billboard"
+                                billboard.Adornee = player.Character:FindFirstChild("HumanoidRootPart") or player.Character.PrimaryPart
+                                billboard.AlwaysOnTop = true
+                                billboard.Size = UDim2.new(0, 200, 0, 50)
+                                billboard.StudsOffset = Vector3.new(0, 3, 0)
+                                billboard.Parent = MainModule.ESPFolder
+                                
+                                local textLabel = Instance.new("TextLabel")
+                                textLabel.Name = "ESP_Text"
+                                textLabel.BackgroundTransparency = 1
+                                textLabel.Size = UDim2.new(1, 0, 1, 0)
+                                textLabel.Text = player.DisplayName .. " [HP: " .. math.floor(humanoid.Health) .. "]"
+                                textLabel.TextColor3 = Color3.fromRGB(0, 170, 255)
+                                textLabel.TextSize = MainModule.Misc.ESPTextSize
+                                textLabel.Font = Enum.Font.GothamBold
+                                textLabel.TextStrokeTransparency = 0.3
+                                textLabel.Parent = billboard
+                                
+                                -- Сохраняем в таблицу
+                                MainModule.ESPTable[player] = {
+                                    Highlight = highlight,
+                                    Billboard = billboard,
+                                    TextLabel = textLabel,
+                                    Destroy = function()
+                                        if highlight then highlight:Destroy() end
+                                        if billboard then billboard:Destroy() end
+                                    end
+                                }
+                            end
+                        end
+                    end
+                end
+                
+                -- ESP для HNS (Hiders и Seekers)
+                if MainModule.Misc.ESPHiders or MainModule.Misc.ESPSeekers then
+                    for _, player in pairs(Players:GetPlayers()) do
+                        if player ~= LocalPlayer and player.Character then
+                            local isHider = player:GetAttribute("IsHider")
+                            local isHunter = player:GetAttribute("IsHunter")
+                            
+                            if (isHider and MainModule.Misc.ESPHiders) or (isHunter and MainModule.Misc.ESPSeekers) then
+                                local color = isHider and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+                                local text = player.DisplayName .. (isHider and " (Hider)" or " (Seeker)")
+                                
+                                local highlight = Instance.new("Highlight")
+                                highlight.Name = "ESP_Highlight"
+                                highlight.Adornee = player.Character
+                                highlight.FillColor = color
+                                highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+                                highlight.OutlineColor = color
+                                highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+                                highlight.Enabled = MainModule.Misc.ESPHighlight and MainModule.Misc.ESPBoxes
+                                highlight.Parent = player.Character
+                                
+                                local billboard = Instance.new("BillboardGui")
+                                billboard.Name = "ESP_Billboard"
+                                billboard.Adornee = player.Character:FindFirstChild("HumanoidRootPart") or player.Character.PrimaryPart
+                                billboard.AlwaysOnTop = true
+                                billboard.Size = UDim2.new(0, 200, 0, 50)
+                                billboard.StudsOffset = Vector3.new(0, 3, 0)
+                                billboard.Parent = MainModule.ESPFolder
+                                
+                                local textLabel = Instance.new("TextLabel")
+                                textLabel.Name = "ESP_Text"
+                                textLabel.BackgroundTransparency = 1
+                                textLabel.Size = UDim2.new(1, 0, 1, 0)
+                                textLabel.Text = text
+                                textLabel.TextColor3 = color
+                                textLabel.TextSize = MainModule.Misc.ESPTextSize
+                                textLabel.Font = Enum.Font.GothamBold
+                                textLabel.TextStrokeTransparency = 0.3
+                                textLabel.Parent = billboard
+                                
+                                MainModule.ESPTable[player .. "_hns"] = {
+                                    Highlight = highlight,
+                                    Billboard = billboard,
+                                    TextLabel = textLabel,
+                                    Destroy = function()
+                                        if highlight then highlight:Destroy() end
+                                        if billboard then billboard:Destroy() end
+                                    end
+                                }
+                            end
+                        end
+                    end
+                end
+                
+                -- ESP для конфет
+                if MainModule.Misc.ESPCandies then
+                    for _, obj in pairs(Workspace:GetDescendants()) do
+                        if obj:IsA("Model") and obj.Name:lower():find("candy") and obj.PrimaryPart then
+                            local billboard = Instance.new("BillboardGui")
+                            billboard.Name = "ESP_Billboard"
+                            billboard.Adornee = obj.PrimaryPart
+                            billboard.AlwaysOnTop = true
+                            billboard.Size = UDim2.new(0, 200, 0, 50)
+                            billboard.StudsOffset = Vector3.new(0, 2, 0)
+                            billboard.Parent = MainModule.ESPFolder
+                            
+                            local textLabel = Instance.new("TextLabel")
+                            textLabel.Name = "ESP_Text"
+                            textLabel.BackgroundTransparency = 1
+                            textLabel.Size = UDim2.new(1, 0, 1, 0)
+                            textLabel.Text = "Candy"
+                            textLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+                            textLabel.TextSize = MainModule.Misc.ESPTextSize
+                            textLabel.Font = Enum.Font.GothamBold
+                            textLabel.TextStrokeTransparency = 0.3
+                            textLabel.Parent = billboard
+                            
+                            MainModule.ESPTable[obj] = {
+                                Billboard = billboard,
+                                Destroy = function()
+                                    if billboard then billboard:Destroy() end
+                                end
+                            }
+                        end
+                    end
+                end
+                
+                -- ESP для ключей
+                if MainModule.Misc.ESPKeys then
+                    for _, obj in pairs(Workspace:GetDescendants()) do
+                        if obj:IsA("Model") and obj.Name:lower():find("key") and obj.PrimaryPart then
+                            local billboard = Instance.new("BillboardGui")
+                            billboard.Name = "ESP_Billboard"
+                            billboard.Adornee = obj.PrimaryPart
+                            billboard.AlwaysOnTop = true
+                            billboard.Size = UDim2.new(0, 200, 0, 50)
+                            billboard.StudsOffset = Vector3.new(0, 2, 0)
+                            billboard.Parent = MainModule.ESPFolder
+                            
+                            local textLabel = Instance.new("TextLabel")
+                            textLabel.Name = "ESP_Text"
+                            textLabel.BackgroundTransparency = 1
+                            textLabel.Size = UDim2.new(1, 0, 1, 0)
+                            textLabel.Text = "Key"
+                            textLabel.TextColor3 = Color3.fromRGB(255, 165, 0)
+                            textLabel.TextSize = MainModule.Misc.ESPTextSize
+                            textLabel.Font = Enum.Font.GothamBold
+                            textLabel.TextStrokeTransparency = 0.3
+                            textLabel.Parent = billboard
+                            
+                            MainModule.ESPTable[obj] = {
+                                Billboard = billboard,
+                                Destroy = function()
+                                    if billboard then billboard:Destroy() end
+                                end
+                            }
+                        end
+                    end
+                end
+                
+                -- ESP для охранников
+                if MainModule.Misc.ESPGuards then
+                    for _, obj in pairs(Workspace:GetDescendants()) do
+                        if obj:IsA("Model") and obj.Name:lower():find("guard") and obj:FindFirstChild("HumanoidRootPart") then
+                            local highlight = Instance.new("Highlight")
+                            highlight.Name = "ESP_Highlight"
+                            highlight.Adornee = obj
+                            highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                            highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+                            highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
+                            highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+                            highlight.Enabled = MainModule.Misc.ESPHighlight and MainModule.Misc.ESPBoxes
+                            highlight.Parent = obj
+                            
+                            local billboard = Instance.new("BillboardGui")
+                            billboard.Name = "ESP_Billboard"
+                            billboard.Adornee = obj.HumanoidRootPart
+                            billboard.AlwaysOnTop = true
+                            billboard.Size = UDim2.new(0, 200, 0, 50)
+                            billboard.StudsOffset = Vector3.new(0, 3, 0)
+                            billboard.Parent = MainModule.ESPFolder
+                            
+                            local textLabel = Instance.new("TextLabel")
+                            textLabel.Name = "ESP_Text"
+                            textLabel.BackgroundTransparency = 1
+                            textLabel.Size = UDim2.new(1, 0, 1, 0)
+                            textLabel.Text = "Guard"
+                            textLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+                            textLabel.TextSize = MainModule.Misc.ESPTextSize
+                            textLabel.Font = Enum.Font.GothamBold
+                            textLabel.TextStrokeTransparency = 0.3
+                            textLabel.Parent = billboard
+                            
+                            MainModule.ESPTable[obj] = {
+                                Highlight = highlight,
+                                Billboard = billboard,
+                                Destroy = function()
+                                    if highlight then highlight:Destroy() end
+                                    if billboard then billboard:Destroy() end
+                                end
+                            }
+                        end
+                    end
+                end
             end)
-        end
-        ESPManager.Connections = {}
-
-        -- Удаляем из таблицы
-        if MainModule.ESPTable[ESPManager.Type][tableIndex] then
-            MainModule.ESPTable[ESPManager.Type][tableIndex] = nil
-        end
-    end
-
-    -- Добавляем соединение для обновления
-    local updateConnection = RunService.Heartbeat:Connect(function()
-        if not ESPManager.Object or not ESPManager.Object.Parent then
-            ESPManager.Destroy()
-            return
-        end
-
-        -- Обновляем позицию Billboard
-        if ESPManager.Billboard and ESPManager.TextParent then
-            ESPManager.Billboard.Adornee = ESPManager.TextParent
-        end
-
-        -- Обновляем видимость и настройки
-        if ESPManager.TextLabel then
-            ESPManager.TextLabel.Visible = MainModule.Misc.ESPEnabled
-            ESPManager.TextLabel.TextSize = MainModule.Misc.ESPTextSize
-            UpdateText()
-        end
-
-        -- Обновляем Highlight
-        for _, highlight in pairs(ESPManager.Highlights) do
-            highlight.Enabled = MainModule.Misc.ESPHighlight and MainModule.Misc.ESPBoxes
-            highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
-            highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
-        end
-    end)
-
-    table.insert(ESPManager.Connections, updateConnection)
-    MainModule.ESPTable[ESPManager.Type][tableIndex] = ESPManager
-    return ESPManager
-end
-
--- Функции ESP для разных типов объектов
-local function UpdateAllESP()
-    -- Очищаем старые ESP
-    for _, category in pairs(MainModule.ESPTable) do
-        for _, esp in pairs(category) do
+        end)
+    else
+        -- Очищаем все ESP
+        for _, esp in pairs(MainModule.ESPTable) do
             if esp and esp.Destroy then
                 esp:Destroy()
             end
         end
-    end
-    
-    -- Очищаем таблицы
-    for key in pairs(MainModule.ESPTable) do
-        MainModule.ESPTable[key] = {}
-    end
-    
-    if not MainModule.Misc.ESPEnabled then
-        return
-    end
-    
-    -- ESP для игроков
-    if MainModule.Misc.ESPPlayers then
-        for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") then
-                local humanoid = player.Character.Humanoid
-                if humanoid.Health > 0 then
-                    local esp = CreateESP({
-                        Type = "Player",
-                        Object = player.Character,
-                        Text = player.DisplayName .. " [HP: " .. math.floor(humanoid.Health) .. "]",
-                        TextParent = player.Character:FindFirstChild("HumanoidRootPart") or player.Character.PrimaryPart,
-                        Color = Color3.fromRGB(0, 170, 255)
-                    })
-                    
-                    if esp then
-                        -- Следим за изменением здоровья
-                        local healthConn = humanoid.HealthChanged:Connect(function(newHealth)
-                            if newHealth > 0 then
-                                esp.Text = player.DisplayName .. " [HP: " .. math.floor(newHealth) .. "]"
-                            else
-                                esp:Destroy()
-                            end
-                        end)
-                        table.insert(esp.Connections, healthConn)
-                    end
-                end
-            end
-        end
-    end
-    
-    -- ESP для HNS
-    if MainModule.Misc.ESPHiders or MainModule.Misc.ESPSeekers then
-        for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                local isHider = player:GetAttribute("IsHider")
-                local isSeeker = player:GetAttribute("IsHunter") -- В игре аттрибут может называться IsHunter
-                
-                if isHider and MainModule.Misc.ESPHiders then
-                    CreateESP({
-                        Type = "Hider",
-                        Object = player.Character,
-                        Text = player.DisplayName .. " (Hider)",
-                        TextParent = player.Character:FindFirstChild("HumanoidRootPart") or player.Character.PrimaryPart,
-                        Color = Color3.fromRGB(0, 255, 0),
-                        Offset = Vector3.new(0, 3, 0)
-                    })
-                elseif isSeeker and MainModule.Misc.ESPSeekers then
-                    CreateESP({
-                        Type = "Seeker",
-                        Object = player.Character,
-                        Text = player.DisplayName .. " (Seeker)",
-                        TextParent = player.Character:FindFirstChild("HumanoidRootPart") or player.Character.PrimaryPart,
-                        Color = Color3.fromRGB(255, 0, 0),
-                        Offset = Vector3.new(0, 3, 0)
-                    })
-                end
-            end
-        end
-    end
-    
-    -- ESP для конфет (если есть в игре)
-    if MainModule.Misc.ESPCandies then
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("Model") and obj.Name:lower():find("candy") then
-                CreateESP({
-                    Type = "Candy",
-                    Object = obj,
-                    Text = "Candy",
-                    Color = Color3.fromRGB(255, 255, 0),
-                    Offset = Vector3.new(0, 1, 0),
-                    IsEntity = true
-                })
-            end
-        end
-    end
-    
-    -- ESP для ключей
-    if MainModule.Misc.ESPKeys then
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("Model") and obj.Name:lower():find("key") and obj.PrimaryPart then
-                CreateESP({
-                    Type = "Key",
-                    Object = obj,
-                    Text = "Key",
-                    Color = Color3.fromRGB(255, 165, 0),
-                    Offset = Vector3.new(0, 1, 0),
-                    IsEntity = true
-                })
-            end
-        end
-    end
-    
-    -- ESP для дверей
-    if MainModule.Misc.ESPDoors then
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("Model") and obj.Name == "FullDoorAnimated" and obj.PrimaryPart then
-                local keyNeeded = obj:GetAttribute("KeyNeeded") or "None"
-                CreateESP({
-                    Type = "Door",
-                    Object = obj,
-                    Text = "Door [Key: " .. keyNeeded .. "]",
-                    Color = Color3.fromRGB(139, 69, 19),
-                    Offset = Vector3.new(0, 2, 0),
-                    IsEntity = true
-                })
-            end
-        end
-    end
-    
-    -- ESP для выходных дверей
-    if MainModule.Misc.ESPEscapeDoors then
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("Model") and obj.Name == "EXITDOOR" and obj.PrimaryPart and obj:GetAttribute("CANESCAPE") then
-                CreateESP({
-                    Type = "EscapeDoor",
-                    Object = obj,
-                    Text = "Escape Door",
-                    Color = Color3.fromRGB(0, 255, 0),
-                    Offset = Vector3.new(0, 2, 0),
-                    IsEntity = true
-                })
-            end
-        end
-    end
-    
-    -- ESP для охранников
-    if MainModule.Misc.ESPGuards then
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("Model") and obj.Name:lower():find("guard") and obj:FindFirstChild("HumanoidRootPart") then
-                CreateESP({
-                    Type = "Guard",
-                    Object = obj,
-                    Text = "Guard",
-                    Color = Color3.fromRGB(255, 0, 0),
-                    Offset = Vector3.new(0, 3, 0)
-                })
-            end
+        MainModule.ESPTable = {}
+        
+        if MainModule.ESPFolder then
+            MainModule.ESPFolder:Destroy()
+            MainModule.ESPFolder = nil
         end
     end
 end
@@ -844,7 +770,7 @@ function MainModule.ToggleInfiniteAmmo(enabled)
     end
 end
 
--- Hitbox Expander функция
+-- Hitbox Expander функция (ИСПРАВЛЕНА - изменяет тело, а не голову)
 function MainModule.ToggleHitboxExpander(enabled)
     MainModule.Guards.HitboxExpander = enabled
     
@@ -853,34 +779,80 @@ function MainModule.ToggleHitboxExpander(enabled)
         hitboxConnection = nil
     end
     
-    if enabled then
-        _G.HeadSize = 30
-        
-        local function UpdateHeadHitboxes()
-            for _, player in pairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
-                    pcall(function()
-                        player.Character.Head.Size = Vector3.new(_G.HeadSize, _G.HeadSize, _G.HeadSize)
-                        player.Character.Head.Transparency = 1
-                        player.Character.Head.CanCollide = false
-                    end)
+    -- Восстанавливаем оригинальные размеры перед изменением
+    if MainModule.Guards.OriginalHitboxes then
+        for player, originalSizes in pairs(MainModule.Guards.OriginalHitboxes) do
+            if player and player.Character then
+                for partName, originalSize in pairs(originalSizes) do
+                    local part = player.Character:FindFirstChild(partName)
+                    if part and part:IsA("BasePart") then
+                        part.Size = originalSize
+                        part.Transparency = 0
+                        part.CanCollide = true
+                    end
                 end
             end
         end
+        MainModule.Guards.OriginalHitboxes = {}
+    end
+    
+    if enabled then
+        local HITBOX_SIZE = 1000 -- Очень большой размер для хитбокса
         
-        hitboxConnection = RunService.RenderStepped:Connect(UpdateHeadHitboxes)
+        hitboxConnection = RunService.RenderStepped:Connect(function()
+            if not MainModule.Guards.HitboxExpander then return end
+            
+            pcall(function()
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player ~= LocalPlayer and player.Character then
+                        -- Сохраняем оригинальные размеры если еще не сохранены
+                        if not MainModule.Guards.OriginalHitboxes[player] then
+                            MainModule.Guards.OriginalHitboxes[player] = {}
+                            
+                            -- Сохраняем размеры всех основных частей тела
+                            local bodyParts = {"Head", "Torso", "HumanoidRootPart", "Left Arm", "Right Arm", "Left Leg", "Right Leg"}
+                            for _, partName in pairs(bodyParts) do
+                                local part = player.Character:FindFirstChild(partName)
+                                if part and part:IsA("BasePart") then
+                                    MainModule.Guards.OriginalHitboxes[player][partName] = part.Size
+                                end
+                            end
+                        end
+                        
+                        -- Увеличиваем размеры всех основных частей тела
+                        local bodyParts = {"Head", "Torso", "HumanoidRootPart", "Left Arm", "Right Arm", "Left Leg", "Right Leg"}
+                        for _, partName in pairs(bodyParts) do
+                            local part = player.Character:FindFirstChild(partName)
+                            if part and part:IsA("BasePart") then
+                                -- Увеличиваем размер до HITBOX_SIZE
+                                part.Size = Vector3.new(HITBOX_SIZE, HITBOX_SIZE, HITBOX_SIZE)
+                                -- Делаем полностью прозрачным чтобы не было заметно
+                                part.Transparency = 1
+                                -- Отключаем коллизию чтобы не мешать
+                                part.CanCollide = false
+                            end
+                        end
+                    end
+                end
+            end)
+        end)
     else
         -- Восстанавливаем оригинальные размеры
-        for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
-                pcall(function()
-                    player.Character.Head.Size = Vector3.new(2, 1, 1)
-                    player.Character.Head.Transparency = 0
-                    player.Character.Head.Material = "Plastic"
-                    player.Character.Head.BrickColor = BrickColor.new("Medium stone grey")
-                end)
+        pcall(function()
+            for player, originalSizes in pairs(MainModule.Guards.OriginalHitboxes) do
+                if player and player.Character then
+                    for partName, originalSize in pairs(originalSizes) do
+                        local part = player.Character:FindFirstChild(partName)
+                        if part and part:IsA("BasePart") then
+                            part.Size = originalSize
+                            part.Transparency = 0
+                            part.CanCollide = true
+                        end
+                    end
+                end
             end
-        end
+            MainModule.Guards.OriginalHitboxes = {}
+        end)
     end
 end
 
@@ -908,7 +880,7 @@ function MainModule.FreeLighter()
     LocalPlayer:SetAttribute("HasLighter", true)
 end
 
--- HNS функции (исправленные)
+-- HNS функции
 function MainModule.ToggleAutoPickup(enabled)
     MainModule.HNS.AutoPickup = enabled
     
@@ -1289,71 +1261,6 @@ function MainModule.ToggleAntiFailJumpRope(enabled)
     end
 end
 
--- ESP System
-function MainModule.ToggleESP(enabled)
-    MainModule.Misc.ESPEnabled = enabled
-    
-    if espConnection then
-        espConnection:Disconnect()
-        espConnection = nil
-    end
-    
-    -- Очищаем старые ESP
-    for _, category in pairs(MainModule.ESPTable) do
-        for _, esp in pairs(category) do
-            if esp and esp.Destroy then
-                esp:Destroy()
-            end
-        end
-    end
-    
-    -- Удаляем папку ESP
-    if MainModule.ESPFolder then
-        MainModule.ESPFolder:Destroy()
-        MainModule.ESPFolder = nil
-    end
-    
-    if enabled then
-        -- Создаем новую папку ESP
-        MainModule.ESPFolder = Instance.new("Folder")
-        MainModule.ESPFolder.Name = "CreonESP"
-        MainModule.ESPFolder.Parent = Workspace
-        
-        -- Обновляем все ESP
-        UpdateAllESP()
-        
-        -- Устанавливаем соединения для обновления ESP
-        espConnection = RunService.Heartbeat:Connect(function()
-            if tick() % MainModule.ESPUpdateRate < 0.01 then
-                UpdateAllESP()
-            end
-        end)
-        
-        -- Соединения для новых игроков
-        local playerAddedConn = Players.PlayerAdded:Connect(function(player)
-            task.wait(1)
-            UpdateAllESP()
-        end)
-        
-        local characterAddedConn
-        characterAddedConn = LocalPlayer.CharacterAdded:Connect(function()
-            task.wait(1)
-            UpdateAllESP()
-        end)
-        
-        table.insert(MainModule.ESPConnections, playerAddedConn)
-        table.insert(MainModule.ESPConnections, characterAddedConn)
-    else
-        -- Отключаем все соединения ESP
-        for _, conn in pairs(MainModule.ESPConnections) do
-            pcall(function()
-                conn:Disconnect()
-            end)
-        end
-        MainModule.ESPConnections = {}
-    end
-end
-
 -- Misc функции
 function MainModule.ToggleInstaInteract(enabled)
     MainModule.Misc.InstaInteract = enabled
@@ -1437,6 +1344,23 @@ function MainModule.Cleanup()
         end
     end
     
+    -- Восстанавливаем хитбоксы
+    if MainModule.Guards.OriginalHitboxes then
+        for player, originalSizes in pairs(MainModule.Guards.OriginalHitboxes) do
+            if player and player.Character then
+                for partName, originalSize in pairs(originalSizes) do
+                    local part = player.Character:FindFirstChild(partName)
+                    if part and part:IsA("BasePart") then
+                        part.Size = originalSize
+                        part.Transparency = 0
+                        part.CanCollide = true
+                    end
+                end
+            end
+        end
+        MainModule.Guards.OriginalHitboxes = {}
+    end
+    
     -- Очищаем ESP
     if MainModule.Misc.ESPEnabled then
         MainModule.ToggleESP(false)
@@ -1446,6 +1370,11 @@ function MainModule.Cleanup()
     if MainModule.ESPFolder then
         MainModule.ESPFolder:Destroy()
         MainModule.ESPFolder = nil
+    end
+    
+    -- Восстанавливаем шипы
+    if MainModule.HNS.DisableSpikes then
+        MainModule.ToggleDisableSpikes(false)
     end
 end
 
