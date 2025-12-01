@@ -726,10 +726,10 @@ local function CreateDropdown(options, default, callback)
     return dropdownContainer
 end
 
--- Функция для создания ESP настроек
+-- Функция для создания ESP настроек (добавлены конфеты, двери и HNS)
 local function CreateESPSettings()
     local settingsContainer = Instance.new("Frame")
-    settingsContainer.Size = UDim2.new(1, -10, 0, 380)
+    settingsContainer.Size = UDim2.new(1, -10, 0, 450)  -- Увеличил высоту
     settingsContainer.BackgroundTransparency = 1
     settingsContainer.Parent = ContentScrolling
     
@@ -784,6 +784,84 @@ local function CreateESPSettings()
     end)
     espBoxesToggle.Parent = settingsContainer
     espBoxesToggle.Position = UDim2.new(0, 0, 0, yPosition)
+    
+    yPosition = yPosition + toggleHeight + 10
+    
+    -- Типы объектов ESP
+    local typesTitle = Instance.new("TextLabel")
+    typesTitle.Size = UDim2.new(1, 0, 0, 20)
+    typesTitle.Position = UDim2.new(0, 0, 0, yPosition)
+    typesTitle.BackgroundTransparency = 1
+    typesTitle.Text = "ESP Types:"
+    typesTitle.TextColor3 = Color3.fromRGB(200, 200, 255)
+    typesTitle.TextSize = 12
+    typesTitle.Font = Enum.Font.GothamBold
+    typesTitle.TextXAlignment = Enum.TextXAlignment.Left
+    typesTitle.Parent = settingsContainer
+    
+    yPosition = yPosition + 25
+    
+    local espPlayersToggle, updatePlayersToggle = CreateToggle("Players", MainModule.Misc.ESPPlayers, function(enabled)
+        MainModule.Misc.ESPPlayers = enabled
+    end)
+    espPlayersToggle.Parent = settingsContainer
+    espPlayersToggle.Position = UDim2.new(0, 0, 0, yPosition)
+    
+    yPosition = yPosition + toggleHeight
+    
+    local espHidersToggle, updateHidersToggle = CreateToggle("Hiders", MainModule.Misc.ESPHiders, function(enabled)
+        MainModule.Misc.ESPHiders = enabled
+    end)
+    espHidersToggle.Parent = settingsContainer
+    espHidersToggle.Position = UDim2.new(0, 0, 0, yPosition)
+    
+    yPosition = yPosition + toggleHeight
+    
+    local espSeekersToggle, updateSeekersToggle = CreateToggle("Seekers", MainModule.Misc.ESPSeekers, function(enabled)
+        MainModule.Misc.ESPSeekers = enabled
+    end)
+    espSeekersToggle.Parent = settingsContainer
+    espSeekersToggle.Position = UDim2.new(0, 0, 0, yPosition)
+    
+    yPosition = yPosition + toggleHeight
+    
+    local espCandiesToggle, updateCandiesToggle = CreateToggle("Candies", MainModule.Misc.ESPCandies, function(enabled)
+        MainModule.Misc.ESPCandies = enabled
+    end)
+    espCandiesToggle.Parent = settingsContainer
+    espCandiesToggle.Position = UDim2.new(0, 0, 0, yPosition)
+    
+    yPosition = yPosition + toggleHeight
+    
+    local espKeysToggle, updateKeysToggle = CreateToggle("Keys", MainModule.Misc.ESPKeys, function(enabled)
+        MainModule.Misc.ESPKeys = enabled
+    end)
+    espKeysToggle.Parent = settingsContainer
+    espKeysToggle.Position = UDim2.new(0, 0, 0, yPosition)
+    
+    yPosition = yPosition + toggleHeight
+    
+    local espDoorsToggle, updateDoorsToggle = CreateToggle("Doors", MainModule.Misc.ESPDoors, function(enabled)
+        MainModule.Misc.ESPDoors = enabled
+    end)
+    espDoorsToggle.Parent = settingsContainer
+    espDoorsToggle.Position = UDim2.new(0, 0, 0, yPosition)
+    
+    yPosition = yPosition + toggleHeight
+    
+    local espEscapeDoorsToggle, updateEscapeDoorsToggle = CreateToggle("Escape Doors", MainModule.Misc.ESPEscapeDoors, function(enabled)
+        MainModule.Misc.ESPEscapeDoors = enabled
+    end)
+    espEscapeDoorsToggle.Parent = settingsContainer
+    espEscapeDoorsToggle.Position = UDim2.new(0, 0, 0, yPosition)
+    
+    yPosition = yPosition + toggleHeight
+    
+    local espGuardsToggle, updateGuardsToggle = CreateToggle("Guards", MainModule.Misc.ESPGuards, function(enabled)
+        MainModule.Misc.ESPGuards = enabled
+    end)
+    espGuardsToggle.Parent = settingsContainer
+    espGuardsToggle.Position = UDim2.new(0, 0, 0, yPosition)
     
     return settingsContainer
 end
@@ -866,7 +944,7 @@ local function CreateMiscContent()
     
     CreateTitle("MISCELLANEOUS")
     
-    -- ESP System в Misc
+    -- ESP System в Misc (с добавленными опциями)
     CreateESPSettings()
 end
 
@@ -1228,22 +1306,34 @@ for i, name in pairs(tabs) do
 end
 
 -- ===================================================================
--- УПРАВЛЕНИЕ КЛАВИШАМИ
+-- УПРАВЛЕНИЕ КЛАВИШАМИ (ИСПРАВЛЕННОЕ)
 -- ===================================================================
-UIS.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.M then
+local menuToggleCooldown = false
+local menuToggleCooldownTime = 0.5 -- 0.5 секунды кд
+
+UIS.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    
+    -- Используем F2 для открытия/закрытия меню (вместо M)
+    if input.KeyCode == Enum.KeyCode.F2 then
+        if menuToggleCooldown then return end
+        
+        menuToggleCooldown = true
         MainFrame.Visible = not MainFrame.Visible
+        
         if MainFrame.Visible then
             MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
             EnableMenuMouse()
         else
             DisableMenuMouse()
         end
+        
+        -- Сбрасываем кд через время
+        task.wait(menuToggleCooldownTime)
+        menuToggleCooldown = false
     end
-end)
-
--- Закрытие при нажатии ESC
-UIS.InputBegan:Connect(function(input)
+    
+    -- ESC для закрытия меню
     if input.KeyCode == Enum.KeyCode.Escape and MainFrame.Visible then
         MainFrame.Visible = false
         DisableMenuMouse()
@@ -1270,3 +1360,6 @@ ScreenGui.AncestryChanged:Connect(function()
 end)
 
 print("Creon X v2.1 загружен...")
+print("Нажмите F2 для открытия/закрытия меню")
+print("Нажмите ESC для закрытия меню")
+print("Доступные игры: Sky Squid Game, Squid Game")
