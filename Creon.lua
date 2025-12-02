@@ -1,4 +1,4 @@
--- Creon X v2.1 (исправленная версия)
+-- Creon X v2.1 (исправленная версия с поддержкой Delta)
 -- Проверка исполнителя
 local executorName = "Unknown"
 if identifyexecutor then
@@ -7,7 +7,21 @@ elseif getexecutorname then
     executorName = getexecutorname()
 end
 
-local supportedExecutors = {"xeno", "bunnu", "volcano", "potassium", "seliware", "zenith", "bunni"}
+-- Поддержка для Delta (мобильные устройства)
+if executorName == "Unknown" then
+    -- Проверяем Delta через окружение
+    if type(syn) == "table" and syn.request then
+        executorName = "Delta"
+    elseif get_hidden_gui then
+        executorName = "Delta"
+    elseif tostring(getfenv):find("Delta") then
+        executorName = "Delta"
+    end
+end
+
+print("Executor detected:", executorName)
+
+local supportedExecutors = {"xeno", "bunnu", "volcano", "potassium", "seliware", "zenith", "bunni", "delta", "scriptware", "krnl", "oxygen", "fluxus"}
 local isSupported = false
 
 for _, name in pairs(supportedExecutors) do
@@ -40,7 +54,6 @@ end)
 
 if not success then
     warn("Не удалось загрузить Main.lua с GitHub: " .. tostring(err))
-    -- Создаем заглушку с правильными функциями
     print("Используем встроенную реализацию")
     
     -- Создаем мини-реализацию MainModule
@@ -234,66 +247,6 @@ if not success then
         
         ToggleAutoDodge = function(enabled)
             MainModule.HNS.AutoDodge = enabled
-            if enabled then
-                warn("AutoDodge: Включен (базовая реализация)")
-                
-                -- Простая реализация AutoDodge
-                local lastDodgeTime = 0
-                local dodgeCooldown = 1.0
-                
-                RunService.Heartbeat:Connect(function()
-                    if not MainModule.HNS.AutoDodge then return end
-                    
-                    local currentTime = tick()
-                    if currentTime - lastDodgeTime < dodgeCooldown then return end
-                    
-                    local character = player.Character
-                    if not character then return end
-                    
-                    local rootPart = character:FindFirstChild("HumanoidRootPart")
-                    local humanoid = character:FindFirstChildOfClass("Humanoid")
-                    if not rootPart or not humanoid or humanoid.Health <= 0 then return end
-                    
-                    -- Ищем игроков с ножом
-                    for _, otherPlayer in pairs(Players:GetPlayers()) do
-                        if otherPlayer ~= player and otherPlayer.Character then
-                            local targetChar = otherPlayer.Character
-                            local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-                            local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
-                            
-                            if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
-                                local distance = (rootPart.Position - targetRoot.Position).Magnitude
-                                
-                                if distance <= 10 then
-                                    -- Проверяем наличие ножа
-                                    local hasKnife = false
-                                    for _, tool in pairs(targetChar:GetChildren()) do
-                                        if tool:IsA("Tool") and (tool.Name:lower():find("knife") or 
-                                           tool.Name:lower():find("fork") or tool.Name:lower():find("dagger")) then
-                                            hasKnife = true
-                                            break
-                                        end
-                                    end
-                                    
-                                    if hasKnife and distance < 3 then
-                                        -- Нажимаем клавишу 1 для уклонения
-                                        pcall(function()
-                                            game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.One, false, game)
-                                            task.wait(0.05)
-                                            game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.One, false, game)
-                                        end)
-                                        
-                                        lastDodgeTime = tick()
-                                        break
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end)
-            else
-                warn("AutoDodge: Выключен")
-            end
         end,
         
         ToggleAutoPull = function(enabled)
@@ -364,6 +317,9 @@ if not success then
     }
 end
 
+-- Определяем платформу (ПК или мобильное устройство)
+local isMobile = UIS.TouchEnabled or executorName:lower():find("delta")
+
 -- GUI Creon X v2.1
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
@@ -377,44 +333,23 @@ local ContentLayout = Instance.new("UIListLayout")
 local SoonLabel = Instance.new("TextLabel")
 
 -- Кнопка для мобильных устройств
-local MobileButton = Instance.new("TextButton")
+local MobileOpenButton = Instance.new("TextButton")
 
 ScreenGui.Parent = game.CoreGui
 ScreenGui.Name = "CreonXv21"
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.ResetOnSpawn = false
 
--- Увеличенные размеры
-local GUI_WIDTH = 860
-local GUI_HEIGHT = 595
-
--- Сохраняем исходное состояние мыши
-local originalMouseBehavior = nil
-local originalIconEnabled = nil
-
--- Функции для управления мышкой
-local function SaveMouseState()
-    originalMouseBehavior = UIS.MouseBehavior
-    originalIconEnabled = UIS.MouseIconEnabled
-end
-
-local function RestoreMouseState()
-    if originalMouseBehavior then
-        UIS.MouseBehavior = originalMouseBehavior
-    end
-    if originalIconEnabled ~= nil then
-        UIS.MouseIconEnabled = originalIconEnabled
-    end
-end
-
-local function EnableMenuMouse()
-    SaveMouseState()
-    UIS.MouseBehavior = Enum.MouseBehavior.Default
-    UIS.MouseIconEnabled = true
-end
-
-local function DisableMenuMouse()
-    RestoreMouseState()
+-- Настройки размеров для разных платформ
+local GUI_WIDTH, GUI_HEIGHT
+if isMobile then
+    -- Для мобильных устройств (Delta)
+    GUI_WIDTH = 900
+    GUI_HEIGHT = 650
+else
+    -- Для ПК
+    GUI_WIDTH = 860
+    GUI_HEIGHT = 595
 end
 
 -- Основной фрейм
@@ -425,7 +360,7 @@ MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
 
 local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 8)
+mainCorner.CornerRadius = UDim.new(0, 12)
 mainCorner.Parent = MainFrame
 
 local mainStroke = Instance.new("UIStroke")
@@ -434,13 +369,13 @@ mainStroke.Thickness = 2
 mainStroke.Parent = MainFrame
 
 -- TitleBar для перемещения
-TitleBar.Size = UDim2.new(1, 0, 0, 35)
+TitleBar.Size = UDim2.new(1, 0, 0, 40)
 TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 TitleBar.BorderSizePixel = 0
 TitleBar.Parent = MainFrame
 
 local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 8)
+titleCorner.CornerRadius = UDim.new(0, 12)
 titleCorner.Parent = TitleBar
 
 TitleLabel.Size = UDim2.new(0.8, 0, 1, 0)
@@ -448,66 +383,65 @@ TitleLabel.Position = UDim2.new(0.1, 0, 0, 0)
 TitleLabel.BackgroundTransparency = 1
 TitleLabel.Text = "Creon X v2.1"
 TitleLabel.TextColor3 = Color3.fromRGB(220, 220, 255)
-TitleLabel.TextSize = 14
+TitleLabel.TextSize = 16
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.Parent = TitleBar
 
--- Кнопка закрытия
-CloseButton.Size = UDim2.new(0, 25, 0, 25)
-CloseButton.Position = UDim2.new(1, -30, 0.5, -12.5)
-CloseButton.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+-- Кнопка скрытия (_)
+CloseButton.Size = UDim2.new(0, 30, 0, 30)
+CloseButton.Position = UDim2.new(1, -35, 0.5, -15)
+CloseButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
 CloseButton.BorderSizePixel = 0
-CloseButton.Text = "×"
+CloseButton.Text = "_"
 CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseButton.TextSize = 14
+CloseButton.TextSize = 16
 CloseButton.Font = Enum.Font.GothamBold
 CloseButton.Parent = TitleBar
 
 local closeCorner = Instance.new("UICorner")
-closeCorner.CornerRadius = UDim.new(0, 6)
+closeCorner.CornerRadius = UDim.new(0, 8)
 closeCorner.Parent = CloseButton
 
 CloseButton.MouseButton1Click:Connect(function()
     MainFrame.Visible = false
-    DisableMenuMouse()
-    if UIS.TouchEnabled then
-        MobileButton.Visible = true
+    if isMobile then
+        MobileOpenButton.Visible = true
     end
 end)
 
 -- Табы
-TabButtons.Size = UDim2.new(0, 150, 1, -35)
-TabButtons.Position = UDim2.new(0, 0, 0, 35)
+TabButtons.Size = UDim2.new(0, 160, 1, -40)
+TabButtons.Position = UDim2.new(0, 0, 0, 40)
 TabButtons.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
 TabButtons.BorderSizePixel = 0
 TabButtons.Parent = MainFrame
 
 local tabCorner = Instance.new("UICorner")
-tabCorner.CornerRadius = UDim.new(0, 8)
+tabCorner.CornerRadius = UDim.new(0, 12)
 tabCorner.Parent = TabButtons
 
 -- Content Frame с прокруткой
-ContentFrame.Size = UDim2.new(1, -150, 1, -35)
-ContentFrame.Position = UDim2.new(0, 150, 0, 35)
+ContentFrame.Size = UDim2.new(1, -160, 1, -40)
+ContentFrame.Position = UDim2.new(0, 160, 0, 40)
 ContentFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 ContentFrame.BorderSizePixel = 0
 ContentFrame.Parent = MainFrame
 
 local contentCorner = Instance.new("UICorner")
-contentCorner.CornerRadius = UDim.new(0, 8)
+contentCorner.CornerRadius = UDim.new(0, 12)
 contentCorner.Parent = ContentFrame
 
 -- Scrolling Frame для контента
-ContentScrolling.Size = UDim2.new(1, -10, 1, -10)
-ContentScrolling.Position = UDim2.new(0, 5, 0, 5)
+ContentScrolling.Size = UDim2.new(1, -15, 1, -15)
+ContentScrolling.Position = UDim2.new(0, 8, 0, 8)
 ContentScrolling.BackgroundTransparency = 1
 ContentScrolling.BorderSizePixel = 0
-ContentScrolling.ScrollBarThickness = 6
+ContentScrolling.ScrollBarThickness = isMobile and 10 or 8
 ContentScrolling.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 100)
 ContentScrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
 ContentScrolling.Parent = ContentFrame
 
-ContentLayout.Padding = UDim.new(0, 8)
+ContentLayout.Padding = UDim.new(0, isMobile and 10 or 8)
 ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     ContentScrolling.CanvasSize = UDim2.new(0, 0, 0, ContentLayout.AbsoluteContentSize.Y + 20)
@@ -523,37 +457,105 @@ SoonLabel.Font = Enum.Font.Gotham
 SoonLabel.Visible = false
 SoonLabel.Parent = ContentScrolling
 
--- Кнопка для мобильных устройств
-if UIS.TouchEnabled then
-    MobileButton.Size = UDim2.new(0, 100, 0, 36)
-    MobileButton.Position = UDim2.new(0.5, -50, 0, 8)
-    MobileButton.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
-    MobileButton.BorderSizePixel = 0
-    MobileButton.Text = "Creon X"
-    MobileButton.TextColor3 = Color3.fromRGB(220, 220, 255)
-    MobileButton.TextSize = 12
-    MobileButton.Font = Enum.Font.GothamBold
-    MobileButton.Parent = ScreenGui
+-- Кнопка OPEN для мобильных устройств
+if isMobile then
+    MobileOpenButton.Size = UDim2.new(0, 120, 0, 45)
+    MobileOpenButton.Position = UDim2.new(0.5, -60, 0.1, 0) -- Чуть выше центра
+    MobileOpenButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    MobileOpenButton.BorderSizePixel = 0
+    MobileOpenButton.Text = "OPEN"
+    MobileOpenButton.TextColor3 = Color3.fromRGB(220, 220, 255)
+    MobileOpenButton.TextSize = 14
+    MobileOpenButton.Font = Enum.Font.GothamBold
+    MobileOpenButton.Parent = ScreenGui
     
     local mobileCorner = Instance.new("UICorner")
-    mobileCorner.CornerRadius = UDim.new(0, 6)
-    mobileCorner.Parent = MobileButton
+    mobileCorner.CornerRadius = UDim.new(0, 10)
+    mobileCorner.Parent = MobileOpenButton
     
     local mobileStroke = Instance.new("UIStroke")
-    mobileStroke.Color = Color3.fromRGB(80, 80, 100)
+    mobileStroke.Color = Color3.fromRGB(70, 70, 90)
     mobileStroke.Thickness = 2
-    mobileStroke.Parent = MobileButton
+    mobileStroke.Parent = MobileOpenButton
     
-    MobileButton.MouseButton1Click:Connect(function()
+    -- Тень для кнопки
+    local shadow = Instance.new("ImageLabel")
+    shadow.Name = "Shadow"
+    shadow.Size = UDim2.new(1, 10, 1, 10)
+    shadow.Position = UDim2.new(0, -5, 0, -5)
+    shadow.BackgroundTransparency = 1
+    shadow.Image = "rbxassetid://1316045217"
+    shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+    shadow.ImageTransparency = 0.8
+    shadow.ScaleType = Enum.ScaleType.Slice
+    shadow.SliceCenter = Rect.new(10, 10, 118, 118)
+    shadow.Parent = MobileOpenButton
+    
+    -- Анимация при наведении (для ПК, если Delta на ПК)
+    if not UIS.TouchEnabled then
+        MobileOpenButton.MouseEnter:Connect(function()
+            TweenService:Create(MobileOpenButton, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(45, 45, 60)
+            }):Play()
+        end)
+        
+        MobileOpenButton.MouseLeave:Connect(function()
+            TweenService:Create(MobileOpenButton, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+            }):Play()
+        end)
+    end
+    
+    MobileOpenButton.MouseButton1Click:Connect(function()
         MainFrame.Visible = true
-        MobileButton.Visible = false
-        EnableMenuMouse()
+        MobileOpenButton.Visible = false
+    end)
+    
+    -- Делаем кнопку перемещаемой
+    local mobileDragging = false
+    local mobileDragStart, mobileStartPos
+    
+    local function updateMobilePos(input)
+        local delta = input.Position - mobileDragStart
+        MobileOpenButton.Position = UDim2.new(
+            mobileStartPos.X.Scale, 
+            mobileStartPos.X.Offset + delta.X,
+            mobileStartPos.Y.Scale, 
+            mobileStartPos.Y.Offset + delta.Y
+        )
+    end
+    
+    MobileOpenButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            mobileDragging = true
+            mobileDragStart = input.Position
+            mobileStartPos = MobileOpenButton.Position
+            
+            -- Эффект нажатия
+            TweenService:Create(MobileOpenButton, TweenInfo.new(0.1), {
+                BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+            }):Play()
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    mobileDragging = false
+                    TweenService:Create(MobileOpenButton, TweenInfo.new(0.1), {
+                        BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+                    }):Play()
+                end
+            end)
+        end
+    end)
+    
+    UIS.InputChanged:Connect(function(input)
+        if mobileDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            updateMobilePos(input)
+        end
     end)
     
     MainFrame.Visible = false
 else
     MainFrame.Visible = true
-    SaveMouseState()
 end
 
 -- Функция для перемещения GUI
@@ -571,9 +573,17 @@ TitleBar.InputBegan:Connect(function(input)
         dragStart = input.Position
         startPos = MainFrame.Position
         
+        -- Эффект нажатия
+        TweenService:Create(TitleBar, TweenInfo.new(0.1), {
+            BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+        }):Play()
+        
         input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
                 dragging = false
+                TweenService:Create(TitleBar, TweenInfo.new(0.1), {
+                    BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+                }):Play()
             end
         end)
     end
@@ -594,18 +604,18 @@ end)
 -- Функция для создания кнопок
 local function CreateButton(text)
     local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, -10, 0, 32)
+    button.Size = UDim2.new(1, -10, 0, isMobile and 40 or 36)
     button.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
     button.BorderSizePixel = 0
     button.Text = text
     button.TextColor3 = Color3.fromRGB(240, 240, 255)
-    button.TextSize = 12
+    button.TextSize = isMobile and 13 or 12
     button.Font = Enum.Font.Gotham
     button.AutoButtonColor = false
     button.Parent = ContentScrolling
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
+    corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = button
     
     local stroke = Instance.new("UIStroke")
@@ -613,20 +623,22 @@ local function CreateButton(text)
     stroke.Thickness = 1.2
     stroke.Parent = button
     
-    -- Анимация при наведении
-    button.MouseEnter:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(65, 65, 85),
-            TextColor3 = Color3.fromRGB(255, 255, 255)
-        }):Play()
-    end)
-    
-    button.MouseLeave:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(50, 50, 65),
-            TextColor3 = Color3.fromRGB(240, 240, 255)
-        }):Play()
-    end)
+    -- Анимация при наведении (только для ПК)
+    if not isMobile or not UIS.TouchEnabled then
+        button.MouseEnter:Connect(function()
+            TweenService:Create(button, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(65, 65, 85),
+                TextColor3 = Color3.fromRGB(255, 255, 255)
+            }):Play()
+        end)
+        
+        button.MouseLeave:Connect(function()
+            TweenService:Create(button, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(50, 50, 65),
+                TextColor3 = Color3.fromRGB(240, 240, 255)
+            }):Play()
+        end)
+    end
     
     button.MouseButton1Down:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.1), {
@@ -646,7 +658,7 @@ end
 -- Функция для создания переключателей
 local function CreateToggle(text, enabled, callback)
     local toggleContainer = Instance.new("Frame")
-    toggleContainer.Size = UDim2.new(1, -10, 0, 32)
+    toggleContainer.Size = UDim2.new(1, -10, 0, isMobile and 40 or 36)
     toggleContainer.BackgroundTransparency = 1
     toggleContainer.Parent = ContentScrolling
     
@@ -657,33 +669,33 @@ local function CreateToggle(text, enabled, callback)
     textLabel.BackgroundTransparency = 1
     textLabel.Text = text
     textLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
-    textLabel.TextSize = 12
+    textLabel.TextSize = isMobile and 13 or 12
     textLabel.Font = Enum.Font.Gotham
     textLabel.TextXAlignment = Enum.TextXAlignment.Left
     textLabel.Parent = toggleContainer
     
     -- Переключатель
     local toggleBackground = Instance.new("Frame")
-    toggleBackground.Size = UDim2.new(0, 50, 0, 22)
-    toggleBackground.Position = UDim2.new(1, -52, 0.5, -11)
+    toggleBackground.Size = UDim2.new(0, isMobile and 60 or 50, 0, isMobile and 26 or 22)
+    toggleBackground.Position = UDim2.new(1, isMobile and -62 or -52, 0.5, isMobile and -13 or -11)
     toggleBackground.BackgroundColor3 = enabled and Color3.fromRGB(0, 140, 255) or Color3.fromRGB(80, 80, 100)
     toggleBackground.BorderSizePixel = 0
     toggleBackground.Parent = toggleContainer
     
     local toggleCircle = Instance.new("Frame")
-    toggleCircle.Size = UDim2.new(0, 18, 0, 18)
-    toggleCircle.Position = enabled and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
+    toggleCircle.Size = UDim2.new(0, isMobile and 22 or 18, 0, isMobile and 22 or 18)
+    toggleCircle.Position = enabled and UDim2.new(1, isMobile and -24 or -20, 0.5, isMobile and -11 or -9) or UDim2.new(0, 2, 0.5, isMobile and -11 or -9)
     toggleCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     toggleCircle.BorderSizePixel = 0
     toggleCircle.Parent = toggleBackground
     
     -- Закругления
     local corner1 = Instance.new("UICorner")
-    corner1.CornerRadius = UDim.new(0, 11)
+    corner1.CornerRadius = UDim.new(0, isMobile and 13 or 11)
     corner1.Parent = toggleBackground
     
     local corner2 = Instance.new("UICorner")
-    corner2.CornerRadius = UDim.new(0, 9)
+    corner2.CornerRadius = UDim.new(0, isMobile and 11 or 9)
     corner2.Parent = toggleCircle
     
     local stroke = Instance.new("UIStroke")
@@ -706,7 +718,7 @@ local function CreateToggle(text, enabled, callback)
         }):Play()
         
         TweenService:Create(toggleCircle, TweenInfo.new(0.2), {
-            Position = newState and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
+            Position = newState and UDim2.new(1, isMobile and -24 or -20, 0.5, isMobile and -11 or -9) or UDim2.new(0, 2, 0.5, isMobile and -11 or -9)
         }):Play()
         
         if callback then
@@ -724,22 +736,22 @@ end
 -- Функция для создания слайдера скорости
 local function CreateSpeedSlider()
     local sliderContainer = Instance.new("Frame")
-    sliderContainer.Size = UDim2.new(1, -10, 0, 60)
+    sliderContainer.Size = UDim2.new(1, -10, 0, isMobile and 70 or 60)
     sliderContainer.BackgroundTransparency = 1
     sliderContainer.Parent = ContentScrolling
     
     local speedLabel = Instance.new("TextLabel")
-    speedLabel.Size = UDim2.new(1, 0, 0, 20)
+    speedLabel.Size = UDim2.new(1, 0, 0, isMobile and 25 or 20)
     speedLabel.BackgroundTransparency = 1
     speedLabel.Text = "Speed: " .. MainModule.SpeedHack.CurrentSpeed
     speedLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
-    speedLabel.TextSize = 12
+    speedLabel.TextSize = isMobile and 14 or 12
     speedLabel.Font = Enum.Font.GothamBold
     speedLabel.Parent = sliderContainer
     
     local sliderBackground = Instance.new("Frame")
-    sliderBackground.Size = UDim2.new(1, 0, 0, 20)
-    sliderBackground.Position = UDim2.new(0, 0, 0, 25)
+    sliderBackground.Size = UDim2.new(1, 0, 0, isMobile and 25 or 20)
+    sliderBackground.Position = UDim2.new(0, 0, 0, isMobile and 30 or 25)
     sliderBackground.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
     sliderBackground.BorderSizePixel = 0
     sliderBackground.Parent = sliderContainer
@@ -759,8 +771,8 @@ local function CreateSpeedSlider()
     fillCorner.Parent = sliderFill
     
     local sliderButton = Instance.new("TextButton")
-    sliderButton.Size = UDim2.new(0, 20, 0, 20)
-    sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -10, 0, 0)
+    sliderButton.Size = UDim2.new(0, isMobile and 25 or 20, 0, isMobile and 25 or 20)
+    sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, isMobile and -12.5 or -10, 0, 0)
     sliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     sliderButton.Text = ""
     sliderButton.BorderSizePixel = 0
@@ -776,7 +788,7 @@ local function CreateSpeedSlider()
         local newSpeed = MainModule.SetSpeed(value)
         speedLabel.Text = "Speed: " .. newSpeed
         sliderFill.Size = UDim2.new((newSpeed - MainModule.SpeedHack.MinSpeed) / (MainModule.SpeedHack.MaxSpeed - MainModule.SpeedHack.MinSpeed), 0, 1, 0)
-        sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -10, 0, 0)
+        sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, isMobile and -12.5 or -10, 0, 0)
     end
     
     sliderButton.MouseButton1Down:Connect(function()
@@ -804,7 +816,7 @@ end
 -- Функция для создания выпадающего списка
 local function CreateDropdown(options, default, callback)
     local dropdownContainer = Instance.new("Frame")
-    dropdownContainer.Size = UDim2.new(1, -10, 0, 32)
+    dropdownContainer.Size = UDim2.new(1, -10, 0, isMobile and 40 or 36)
     dropdownContainer.BackgroundTransparency = 1
     dropdownContainer.Parent = ContentScrolling
     
@@ -815,7 +827,7 @@ local function CreateDropdown(options, default, callback)
     dropdownButton.Text = default .. " ▼"
     
     local dropdownList = Instance.new("Frame")
-    dropdownList.Size = UDim2.new(1, 0, 0, #options * 32)
+    dropdownList.Size = UDim2.new(1, 0, 0, #options * (isMobile and 42 or 38))
     dropdownList.Position = UDim2.new(0, 0, 1, 5)
     dropdownList.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
     dropdownList.BorderSizePixel = 0
@@ -823,7 +835,7 @@ local function CreateDropdown(options, default, callback)
     dropdownList.Parent = dropdownContainer
     
     local listCorner = Instance.new("UICorner")
-    listCorner.CornerRadius = UDim.new(0, 6)
+    listCorner.CornerRadius = UDim.new(0, 8)
     listCorner.Parent = dropdownList
     
     local listStroke = Instance.new("UIStroke")
@@ -834,8 +846,8 @@ local function CreateDropdown(options, default, callback)
     for i, option in ipairs(options) do
         local optionButton = CreateButton(option)
         optionButton.Parent = dropdownList
-        optionButton.Size = UDim2.new(1, -8, 0, 28)
-        optionButton.Position = UDim2.new(0, 4, 0, (i-1)*32 + 2)
+        optionButton.Size = UDim2.new(1, -8, 0, isMobile and 36 or 32)
+        optionButton.Position = UDim2.new(0, 4, 0, (i-1)*(isMobile and 42 or 38) + 3)
         optionButton.Text = option
         
         optionButton.MouseButton1Click:Connect(function()
@@ -850,6 +862,17 @@ local function CreateDropdown(options, default, callback)
     dropdownButton.MouseButton1Click:Connect(function()
         dropdownList.Visible = not dropdownList.Visible
     end)
+    
+    -- Закрываем при клике вне списка
+    if not isMobile then
+        UIS.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 and dropdownList.Visible then
+                if not dropdownContainer:IsDescendantOf(input.Target) then
+                    dropdownList.Visible = false
+                end
+            end
+        end)
+    end
     
     return dropdownContainer
 end
@@ -904,6 +927,51 @@ local function CreateMainContent()
     local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status)
     noclipLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     noclipLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    
+    -- Новые функции Main
+    local unlockDashToggle, updateUnlockDashToggle = CreateToggle("Unlock Dash (Don't work)", false, function(enabled)
+        MainModule.UnlockDash = enabled
+        warn("Unlock Dash: Эта функция временно недоступна")
+    end)
+    
+    local unlockPhantomToggle, updateUnlockPhantomToggle = CreateToggle("Unlock Phantom Step (Don't work)", false, function(enabled)
+        MainModule.UnlockPhantomStep = enabled
+        warn("Unlock Phantom Step: Эта функция временно недоступна")
+    end)
+    
+    local antiStunToggle2, updateAntiStunToggle2 = CreateToggle("Anti Stun", MainModule.AntiStun or false, function(enabled)
+        MainModule.AntiStun = enabled
+        if MainModule.ToggleAntiStun then
+            MainModule.ToggleAntiStun(enabled)
+        end
+    end)
+    
+    local antiRagdollToggle, updateAntiRagdollToggle = CreateToggle("Anti Ragdoll", MainModule.AntiRagdoll or false, function(enabled)
+        MainModule.AntiRagdoll = enabled
+        if MainModule.ToggleAntiRagdoll then
+            MainModule.ToggleAntiRagdoll(enabled)
+        end
+    end)
+    
+    local removeInjuredToggle, updateRemoveInjuredToggle = CreateToggle("Remove Injured Walking", MainModule.RemoveInjuredWalking or false, function(enabled)
+        MainModule.RemoveInjuredWalking = enabled
+        if MainModule.ToggleRemoveInjuredWalking then
+            MainModule.ToggleRemoveInjuredWalking(enabled)
+        end
+    end)
+    
+    local removeStunToggle, updateRemoveStunToggle = CreateToggle("Remove Stun Effects", MainModule.RemoveStunEffects or false, function(enabled)
+        MainModule.RemoveStunEffects = enabled
+        -- Здесь будет реализация
+    end)
+    
+    local removeAllDebuffsBtn = CreateButton("Remove All Debuffs Now")
+    removeAllDebuffsBtn.MouseButton1Click:Connect(function()
+        if MainModule.RemoveAllDebuffs then
+            local count = MainModule.RemoveAllDebuffs()
+            warn("Удалено " .. count .. " дебаффов")
+        end
+    end)
 end
 
 local function CreateCombatContent()
@@ -915,8 +983,107 @@ end
 local function CreateMiscContent()
     ClearContent()
     
+    -- ESP настройки
     local espToggle, updateEspToggle = CreateToggle("ESP System", MainModule.Misc.ESPEnabled, function(enabled)
         MainModule.ToggleESP(enabled)
+    end)
+    
+    local espPlayersToggle, updateEspPlayersToggle = CreateToggle("Show Players", MainModule.Misc.ESPPlayers, function(enabled)
+        MainModule.Misc.ESPPlayers = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
+    end)
+    
+    local espHidersToggle, updateEspHidersToggle = CreateToggle("Show Hiders", MainModule.Misc.ESPHiders, function(enabled)
+        MainModule.Misc.ESPHiders = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
+    end)
+    
+    local espSeekersToggle, updateEspSeekersToggle = CreateToggle("Show Seekers", MainModule.Misc.ESPSeekers, function(enabled)
+        MainModule.Misc.ESPSeekers = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
+    end)
+    
+    local espGuardsToggle, updateEspGuardsToggle = CreateToggle("Show Guards", MainModule.Misc.ESPGuards, function(enabled)
+        MainModule.Misc.ESPGuards = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
+    end)
+    
+    local espCandiesToggle, updateEspCandiesToggle = CreateToggle("Show Candies", MainModule.Misc.ESPCandies, function(enabled)
+        MainModule.Misc.ESPCandies = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
+    end)
+    
+    local espKeysToggle, updateEspKeysToggle = CreateToggle("Show Keys", MainModule.Misc.ESPKeys, function(enabled)
+        MainModule.Misc.ESPKeys = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
+    end)
+    
+    local espDoorsToggle, updateEspDoorsToggle = CreateToggle("Show Doors", MainModule.Misc.ESPDoors, function(enabled)
+        MainModule.Misc.ESPDoors = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
+    end)
+    
+    local espExitDoorsToggle, updateEspExitDoorsToggle = CreateToggle("Show Exit Doors", MainModule.Misc.ESPEscapeDoors, function(enabled)
+        MainModule.Misc.ESPEscapeDoors = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
+    end)
+    
+    local espNamesToggle, updateEspNamesToggle = CreateToggle("Show Names", MainModule.Misc.ESPNames, function(enabled)
+        MainModule.Misc.ESPNames = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
+    end)
+    
+    local espDistanceToggle, updateEspDistanceToggle = CreateToggle("Show Distance", MainModule.Misc.ESPDistance, function(enabled)
+        MainModule.Misc.ESPDistance = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
+    end)
+    
+    local espSnowToggle, updateEspSnowToggle = CreateToggle("Show Snow", MainModule.Misc.ESPShowSnow or true, function(enabled)
+        MainModule.Misc.ESPShowSnow = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
+    end)
+    
+    local espHPToggle, updateEsphptoggle = CreateToggle("Show HP", MainModule.Misc.ESPShowHP or true, function(enabled)
+        MainModule.Misc.ESPShowHP = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
+    end)
+    
+    local espBoxesToggle, updateEspBoxesToggle = CreateToggle("Show Boxes", MainModule.Misc.ESPBoxes, function(enabled)
+        MainModule.Misc.ESPBoxes = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
+    end)
+    
+    local espHighlightToggle, updateEspHighlightToggle = CreateToggle("Show Highlight", MainModule.Misc.ESPHighlight, function(enabled)
+        MainModule.Misc.ESPHighlight = enabled
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
 end
 
@@ -954,6 +1121,7 @@ end
 local function CreateGuardsContent()
     ClearContent()
     
+    -- Дропдаун выше кнопок
     local guardDropdown = CreateDropdown({"Circle", "Triangle", "Square"}, MainModule.Guards.SelectedGuard, function(selected)
         MainModule.SetGuardType(selected)
     end)
@@ -1063,6 +1231,19 @@ local function CreateJumpRopeContent()
     deleteRopeBtn.MouseButton1Click:Connect(function()
         MainModule.DeleteJumpRope()
     end)
+    
+    local antiFallToggle, updateAntiFallToggle = CreateToggle("Anti Fall", false, function(enabled)
+        if enabled then
+            if MainModule.CreateJumpRopeAntiFall then
+                MainModule.CreateJumpRopeAntiFall()
+            end
+        else
+            if MainModule.JumpRope and MainModule.JumpRope.AntiFallPlatform then
+                MainModule.JumpRope.AntiFallPlatform:Destroy()
+                MainModule.JumpRope.AntiFallPlatform = nil
+            end
+        end
+    end)
 end
 
 local function CreateSkySquidContent()
@@ -1092,7 +1273,11 @@ local function CreateSettingsContent()
     local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
     positionLabel.TextXAlignment = Enum.TextXAlignment.Left
     
+    local platformLabel = CreateButton("Platform: " .. (isMobile and "Mobile (Delta)" or "PC"))
+    platformLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
     local cleanupBtn = CreateButton("Cleanup Script")
+    cleanupBtn.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
     cleanupBtn.MouseButton1Click:Connect(function()
         MainModule.Cleanup()
         ScreenGui:Destroy()
@@ -1104,15 +1289,15 @@ local function CreateSettingsContent()
     end)
 end
 
--- Создание вкладок
+-- Создание кнопок вкладок
 local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Sky Squid", "Settings"}
 local tabButtons = {}
 local tabContainers = {}
 
 for i, name in pairs(tabs) do
     local buttonContainer = Instance.new("Frame")
-    buttonContainer.Size = UDim2.new(0.9, 0, 0, 36)
-    buttonContainer.Position = UDim2.new(0.05, 0, 0, (i-1)*38 + 10)
+    buttonContainer.Size = UDim2.new(0.9, 0, 0, isMobile and 42 or 38)
+    buttonContainer.Position = UDim2.new(0.05, 0, 0, (i-1)*(isMobile and 46 or 42) + 10)
     buttonContainer.BackgroundTransparency = 1
     buttonContainer.Parent = TabButtons
     
@@ -1120,7 +1305,7 @@ for i, name in pairs(tabs) do
     button.Size = UDim2.new(1, 0, 1, 0)
     button.Position = UDim2.new(0, 0, 0, 0)
     button.Parent = buttonContainer
-    button.TextSize = 12
+    button.TextSize = isMobile and 13 or 12
     
     tabButtons[name] = button
     tabContainers[name] = buttonContainer
@@ -1160,33 +1345,29 @@ for i, name in pairs(tabs) do
         elseif name == "Settings" then
             CreateSettingsContent()
         end
-        
-        EnableMenuMouse()
     end
     
     button.MouseButton1Click:Connect(ActivateTab)
 end
 
 -- Управление для ПК
-UIS.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.M then
-        MainFrame.Visible = not MainFrame.Visible
-        if MainFrame.Visible then
-            MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
-            EnableMenuMouse()
-        else
-            DisableMenuMouse()
+if not isMobile then
+    UIS.InputBegan:Connect(function(input)
+        if input.KeyCode == Enum.KeyCode.M then
+            MainFrame.Visible = not MainFrame.Visible
+            if MainFrame.Visible then
+                MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
+            end
         end
-    end
-end)
-
--- Закрытие при нажатии ESC
-UIS.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.Escape and MainFrame.Visible then
-        MainFrame.Visible = false
-        DisableMenuMouse()
-    end
-end)
+    end)
+    
+    -- Закрытие при нажатии ESC
+    UIS.InputBegan:Connect(function(input)
+        if input.KeyCode == Enum.KeyCode.Escape and MainFrame.Visible then
+            MainFrame.Visible = false
+        end
+    end)
+end
 
 -- Автоматически открываем Main вкладку
 if tabButtons["Main"] then
@@ -1194,12 +1375,10 @@ if tabButtons["Main"] then
     tabButtons["Main"].TextColor3 = Color3.fromRGB(255, 255, 255)
 end
 CreateMainContent()
-EnableMenuMouse()
 
 -- Очистка при удалении GUI
 ScreenGui.AncestryChanged:Connect(function()
     if not ScreenGui.Parent then
-        RestoreMouseState()
         if MainModule.Cleanup then
             MainModule.Cleanup()
         end
@@ -1207,3 +1386,5 @@ ScreenGui.AncestryChanged:Connect(function()
 end)
 
 print("Creon X v2.1 загружен...")
+print("Платформа: " .. (isMobile and "Mobile (Delta)" or "PC"))
+print("Исполнитель: " .. executorName)
