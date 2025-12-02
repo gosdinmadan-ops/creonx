@@ -204,7 +204,7 @@ local function playerHasKnife(player)
     return false
 end
 
--- Bypass Ragdoll функция (исправлено)
+-- Bypass Ragdoll функция (полностью исправлена)
 function MainModule.ToggleBypassRagdoll(enabled)
     MainModule.Misc.BypassRagdollEnabled = enabled
     
@@ -223,24 +223,28 @@ function MainModule.ToggleBypassRagdoll(enabled)
                 
                 local Humanoid = Character:FindFirstChild("Humanoid")
                 local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-                local Torso = Character:FindFirstChild("Torso")
+                local Torso = Character:FindFirstChild("UpperTorso") or Character:FindFirstChild("Torso")
+                
                 if not (Humanoid and HumanoidRootPart and Torso) then return end
 
-                -- Удаляем Ragdoll объекты
+                -- 1. Удаляем Ragdoll объекты, но сохраняем эффект падения
                 for _, child in ipairs(Character:GetChildren()) do
                     if child.Name == "Ragdoll" then
-                        pcall(function() child:Destroy() end)
-                        pcall(function()
-                            Humanoid.PlatformStand = false
-                            Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-                            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
-                            Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-                            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
-                        end)
+                        -- Сохраняем состояние падения, но убираем физику
+                        child:Destroy()
+                        
+                        -- Восстанавливаем контроль, но оставляем анимацию падения
+                        Humanoid.PlatformStand = false
+                        Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+                        
+                        -- Разрешаем все состояния
+                        for _, state in pairs(Enum.HumanoidStateType:GetEnumItems()) do
+                            Humanoid:SetStateEnabled(state, true)
+                        end
                     end
                 end
 
-                -- Удаляем папки эффектов
+                -- 2. Удаляем папки эффектов, которые могут вызывать проблемы
                 for _, folderName in pairs({"Stun", "RotateDisabled", "RagdollWakeupImmunity", "InjuredWalking"}) do
                     local folder = Character:FindFirstChild(folderName)
                     if folder then
@@ -248,87 +252,101 @@ function MainModule.ToggleBypassRagdoll(enabled)
                     end
                 end
 
-                -- Удаляем ограничения
+                -- 3. Удаляем все физические ограничения, которые могут вызывать отталкивание
                 for _, obj in pairs(HumanoidRootPart:GetChildren()) do
-                    if obj:IsA("BallSocketConstraint") or obj.Name:match("^CacheAttachment") then
+                    if obj:IsA("Constraint") then
                         obj:Destroy()
                     end
                 end
                 
-                -- Восстанавливаем суставы
+                -- 4. Восстанавливаем суставы (Motor6D)
                 local joints = {"Left Hip", "Left Shoulder", "Neck", "Right Hip", "Right Shoulder"}
                 for _, jointName in pairs(joints) do
                     local motor = Torso:FindFirstChild(jointName)
-                    if motor and motor:IsA("Motor6D") and not motor.Part0 then
-                        motor.Part0 = Torso
+                    if motor and motor:IsA("Motor6D") then
+                        if not motor.Part0 then
+                            motor.Part0 = Torso
+                        end
+                        if motor.Part1 then
+                            motor.Part1.CanCollide = false
+                        end
                     end
                 end
                 
-                -- Удаляем кости
-                for _, part in pairs(Character:GetChildren()) do
-                    if part:IsA("BasePart") and part:FindFirstChild("BoneCustom") then
-                        part.BoneCustom:Destroy()
-                    end
-                end
-                
-                -- Предотвращаем отбрасывание тела
-                local forceEffects = {}
-                local foundForce = false
-                
+                -- 5. Обрабатываем все части тела для предотвращения отталкивания
                 for _, part in pairs(Character:GetChildren()) do
                     if part:IsA("BasePart") then
-                        for _, force in pairs(part:GetChildren()) do
-                            if force:IsA("BodyForce") or force:IsA("BodyVelocity") or force:IsA("BodyThrust") or force:IsA("BodyAngularVelocity") then
-                                table.insert(forceEffects, force)
-                                foundForce = true
-                            end
-                        end
-                        
-                        -- Устанавливаем массивность
+                        -- Устанавливаем физические свойства, чтобы не отталкиваться
+                        part.CustomPhysicalProperties = PhysicalProperties.new(999999, 999999, 999999, 999999, 999999)
                         part.Massless = true
-                        part.CustomPhysicalProperties = PhysicalProperties.new(999999, 0, 999999, 999999, 999999)
                         
-                        -- Делаем части неподвижными
-                        if part:IsA("BasePart") then
-                            part.Anchored = false
-                            part.CanCollide = true
-                            
-                            -- Предотвращаем движение от внешних сил
-                            if part:FindFirstChildOfClass("BodyForce") then
-                                for _, force in pairs(part:GetChildren()) do
-                                    if force:IsA("BodyForce") then
-                                        force.Force = Vector3.new(0, 0, 0)
-                                    end
-                                end
+                        -- Удаляем все силы воздействия
+                        for _, force in pairs(part:GetChildren()) do
+                            if force:IsA("BodyForce") or force:IsA("BodyVelocity") or 
+                               force:IsA("BodyThrust") or force:IsA("BodyAngularVelocity") then
+                                force:Destroy()
                             end
+                        end
+                        
+                        -- Предотвращаем внешнее воздействие
+                        part.Velocity = Vector3.new(0, part.Velocity.Y, 0)  -- Сохраняем только вертикальную скорость для прыжков
+                        part.RotVelocity = Vector3.new(0, 0, 0)
+                        
+                        -- Убираем трения, но сохраняем коллизии
+                        part.CanCollide = true
+                        part.Friction = 0
+                        part.Elasticity = 0
+                        
+                        -- Удаляем "BoneCustom" если есть
+                        local boneCustom = part:FindFirstChild("BoneCustom")
+                        if boneCustom then
+                            boneCustom:Destroy()
                         end
                     end
                 end
                 
-                -- Отключаем все силы воздействия
-                if foundForce then
-                    for _, force in pairs(forceEffects) do
-                        force:Destroy()
-                    end
-                    print("Найдены и удалены эффекты отбрасывания")
-                else
-                    print("Эффекты отбрасывания не найдены")
+                -- 6. Специальная обработка для корневого объекта
+                HumanoidRootPart.CustomPhysicalProperties = PhysicalProperties.new(999999, 999999, 999999, 999999, 999999)
+                HumanoidRootPart.Massless = true
+                
+                -- Сохраняем нормальную физику для движения
+                HumanoidRootPart.CanCollide = true
+                HumanoidRootPart.Velocity = Vector3.new(
+                    HumanoidRootPart.Velocity.X,  -- Сохраняем горизонтальную скорость
+                    HumanoidRootPart.Velocity.Y,  -- Сохраняем вертикальную скорость (для прыжков)
+                    HumanoidRootPart.Velocity.Z   -- Сохраняем горизонтальную скорость
+                )
+                
+                -- 7. Защита от толчков - физический щит
+                local shield = HumanoidRootPart:FindFirstChild("AntiPushShield")
+                if not shield then
+                    shield = Instance.new("Part")
+                    shield.Name = "AntiPushShield"
+                    shield.Size = Vector3.new(4, 6, 4)
+                    shield.Transparency = 1
+                    shield.CanCollide = false
+                    shield.Anchored = false
+                    shield.Massless = true
+                    shield.CustomPhysicalProperties = PhysicalProperties.new(999999, 999999, 999999, 999999, 999999)
+                    shield.Parent = HumanoidRootPart
+                    
+                    local weld = Instance.new("Weld")
+                    weld.Part0 = HumanoidRootPart
+                    weld.Part1 = shield
+                    weld.C0 = CFrame.new()
+                    weld.Parent = shield
                 end
                 
-                -- Дополнительная фиксация положения
-                HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
-                HumanoidRootPart.RotVelocity = Vector3.new(0, 0, 0)
-                
-                -- Сохраняем текущую позицию
-                local currentCFrame = HumanoidRootPart.CFrame
-                
-                -- Через небольшую задержку восстанавливаем позицию
-                task.spawn(function()
-                    task.wait(0.05)
-                    if HumanoidRootPart and HumanoidRootPart.Parent then
-                        HumanoidRootPart.CFrame = currentCFrame
+                -- 8. Удаляем любые эффекты отбрасывания из других частей
+                for _, part in pairs(Character:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        for _, attr in pairs(part:GetAttributes()) do
+                            if type(attr) == "string" and (attr:lower():find("push") or attr:lower():find("force") or attr:lower():find("knockback")) then
+                                part:SetAttribute(attr, nil)
+                            end
+                        end
                     end
-                end)
+                end
             end)
         end)
         
@@ -337,9 +355,37 @@ function MainModule.ToggleBypassRagdoll(enabled)
         if char then
             char.ChildAdded:Connect(function(child)
                 if child.Name == "Ragdoll" and MainModule.Misc.BypassRagdollEnabled then
-                    pcall(function() child:Destroy() end)
+                    task.spawn(function()
+                        task.wait(0.05)  -- Даем время на анимацию
+                        pcall(function()
+                            child:Destroy()
+                        end)
+                    end)
                 end
             end)
+        end
+    else
+        -- При выключении - убираем щит
+        local character = LocalPlayer.Character
+        if character then
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if rootPart then
+                local shield = rootPart:FindFirstChild("AntiPushShield")
+                if shield then
+                    shield:Destroy()
+                end
+            end
+            
+            -- Восстанавливаем нормальную физику
+            for _, part in pairs(character:GetChildren()) do
+                if part:IsA("BasePart") then
+                    part.CustomPhysicalProperties = nil
+                    part.Massless = false
+                    part.CanCollide = true
+                    part.Friction = 0.3
+                    part.Elasticity = 0.5
+                end
+            end
         end
     end
 end
@@ -1620,3 +1666,4 @@ game:GetService("Players").LocalPlayer:GetPropertyChangedSignal("Parent"):Connec
 end)
 
 return MainModule
+
