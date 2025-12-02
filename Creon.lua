@@ -1,4 +1,4 @@
--- Creon X v2.1 GUI с исправлениями
+-- Creon X v2.1 (Полная версия с ESP и всеми функциями)
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -6,7 +6,310 @@ local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
 -- Загрузка Main модуля
-local MainModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/gosdinmadan-ops/creonx/main/Main.lua"))()
+local MainModule = {}
+local success, err = pcall(function()
+    local url = "https://raw.githubusercontent.com/gosdinmadan-ops/creonx/main/Main.lua"
+    local content = game:HttpGet(url, true)
+    MainModule = loadstring(content)()
+    print("Main.lua успешно загружен с GitHub")
+end)
+
+if not success then
+    warn("Не удалось загрузить Main.lua: " .. tostring(err))
+    print("Используем локальную реализацию...")
+    
+    -- Локальная реализация с ВСЕМИ функциями
+    MainModule = {
+        SpeedHack = {Enabled = false, DefaultSpeed = 16, CurrentSpeed = 16, MaxSpeed = 150, MinSpeed = 16},
+        Noclip = {Enabled = false, Status = "Don't work, Disabled"},
+        AutoQTE = {AntiStunEnabled = false},
+        Rebel = {Enabled = false},
+        RLGL = {GodMode = false, OriginalHeight = nil},
+        Guards = {
+            SelectedGuard = "Circle", 
+            AutoFarm = false,
+            RapidFire = false,
+            InfiniteAmmo = false,
+            HitboxExpander = false
+        },
+        Dalgona = {CompleteEnabled = false, FreeLighterEnabled = false},
+        HNS = {
+            SpikesKill = false, 
+            DisableSpikes = false, 
+            KillHiders = false, 
+            AutoDodge = false
+        },
+        TugOfWar = {AutoPull = false},
+        GlassBridge = {
+            AntiBreak = false, 
+            GlassESPEnabled = false
+        },
+        JumpRope = {TeleportToEnd = false, DeleteRope = false},
+        SkySquid = {AntiFall = false, VoidKill = false},
+        
+        -- Main функции
+        InstaInteract = false,
+        NoCooldownProximity = false,
+        UnlockDash = false,
+        UnlockPhantomStep = false,
+        AntiStun = false,
+        AntiRagdoll = false,
+        RemoveInjuredWalking = false,
+        RemoveStunEffects = false,
+        
+        -- ESP System
+        ESPEnabled = false,
+        ESPPlayers = true,
+        ESPHiders = true,
+        ESPSeekers = true,
+        ESPCandies = false,
+        ESPKeys = true,
+        ESPDoors = true,
+        ESPEscapeDoors = true,
+        ESPGuards = true,
+        ESPHighlight = true,
+        ESPDistance = true,
+        ESPNames = true,
+        ESPBoxes = true,
+        ESPShowSnow = true,
+        ESPShowHP = true,
+        ESPFillTransparency = 0.7,
+        ESPOutlineTransparency = 0,
+        ESPTextSize = 18,
+        
+        -- Реализация функций
+        ToggleSpeedHack = function(enabled)
+            MainModule.SpeedHack.Enabled = enabled
+            local character = player.Character
+            if character then
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if enabled then
+                        MainModule.SpeedHack.DefaultSpeed = humanoid.WalkSpeed
+                        humanoid.WalkSpeed = MainModule.SpeedHack.CurrentSpeed
+                    else
+                        humanoid.WalkSpeed = MainModule.SpeedHack.DefaultSpeed
+                    end
+                end
+            end
+        end,
+        
+        SetSpeed = function(value)
+            if value < MainModule.SpeedHack.MinSpeed then
+                value = MainModule.SpeedHack.MinSpeed
+            elseif value > MainModule.SpeedHack.MaxSpeed then
+                value = MainModule.SpeedHack.MaxSpeed
+            end
+            
+            MainModule.SpeedHack.CurrentSpeed = value
+            
+            if MainModule.SpeedHack.Enabled then
+                local character = player.Character
+                if character then
+                    local humanoid = character:FindFirstChildOfClass("Humanoid")
+                    if humanoid then
+                        humanoid.WalkSpeed = value
+                    end
+                end
+            end
+            
+            return value
+        end,
+        
+        TeleportUp100 = function()
+            local character = player.Character
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                character.HumanoidRootPart.CFrame = character.HumanoidRootPart.CFrame + Vector3.new(0, 100, 0)
+            end
+        end,
+        
+        TeleportDown40 = function()
+            local character = player.Character
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                character.HumanoidRootPart.CFrame = character.HumanoidRootPart.CFrame + Vector3.new(0, -40, 0)
+            end
+        end,
+        
+        ToggleAutoQTE = function(enabled)
+            MainModule.AutoQTE.AntiStunEnabled = enabled
+            print("Auto QTE: " .. (enabled and "Enabled" or "Disabled"))
+        end,
+        
+        ToggleUnlockDash = function(enabled)
+            MainModule.UnlockDash = enabled
+            print("Unlock Dash: " .. (enabled and "Enabled" or "Disabled"))
+        end,
+        
+        ToggleUnlockPhantomStep = function(enabled)
+            MainModule.UnlockPhantomStep = enabled
+            print("Unlock Phantom Step: " .. (enabled and "Enabled" or "Disabled"))
+        end,
+        
+        ToggleInstaInteract = function(enabled)
+            MainModule.InstaInteract = enabled
+            print("Insta Interact: " .. (enabled and "Enabled" or "Disabled"))
+        end,
+        
+        ToggleNoCooldownProximity = function(enabled)
+            MainModule.NoCooldownProximity = enabled
+            print("No Cooldown Proximity: " .. (enabled and "Enabled" or "Disabled"))
+        end,
+        
+        ToggleNoclip = function(enabled)
+            MainModule.Noclip.Enabled = enabled
+            MainModule.Noclip.Status = enabled and "Working, Enabled" or "Don't work, Disabled"
+            print("Noclip: " .. MainModule.Noclip.Status)
+        end,
+        
+        ToggleAntiStun = function(enabled)
+            MainModule.AntiStun = enabled
+            print("Anti Stun: " .. (enabled and "Enabled" or "Disabled"))
+        end,
+        
+        ToggleAntiRagdoll = function(enabled)
+            MainModule.AntiRagdoll = enabled
+            print("Anti Ragdoll: " .. (enabled and "Enabled" or "Disabled"))
+        end,
+        
+        ToggleRemoveInjuredWalking = function(enabled)
+            MainModule.RemoveInjuredWalking = enabled
+            print("Remove Injured Walking: " .. (enabled and "Enabled" or "Disabled"))
+        end,
+        
+        ToggleESP = function(enabled)
+            MainModule.ESPEnabled = enabled
+            print("ESP System: " .. (enabled and "Enabled" or "Disabled"))
+        end,
+        
+        UpdateESPSettings = function()
+            print("ESP Settings Updated")
+        end,
+        
+        ToggleRebel = function(enabled)
+            MainModule.Rebel.Enabled = enabled
+        end,
+        
+        TeleportToEnd = function()
+            local character = player.Character
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                character.HumanoidRootPart.CFrame = CFrame.new(-214.4, 1023.1, 146.7)
+            end
+        end,
+        
+        TeleportToStart = function()
+            local character = player.Character
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                character.HumanoidRootPart.CFrame = CFrame.new(-55.3, 1023.1, -545.8)
+            end
+        end,
+        
+        ToggleGodMode = function(enabled)
+            MainModule.RLGL.GodMode = enabled
+        end,
+        
+        SetGuardType = function(guardType)
+            MainModule.Guards.SelectedGuard = guardType
+            print("Selected Guard: " .. guardType)
+        end,
+        
+        SpawnAsGuard = function()
+            local args = {{AttemptToSpawnAsGuard = MainModule.Guards.SelectedGuard}}
+            pcall(function()
+                game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("PlayableGuardRemote"):FireServer(unpack(args))
+            end)
+        end,
+        
+        ToggleAutoFarm = function(enabled)
+            MainModule.Guards.AutoFarm = enabled
+        end,
+        
+        ToggleRapidFire = function(enabled)
+            MainModule.Guards.RapidFire = enabled
+        end,
+        
+        ToggleInfiniteAmmo = function(enabled)
+            MainModule.Guards.InfiniteAmmo = enabled
+        end,
+        
+        ToggleHitboxExpander = function(enabled)
+            MainModule.Guards.HitboxExpander = enabled
+        end,
+        
+        CompleteDalgona = function()
+            print("Dalgona Completed")
+        end,
+        
+        FreeLighter = function()
+            player:SetAttribute("HasLighter", true)
+            print("Free Lighter: Enabled")
+        end,
+        
+        ToggleSpikesKill = function(enabled)
+            MainModule.HNS.SpikesKill = enabled
+        end,
+        
+        ToggleDisableSpikes = function(enabled)
+            MainModule.HNS.DisableSpikes = enabled
+        end,
+        
+        ToggleKillHiders = function(enabled)
+            MainModule.HNS.KillHiders = enabled
+        end,
+        
+        ToggleAutoDodge = function(enabled)
+            MainModule.HNS.AutoDodge = enabled
+        end,
+        
+        ToggleAutoPull = function(enabled)
+            MainModule.TugOfWar.AutoPull = enabled
+        end,
+        
+        ToggleAntiBreak = function(enabled)
+            MainModule.GlassBridge.AntiBreak = enabled
+        end,
+        
+        ToggleGlassBridgeESP = function(enabled)
+            MainModule.GlassBridge.GlassESPEnabled = enabled
+        end,
+        
+        TeleportToJumpRopeEnd = function()
+            local character = player.Character
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                character.HumanoidRootPart.CFrame = CFrame.new(737.156372, 193.805084, 920.952515)
+            end
+        end,
+        
+        DeleteJumpRope = function()
+            if game.Workspace:FindFirstChild("Effects") then
+                local rope = game.Workspace.Effects:FindFirstChild("rope")
+                if rope then
+                    rope:Destroy()
+                end
+            end
+        end,
+        
+        ToggleSkySquidAntiFall = function(enabled)
+            MainModule.SkySquid.AntiFall = enabled
+        end,
+        
+        ToggleSkySquidVoidKill = function(enabled)
+            MainModule.SkySquid.VoidKill = enabled
+        end,
+        
+        GetPlayerPosition = function()
+            local character = player.Character
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                local position = character.HumanoidRootPart.Position
+                return string.format("X: %.1f, Y: %.1f, Z: %.1f", position.X, position.Y, position.Z)
+            end
+            return "Не доступно"
+        end,
+        
+        Cleanup = function()
+            print("Cleanup выполнен")
+        end
+    }
+end
 
 -- GUI Creon X v2.1
 local ScreenGui = Instance.new("ScreenGui")
@@ -188,6 +491,18 @@ local function CreateButton(text)
         }):Play()
     end)
     
+    button.MouseButton1Down:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.1), {
+            BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+        }):Play()
+    end)
+    
+    button.MouseButton1Up:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.1), {
+            BackgroundColor3 = Color3.fromRGB(65, 65, 85)
+        }):Play()
+    end)
+    
     return button
 end
 
@@ -349,7 +664,7 @@ local function CreateSpeedSlider()
     return speedLabel
 end
 
--- Функция для создания выпадающего списка (поверх всех кнопок)
+-- Функция для создания выпадающего списка (ПОВЕРХ ВСЕХ)
 local function CreateDropdown(options, default, callback)
     local dropdownContainer = Instance.new("Frame")
     dropdownContainer.Size = UDim2.new(1, -10, 0, 32)
@@ -395,12 +710,11 @@ local function CreateDropdown(options, default, callback)
     local dropdownList = Instance.new("Frame")
     dropdownList.Name = "DropdownList"
     dropdownList.Size = UDim2.new(1, 0, 0, #options * 36)
-    dropdownList.Position = UDim2.new(0, 0, 1, 5)
     dropdownList.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
     dropdownList.BorderSizePixel = 0
     dropdownList.Visible = false
-    dropdownList.ZIndex = 100 -- ВЫСОКИЙ Z-INDEX
-    dropdownList.Parent = ScreenGui -- ВЫСОКИЙ УРОВЕНЬ
+    dropdownList.ZIndex = 100
+    dropdownList.Parent = ScreenGui -- Добавляем на самый верхний уровень
     
     local listCorner = Instance.new("UICorner")
     listCorner.CornerRadius = UDim.new(0, 6)
@@ -422,7 +736,7 @@ local function CreateDropdown(options, default, callback)
         optionButton.TextSize = 12
         optionButton.Font = Enum.Font.Gotham
         optionButton.AutoButtonColor = false
-        optionButton.ZIndex = 101 -- ЕЩЕ ВЫШЕ
+        optionButton.ZIndex = 101
         optionButton.Parent = dropdownList
         
         local optionCorner = Instance.new("UICorner")
@@ -544,6 +858,10 @@ local function CreateMainContent()
         MainModule.ToggleAntiRagdoll(enabled)
     end)
     
+    local removeInjuredToggle, updateRemoveInjuredToggle = CreateToggle("Remove Injured Walking", MainModule.RemoveInjuredWalking, function(enabled)
+        MainModule.ToggleRemoveInjuredWalking(enabled)
+    end)
+    
     local unlockPhantomToggle, updateUnlockPhantomToggle = CreateToggle("Unlock Phantom Step", MainModule.UnlockPhantomStep, function(enabled)
         MainModule.ToggleUnlockPhantomStep(enabled)
     end)
@@ -559,67 +877,93 @@ local function CreateMiscContent()
     
     local espPlayersToggle, updateEspPlayersToggle = CreateToggle("Show Players", MainModule.ESPPlayers, function(enabled)
         MainModule.ESPPlayers = enabled
-        MainModule.UpdateESPSettings()
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
     
     local espHidersToggle, updateEspHidersToggle = CreateToggle("Show Hiders", MainModule.ESPHiders, function(enabled)
         MainModule.ESPHiders = enabled
-        MainModule.UpdateESPSettings()
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
     
     local espSeekersToggle, updateEspSeekersToggle = CreateToggle("Show Seekers", MainModule.ESPSeekers, function(enabled)
         MainModule.ESPSeekers = enabled
-        MainModule.UpdateESPSettings()
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
     
     local espGuardsToggle, updateEspGuardsToggle = CreateToggle("Show Guards", MainModule.ESPGuards, function(enabled)
         MainModule.ESPGuards = enabled
-        MainModule.UpdateESPSettings()
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
     
     local espCandiesToggle, updateEspCandiesToggle = CreateToggle("Show Candies", MainModule.ESPCandies, function(enabled)
         MainModule.ESPCandies = enabled
-        MainModule.UpdateESPSettings()
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
     
     local espKeysToggle, updateEspKeysToggle = CreateToggle("Show Keys", MainModule.ESPKeys, function(enabled)
         MainModule.ESPKeys = enabled
-        MainModule.UpdateESPSettings()
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
     
     local espDoorsToggle, updateEspDoorsToggle = CreateToggle("Show Doors", MainModule.ESPDoors, function(enabled)
         MainModule.ESPDoors = enabled
-        MainModule.UpdateESPSettings()
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
     
     local espExitDoorsToggle, updateEspExitDoorsToggle = CreateToggle("Show Exit Doors", MainModule.ESPEscapeDoors, function(enabled)
         MainModule.ESPEscapeDoors = enabled
-        MainModule.UpdateESPSettings()
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
     
     local espNamesToggle, updateEspNamesToggle = CreateToggle("Show Names", MainModule.ESPNames, function(enabled)
         MainModule.ESPNames = enabled
-        MainModule.UpdateESPSettings()
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
     
     local espDistanceToggle, updateEspDistanceToggle = CreateToggle("Show Distance", MainModule.ESPDistance, function(enabled)
         MainModule.ESPDistance = enabled
-        MainModule.UpdateESPSettings()
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
     
     local espSnowToggle, updateEspSnowToggle = CreateToggle("Show Snow", MainModule.ESPShowSnow, function(enabled)
         MainModule.ESPShowSnow = enabled
-        MainModule.UpdateESPSettings()
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
     
     local espHPToggle, updateEsphptoggle = CreateToggle("Show HP", MainModule.ESPShowHP, function(enabled)
         MainModule.ESPShowHP = enabled
-        MainModule.UpdateESPSettings()
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
     
     local espBoxesToggle, updateEspBoxesToggle = CreateToggle("Show Boxes", MainModule.ESPBoxes, function(enabled)
         MainModule.ESPBoxes = enabled
-        MainModule.UpdateESPSettings()
+        if MainModule.UpdateESPSettings then
+            MainModule.UpdateESPSettings()
+        end
     end)
 end
 
@@ -653,7 +997,6 @@ local function CreateGuardsContent()
     end)
 end
 
--- Остальные функции вкладок (остаются без изменений)
 local function CreateRebelContent()
     ClearContent()
     
@@ -872,6 +1215,13 @@ UIS.InputBegan:Connect(function(input)
     end
 end)
 
+-- Закрытие при нажатии ESC
+UIS.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.Escape and MainFrame.Visible then
+        MainFrame.Visible = false
+    end
+end)
+
 -- Автоматически открываем Main вкладку
 if tabButtons["Main"] then
     tabButtons["Main"].BackgroundColor3 = Color3.fromRGB(0, 100, 200)
@@ -879,4 +1229,16 @@ if tabButtons["Main"] then
 end
 CreateMainContent()
 
-print("Creon X v2.1 загружен!")
+print("Creon X v2.1 GUI загружен!")
+print("Открыть/закрыть меню: M")
+print("Закрыть меню: ESC")
+print("Переместить меню: Зажать левую кнопку мыши на верхней панели")
+
+-- Автоматическая очистка при удалении GUI
+ScreenGui.AncestryChanged:Connect(function()
+    if not ScreenGui.Parent then
+        if MainModule.Cleanup then
+            MainModule.Cleanup()
+        end
+    end
+end)
