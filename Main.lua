@@ -1,4 +1,4 @@
--- Main.lua - Creon X v2.1 (Исправленная версия)
+-- Main.lua - Creon X v2.1 (Полная исправленная версия)
 local MainModule = {}
 
 -- Services
@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
+local Debris = game:GetService("Debris")
 
 -- Переменные
 MainModule.SpeedHack = {
@@ -38,7 +39,9 @@ MainModule.RLGL = {
     OriginalHeight = nil,
     GodModeTimeout = nil,
     LastDamageCheck = 0,
-    DamageCheckRate = 0.5
+    DamageCheckRate = 0.5,
+    DamageDetected = false,
+    DamageCountdown = 8  -- 8 секунд до отключения после получения урона
 }
 
 MainModule.Guards = {
@@ -72,10 +75,18 @@ MainModule.HNS = {
     
     LastDodgeTime = 0,
     DodgeCooldown = 1.0,
-    DodgeRange = 10,
+    DodgeRange = 9, -- Range 9 как просили
     
     SpikePositions = {},
-    OriginalSpikeData = {}
+    OriginalSpikeData = {},
+    KillSpikesConnection = nil,
+    KillAuraConnection = nil,
+    AutoDodgeConnection = nil,
+    
+    -- Для оптимизации AutoDodge
+    LastHitboxCheck = 0,
+    HitboxCheckRate = 0.2, -- Проверка каждые 0.2 секунды
+    TrackedHitboxes = {} -- Отслеживаемые хитбоксы
 }
 
 -- Glass Bridge System (обновлено)
@@ -91,6 +102,7 @@ MainModule.GlassBridge = {
     GlassCover = nil,
     AntiFallConnection = nil,
     AntiBreakConnection = nil,
+    GlassVisionConnection = nil,
     
     EndPosition = Vector3.new(-196.372467, 522.192139, -1534.20984),
     SafeHeight = 500
@@ -113,6 +125,7 @@ MainModule.SkySquid = {
     SafePlatform = nil
 }
 
+-- ESP System (оптимизированная без лагов)
 MainModule.Misc = {
     InstaInteract = false,
     NoCooldownProximity = false,
@@ -137,36 +150,42 @@ MainModule.Misc = {
     RemoveStunEnabled = false,
     UnlockDashEnabled = false,
     UnlockPhantomStepEnabled = false,
-    LastInjuredNotify = 0,
-    LastESPUpdate = 0
+    LastESPUpdate = 0,
+    ESPUpdateRate = 0.3, -- Обновление ESP каждые 0.3 секунды для оптимизации
+    
+    -- Цвета ESP
+    PlayerEspColor = Color3.fromRGB(0, 170, 255),
+    SeekerEspColor = Color3.fromRGB(255, 0, 0),
+    HiderEspColor = Color3.fromRGB(0, 255, 0),
+    GuardEspColor = Color3.fromRGB(255, 165, 0),
+    DoorEspColor = Color3.fromRGB(255, 255, 0),
+    EscapeDoorEspColor = Color3.fromRGB(255, 0, 255),
+    KeyEspColor = Color3.fromRGB(255, 255, 255),
+    
+    -- Эффекты
+    LastEffectsCleanup = 0,
+    EffectsCleanupRate = 0.3 -- Уборка эффектов каждые 0.3 секунды
 }
 
--- ESP System
-MainModule.ESPTable = {}
-MainModule.ESPFolder = nil
-MainModule.ESPUpdateRate = 0.5
-MainModule.ESPCache = {}
-MainModule.ESPConnection = nil
-MainModule.PlayerESPConnections = {}
+-- ESP Table structure
+MainModule.ESPTable = {
+    Player = {},
+    Seeker = {},
+    Hider = {},
+    Guard = {},
+    Door = {},
+    None = {},
+    Key = {},
+    EscapeDoor = {}
+}
 
--- Постоянные соединения
-local speedConnection = nil
-local autoFarmConnection = nil
-local godModeConnection = nil
-local instaInteractConnection = nil
-local noCooldownConnection = nil
-local antiStunConnection = nil
-local rapidFireConnection = nil
-local infiniteAmmoConnection = nil
-local hitboxConnection = nil
-local autoPullConnection = nil
-local bypassRagdollConnection = nil
-local hnsKillAuraConnection = nil
-local hnsKillSpikesConnection = nil
-local hnsAutoDodgeConnection = nil
+MainModule.ESPFolder = nil
+MainModule.ESPConnections = {}
+MainModule.PlayerESPConnections = {}
 
 -- Локальный игрок
 local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
 
 -- Вспомогательные функции
 local function SafeDestroy(obj)
@@ -175,100 +194,343 @@ local function SafeDestroy(obj)
     end
 end
 
--- Bypass Ragdoll функция
-function MainModule.ToggleBypassRagdoll(enabled)
-    MainModule.Misc.BypassRagdollEnabled = enabled
+local function GetDistance(position)
+    local character = LocalPlayer.Character
+    if not character then return 0 end
     
-    if bypassRagdollConnection then
-        bypassRagdollConnection:Disconnect()
-        bypassRagdollConnection = nil
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return 0 end
+    
+    if typeof(position) == "Instance" then
+        if position:IsA("BasePart") then
+            position = position.Position
+        elseif position:IsA("Model") and position.PrimaryPart then
+            position = position.PrimaryPart.Position
+        else
+            return 0
+        end
+    end
+    
+    return math.floor((rootPart.Position - position).Magnitude)
+end
+
+-- Удаление эффектов (исправленная версия без лагов)
+function MainModule.ToggleRemoveStun(enabled)
+    MainModule.Misc.RemoveStunEnabled = enabled
+    
+    -- Очищаем все эффекты при включении
+    if enabled then
+        -- Немедленная очистка
+        MainModule.CleanupEffects()
+        
+        -- Запускаем периодическую очистку с оптимизацией
+        local cleanupConnection = RunService.Heartbeat:Connect(function()
+            local currentTime = tick()
+            if currentTime - MainModule.Misc.LastEffectsCleanup >= MainModule.Misc.EffectsCleanupRate then
+                MainModule.CleanupEffects()
+                MainModule.Misc.LastEffectsCleanup = currentTime
+            end
+        end)
+        
+        table.insert(MainModule.ESPConnections, cleanupConnection)
+    else
+        -- При отключении просто очищаем соединения
+        for i, conn in ipairs(MainModule.ESPConnections) do
+            if conn and type(conn) == "function" then
+                pcall(conn)
+            elseif conn and conn.Disconnect then
+                pcall(function() conn:Disconnect() end)
+            end
+        end
+        MainModule.ESPConnections = {}
+    end
+end
+
+function MainModule.CleanupEffects()
+    if not MainModule.Misc.RemoveStunEnabled then return end
+    
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+    
+    -- Удаляем эффекты Stun
+    for _, child in pairs(character:GetDescendants()) do
+        local childName = child.Name:lower()
+        if string.find(childName, "stun") or 
+           string.find(childName, "slow") or 
+           string.find(childName, "freeze") then
+            pcall(function() child:Destroy() end)
+        end
+    end
+    
+    -- Убираем состояние Stun у Humanoid
+    if humanoid:GetState() == Enum.HumanoidStateType.Stunned then
+        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+    end
+    
+    -- Восстанавливаем скорость
+    if humanoid.WalkSpeed < 16 then
+        humanoid.WalkSpeed = 16
+    end
+end
+
+-- ESP System (оптимизированная версия без лагов)
+function MainModule.ToggleESP(enabled)
+    MainModule.Misc.ESPEnabled = enabled
+    
+    -- Очищаем старые ESP соединения
+    for _, conn in pairs(MainModule.PlayerESPConnections) do
+        if conn then pcall(function() conn:Disconnect() end) end
+    end
+    MainModule.PlayerESPConnections = {}
+    
+    -- Очищаем ESP объекты
+    for _, espType in pairs(MainModule.ESPTable) do
+        for _, esp in pairs(espType) do
+            if esp and esp.Destroy then
+                pcall(function() esp.Destroy() end)
+            end
+        end
+    end
+    
+    -- Очищаем таблицы
+    for key in pairs(MainModule.ESPTable) do
+        MainModule.ESPTable[key] = {}
+    end
+    
+    -- Удаляем папку ESP
+    if MainModule.ESPFolder then
+        SafeDestroy(MainModule.ESPFolder)
+        MainModule.ESPFolder = nil
     end
     
     if enabled then
-        bypassRagdollConnection = RunService.Heartbeat:Connect(function()
-            if not MainModule.Misc.BypassRagdollEnabled then return end
-            
-            pcall(function()
-                local Character = LocalPlayer.Character
-                if not Character then return end
-                
-                local Humanoid = Character:FindFirstChild("Humanoid")
-                local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-                local Torso = Character:FindFirstChild("Torso")
-                if not (Humanoid and HumanoidRootPart and Torso) then return end
-
-                -- Удаляем Ragdoll объекты
-                for _, child in ipairs(Character:GetChildren()) do
-                    if child.Name == "Ragdoll" then
-                        pcall(function() child:Destroy() end)
-                        pcall(function()
-                            Humanoid.PlatformStand = false
-                            Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-                            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
-                            Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-                            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
-                        end)
-                    end
-                end
-
-                -- Удаляем папки эффектов
-                for _, folderName in pairs({"Stun", "RotateDisabled", "RagdollWakeupImmunity", "InjuredWalking"}) do
-                    local folder = Character:FindFirstChild(folderName)
-                    if folder then
-                        folder:Destroy()
-                    end
-                end
-
-                -- Удаляем ограничения
-                for _, obj in pairs(HumanoidRootPart:GetChildren()) do
-                    if obj:IsA("BallSocketConstraint") or obj.Name:match("^CacheAttachment") then
-                        obj:Destroy()
-                    end
-                end
-                
-                -- Восстанавливаем суставы
-                local joints = {"Left Hip", "Left Shoulder", "Neck", "Right Hip", "Right Shoulder"}
-                for _, jointName in pairs(joints) do
-                    local motor = Torso:FindFirstChild(jointName)
-                    if motor and motor:IsA("Motor6D") and not motor.Part0 then
-                        motor.Part0 = Torso
-                    end
-                end
-                
-                -- Удаляем кости
-                for _, part in pairs(Character:GetChildren()) do
-                    if part:IsA("BasePart") and part:FindFirstChild("BoneCustom") then
-                        part.BoneCustom:Destroy()
-                    end
-                end
-            end)
-        end)
+        -- Создаем новую папку ESP
+        MainModule.ESPFolder = Instance.new("Folder")
+        MainModule.ESPFolder.Name = "CreonESP"
+        MainModule.ESPFolder.Parent = Workspace
         
-        -- Слушатель для новых Ragdoll объектов
-        local char = LocalPlayer.Character
-        if char then
-            char.ChildAdded:Connect(function(child)
-                if child.Name == "Ragdoll" and MainModule.Misc.BypassRagdollEnabled then
-                    pcall(function() child:Destroy() end)
+        -- Создаем ESP для всех игроков
+        for _, player in pairs(Players:GetPlayers()) do
+            MainModule.CreatePlayerESP(player)
+        end
+        
+        -- Подключаемся к новым игрокам
+        local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+            MainModule.CreatePlayerESP(player)
+        end)
+        table.insert(MainModule.PlayerESPConnections, playerAddedConn)
+        
+        -- Подключаем обновление ESP
+        local updateConnection = RunService.Heartbeat:Connect(function()
+            local currentTime = tick()
+            if currentTime - MainModule.Misc.LastESPUpdate >= MainModule.Misc.ESPUpdateRate then
+                MainModule.UpdateAllESP()
+                MainModule.Misc.LastESPUpdate = currentTime
+            end
+        end)
+        table.insert(MainModule.PlayerESPConnections, updateConnection)
+    end
+end
+
+function MainModule.CreatePlayerESP(player)
+    if player == LocalPlayer then return end
+    
+    -- Очищаем старый ESP для этого игрока
+    local playerId = tostring(player.UserId)
+    if MainModule.ESPTable.Player[playerId] and MainModule.ESPTable.Player[playerId].Destroy then
+        MainModule.ESPTable.Player[playerId].Destroy()
+    end
+    
+    local function setupESP(character)
+        if not character or not character:IsDescendantOf(Workspace) then return end
+        
+        -- Ждем появления HumanoidRootPart
+        local rootPart = character:WaitForChild("HumanoidRootPart", 3)
+        if not rootPart then return end
+        
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then return end
+        
+        -- Определяем тип игрока
+        local playerType = "Player"
+        local espColor = MainModule.Misc.PlayerEspColor
+        
+        if player:GetAttribute("IsHider") then
+            playerType = "Hider"
+            espColor = MainModule.Misc.HiderEspColor
+        elseif player:GetAttribute("IsHunter") then
+            playerType = "Seeker"
+            espColor = MainModule.Misc.SeekerEspColor
+        end
+        
+        -- Создаем Highlight
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "ESP_" .. player.Name
+        highlight.Adornee = character
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.FillColor = espColor
+        highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+        highlight.OutlineColor = espColor
+        highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+        highlight.Enabled = MainModule.Misc.ESPHighlight
+        highlight.Parent = MainModule.ESPFolder
+        
+        -- Создаем Billboard для текста
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESP_Text_" .. player.Name
+        billboard.Adornee = rootPart
+        billboard.AlwaysOnTop = true
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.Parent = MainModule.ESPFolder
+        
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Name = "ESP_Label"
+        textLabel.BackgroundTransparency = 1
+        textLabel.Size = UDim2.new(1, 0, 1, 0)
+        textLabel.TextColor3 = espColor
+        textLabel.TextSize = MainModule.Misc.ESPTextSize
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.TextStrokeTransparency = 0.3
+        textLabel.Parent = billboard
+        
+        -- Создаем Box если включено
+        local box = nil
+        if MainModule.Misc.ESPBoxes then
+            box = Instance.new("BoxHandleAdornment")
+            box.Name = "ESP_Box_" .. player.Name
+            box.Adornee = rootPart
+            box.AlwaysOnTop = true
+            box.Size = rootPart.Size + Vector3.new(0.5, 0.5, 0.5)
+            box.Color3 = espColor
+            box.Transparency = 0.7
+            box.ZIndex = 10
+            box.Parent = MainModule.ESPFolder
+        end
+        
+        -- Функция обновления текста
+        local function updateText()
+            if not character or not character:IsDescendantOf(Workspace) then return end
+            
+            local currentHumanoid = character:FindFirstChildOfClass("Humanoid")
+            if not currentHumanoid or currentHumanoid.Health <= 0 then return end
+            
+            -- Формируем текст
+            local text = player.DisplayName or player.Name
+            
+            if MainModule.Misc.ESPNames then
+                if player.DisplayName ~= player.Name then
+                    text = player.DisplayName .. " (@" .. player.Name .. ")"
                 end
-            end)
+            end
+            
+            -- Добавляем расстояние
+            if MainModule.Misc.ESPDistance then
+                local distance = GetDistance(rootPart)
+                text = text .. " [" .. distance .. "m]"
+            end
+            
+            -- Добавляем HP
+            if MainModule.Misc.ESPSnow and MainModule.Misc.ESPSnow.ShowHP then
+                text = text .. " HP:" .. math.floor(currentHumanoid.Health)
+            end
+            
+            textLabel.Text = text
+        end
+        
+        -- Обновляем текст сразу
+        updateText()
+        
+        -- Сохраняем ESP объекты
+        MainModule.ESPTable[playerType][playerId] = {
+            Highlight = highlight,
+            Billboard = billboard,
+            Box = box,
+            Destroy = function()
+                SafeDestroy(highlight)
+                SafeDestroy(billboard)
+                if box then SafeDestroy(box) end
+            end,
+            Update = updateText
+        }
+    end
+    
+    -- Подключаемся к появлению персонажа
+    if player.Character then
+        setupESP(player.Character)
+    end
+    
+    local charConn = player.CharacterAdded:Connect(setupESP)
+    table.insert(MainModule.PlayerESPConnections, charConn)
+end
+
+function MainModule.UpdateAllESP()
+    if not MainModule.Misc.ESPEnabled then return end
+    
+    -- Обновляем только видимые ESP
+    for _, espType in pairs(MainModule.ESPTable) do
+        for _, esp in pairs(espType) do
+            if esp and esp.Update then
+                pcall(function() esp.Update() end)
+            end
         end
     end
 end
 
--- HNS System функции (обновлено)
+-- Bypass Ragdoll функция
+function MainModule.ToggleBypassRagdoll(enabled)
+    MainModule.Misc.BypassRagdollEnabled = enabled
+    
+    if enabled then
+        local function cleanupRagdoll()
+            local character = LocalPlayer.Character
+            if not character then return end
+            
+            -- Удаляем Ragdoll объекты
+            for _, child in ipairs(character:GetChildren()) do
+                if child.Name == "Ragdoll" then
+                    pcall(function() child:Destroy() end)
+                end
+            end
+            
+            -- Удаляем папки эффектов
+            for _, folderName in pairs({"Stun", "RotateDisabled", "RagdollWakeupImmunity", "InjuredWalking"}) do
+                local folder = character:FindFirstChild(folderName)
+                if folder then
+                    folder:Destroy()
+                end
+            end
+        end
+        
+        -- Немедленная очистка
+        cleanupRagdoll()
+        
+        -- Периодическая очистка
+        local cleanupConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.Misc.BypassRagdollEnabled then return end
+            cleanupRagdoll()
+        end)
+        
+        table.insert(MainModule.ESPConnections, cleanupConnection)
+    end
+end
+
+-- HNS System функции (исправленные)
 
 -- Kill Aura (автоматическое убийство хайдеров)
 function MainModule.ToggleKillAura(enabled)
     MainModule.HNS.KillAuraEnabled = enabled
     
-    if hnsKillAuraConnection then
-        hnsKillAuraConnection:Disconnect()
-        hnsKillAuraConnection = nil
+    if MainModule.HNS.KillAuraConnection then
+        MainModule.HNS.KillAuraConnection:Disconnect()
+        MainModule.HNS.KillAuraConnection = nil
     end
     
     if enabled then
-        hnsKillAuraConnection = RunService.RenderStepped:Connect(function()
+        MainModule.HNS.KillAuraConnection = RunService.RenderStepped:Connect(function()
             if not MainModule.HNS.KillAuraEnabled then return end
             
             pcall(function()
@@ -304,13 +566,6 @@ function MainModule.ToggleKillAura(enabled)
                         -- Телепортируемся перед целью
                         local frontPos = targetTorso.CFrame * CFrame.new(0, 0, -2)
                         HRP.CFrame = frontPos
-                        
-                        -- Поворачиваемся к цели
-                        local direction = (targetTorso.Position - HRP.Position).Unit
-                        local lookVector = Vector3.new(direction.X, 0, direction.Z)
-                        if lookVector.Magnitude > 0 then
-                            HRP.CFrame = CFrame.new(HRP.Position, HRP.Position + lookVector)
-                        end
                     end
                 end
             end)
@@ -322,9 +577,9 @@ end
 function MainModule.ToggleKillSpikes(enabled)
     MainModule.HNS.KillSpikesEnabled = enabled
     
-    if hnsKillSpikesConnection then
-        hnsKillSpikesConnection:Disconnect()
-        hnsKillSpikesConnection = nil
+    if MainModule.HNS.KillSpikesConnection then
+        MainModule.HNS.KillSpikesConnection:Disconnect()
+        MainModule.HNS.KillSpikesConnection = nil
     end
     
     if enabled then
@@ -344,7 +599,7 @@ function MainModule.ToggleKillSpikes(enabled)
             end
         end)
         
-        hnsKillSpikesConnection = RunService.Heartbeat:Connect(function()
+        MainModule.HNS.KillSpikesConnection = RunService.Heartbeat:Connect(function()
             if not MainModule.HNS.KillSpikesEnabled then return end
             
             pcall(function()
@@ -360,7 +615,7 @@ function MainModule.ToggleKillSpikes(enabled)
                 local knifeTool = nil
                 
                 for _, tool in pairs(character:GetChildren()) do
-                    if tool:IsA("Tool") and (tool.Name:lower():find("knife") or tool.Name:lower():find("dagger") or tool.Name:lower():find("fork") or tool.Name:lower():find("нож")) then
+                    if tool:IsA("Tool") and (tool.Name:lower():find("knife") or tool.Name:lower():find("dagger") or tool.Name:lower():find("fork")) then
                         hasKnife = true
                         knifeTool = tool
                         break
@@ -369,7 +624,7 @@ function MainModule.ToggleKillSpikes(enabled)
                 
                 if not hasKnife and LocalPlayer:FindFirstChild("Backpack") then
                     for _, tool in pairs(LocalPlayer.Backpack:GetChildren()) do
-                        if tool:IsA("Tool") and (tool.Name:lower():find("knife") or tool.Name:lower():find("dagger") or tool.Name:lower():find("fork") or tool.Name:lower():find("нож")) then
+                        if tool:IsA("Tool") and (tool.Name:lower():find("knife") or tool.Name:lower():find("dagger") or tool.Name:lower():find("fork")) then
                             hasKnife = true
                             knifeTool = tool
                             break
@@ -492,20 +747,25 @@ function MainModule.TeleportToHider()
     end)
 end
 
--- Auto Dodge
+-- Auto Dodge (исправленная версия без крашей)
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.HNS.AutoDodgeEnabled = enabled
     
-    if hnsAutoDodgeConnection then
-        hnsAutoDodgeConnection:Disconnect()
-        hnsAutoDodgeConnection = nil
+    if MainModule.HNS.AutoDodgeConnection then
+        MainModule.HNS.AutoDodgeConnection:Disconnect()
+        MainModule.HNS.AutoDodgeConnection = nil
     end
     
+    MainModule.HNS.TrackedHitboxes = {} -- Сбрасываем отслеживаемые хитбоксы
+    
     if enabled then
-        hnsAutoDodgeConnection = RunService.Heartbeat:Connect(function()
+        MainModule.HNS.AutoDodgeConnection = RunService.Heartbeat:Connect(function()
             if not MainModule.HNS.AutoDodgeEnabled then return end
             
             local currentTime = tick()
+            if currentTime - MainModule.HNS.LastHitboxCheck < MainModule.HNS.HitboxCheckRate then return end
+            MainModule.HNS.LastHitboxCheck = currentTime
+            
             if currentTime - MainModule.HNS.LastDodgeTime < MainModule.HNS.DodgeCooldown then return end
             
             pcall(function()
@@ -541,16 +801,33 @@ function MainModule.ToggleAutoDodge(enabled)
                                 end
                                 
                                 if hasKnife then
-                                    -- Проверяем, смотрит ли он на нас
-                                    local directionToUs = (rootPart.Position - targetRoot.Position).Unit
-                                    local lookDirection = targetRoot.CFrame.LookVector
-                                    local dotProduct = directionToUs:Dot(lookDirection)
+                                    -- Проверяем, появился ли новый хитбокс (не человека)
+                                    local foundNewHitbox = false
                                     
-                                    if dotProduct > 0.7 then
+                                    -- Ищем новые хитбоксы в радиусе
+                                    for _, part in pairs(Workspace:GetPartsInRadius(rootPart.Position, MainModule.HNS.DodgeRange)) do
+                                        if part:IsA("BasePart") then
+                                            local partName = part.Name:lower()
+                                            -- Пропускаем части игроков
+                                            if not (partName:find("head") or partName:find("torso") or partName:find("humanoid") or 
+                                                   partName:find("arm") or partName:find("leg") or part:IsDescendantOf(targetCharacter)) then
+                                                
+                                                local hitboxId = tostring(part:GetDebugId())
+                                                if not MainModule.HNS.TrackedHitboxes[hitboxId] then
+                                                    -- Новый хитбокс найден
+                                                    MainModule.HNS.TrackedHitboxes[hitboxId] = true
+                                                    foundNewHitbox = true
+                                                    break
+                                                end
+                                            end
+                                        end
+                                    end
+                                    
+                                    if foundNewHitbox then
                                         -- Используем слот 1 для доджа
-                                        if UserInputService.TouchEnabled then
-                                            -- Для мобильных: симулируем нажатие на слот 1
-                                            pcall(function()
+                                        pcall(function()
+                                            if UserInputService.TouchEnabled then
+                                                -- Для мобильных: симулируем нажатие на слот 1
                                                 local backpack = LocalPlayer:FindFirstChild("Backpack")
                                                 if backpack then
                                                     local tool = backpack:FindFirstChildOfClass("Tool")
@@ -560,17 +837,27 @@ function MainModule.ToggleAutoDodge(enabled)
                                                         tool.Parent = backpack
                                                     end
                                                 end
-                                            end)
-                                        else
-                                            -- Для ПК: нажимаем клавишу 1
-                                            pcall(function()
+                                            else
+                                                -- Для ПК: нажимаем клавишу 1
                                                 game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.One, false, game)
                                                 task.wait(0.05)
                                                 game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.One, false, game)
-                                            end)
-                                        end
+                                            end
+                                        end)
                                         
-                                        MainModule.HNS.LastDodgeTime = tick()
+                                        -- Телепортируемся в случайном направлении
+                                        local randomAngle = math.random() * 2 * math.pi
+                                        local teleportDistance = 5
+                                        local offset = Vector3.new(
+                                            math.cos(randomAngle) * teleportDistance,
+                                            0,
+                                            math.sin(randomAngle) * teleportDistance
+                                        )
+                                        
+                                        local newPosition = rootPart.Position + offset
+                                        rootPart.CFrame = CFrame.new(newPosition)
+                                        
+                                        MainModule.HNS.LastDodgeTime = currentTime
                                         break
                                     end
                                 end
@@ -578,12 +865,100 @@ function MainModule.ToggleAutoDodge(enabled)
                         end
                     end
                 end
+                
+                -- Очищаем старые хитбоксы (сохраняем только последние 50)
+                local trackedCount = 0
+                for _ in pairs(MainModule.HNS.TrackedHitboxes) do
+                    trackedCount = trackedCount + 1
+                end
+                
+                if trackedCount > 50 then
+                    local newTable = {}
+                    local counter = 0
+                    for k, v in pairs(MainModule.HNS.TrackedHitboxes) do
+                        if counter < 25 then  -- Сохраняем 25 самых новых
+                            newTable[k] = v
+                            counter = counter + 1
+                        end
+                    end
+                    MainModule.HNS.TrackedHitboxes = newTable
+                end
             end)
         end)
     end
 end
 
--- Glass Bridge System функции (обновлено)
+-- RLGL GodMode (исправленная версия)
+function MainModule.ToggleGodMode(enabled)
+    MainModule.RLGL.GodMode = enabled
+    
+    if MainModule.RLGL.GodModeTimeout then
+        MainModule.RLGL.GodModeTimeout:Disconnect()
+        MainModule.RLGL.GodModeTimeout = nil
+    end
+    
+    if enabled then
+        local character = LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            MainModule.RLGL.OriginalHeight = character.HumanoidRootPart.Position.Y
+            local currentPos = character.HumanoidRootPart.Position
+            character.HumanoidRootPart.CFrame = CFrame.new(currentPos.X, 1184.9, currentPos.Z)
+        end
+        
+        -- Сбрасываем флаг получения урона
+        MainModule.RLGL.DamageDetected = false
+        
+        -- Проверка урона (только один раз)
+        local godModeConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.RLGL.GodMode then return end
+            
+            local currentTime = tick()
+            if currentTime - MainModule.RLGL.LastDamageCheck < MainModule.RLGL.DamageCheckRate then return end
+            MainModule.RLGL.LastDamageCheck = currentTime
+            
+            local character = LocalPlayer.Character
+            if not character then return end
+            
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if not humanoid then return end
+            
+            -- Проверяем, получили ли мы урон (только один раз)
+            if not MainModule.RLGL.DamageDetected and humanoid.Health < humanoid.MaxHealth then
+                -- Устанавливаем флаг, что урон получен
+                MainModule.RLGL.DamageDetected = true
+                
+                -- Телепортируем на безопасные координаты (один раз)
+                character.HumanoidRootPart.CFrame = CFrame.new(-856, 1184, -550)
+                
+                -- Восстанавливаем здоровье
+                humanoid.Health = humanoid.MaxHealth
+                
+                -- Запускаем таймер отключения через 8 секунд
+                MainModule.RLGL.GodModeTimeout = game:GetService("RunService").Heartbeat:Connect(function()
+                    task.wait(MainModule.RLGL.DamageCountdown)
+                    MainModule.ToggleGodMode(false)
+                    if MainModule.RLGL.GodModeTimeout then
+                        MainModule.RLGL.GodModeTimeout:Disconnect()
+                        MainModule.RLGL.GodModeTimeout = nil
+                    end
+                end)
+            end
+        end)
+        
+        table.insert(MainModule.ESPConnections, godModeConnection)
+    else
+        -- Сбрасываем флаг
+        MainModule.RLGL.DamageDetected = false
+        
+        local character = LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") and MainModule.RLGL.OriginalHeight then
+            local currentPos = character.HumanoidRootPart.Position
+            character.HumanoidRootPart.CFrame = CFrame.new(currentPos.X, MainModule.RLGL.OriginalHeight, currentPos.Z)
+        end
+    end
+end
+
+-- Glass Bridge System функции
 
 -- Glass Vision (показывает настоящие/фейковые стекла)
 function MainModule.ToggleGlassVision(enabled)
@@ -770,7 +1145,7 @@ function MainModule.ToggleAntiFall(enabled)
                     flash.Transparency = 0.5
                     flash.Parent = Workspace
                     
-                    game:GetService("Debris"):AddItem(flash, 0.5)
+                    Debris:AddItem(flash, 0.5)
                 end
             end)
         end)
@@ -815,12 +1190,8 @@ end
 -- Функции скорости
 function MainModule.ToggleSpeedHack(enabled)
     MainModule.SpeedHack.Enabled = enabled
-    local player = LocalPlayer
     
-    if speedConnection then
-        speedConnection:Disconnect()
-        speedConnection = nil
-    end
+    local player = LocalPlayer
     
     if enabled then
         local character = player.Character or player.CharacterAdded:Wait()
@@ -831,7 +1202,7 @@ function MainModule.ToggleSpeedHack(enabled)
             end
         end
         
-        speedConnection = RunService.Heartbeat:Connect(function()
+        local speedConnection = RunService.Heartbeat:Connect(function()
             local character = player.Character
             if character and MainModule.SpeedHack.Enabled then
                 local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -840,6 +1211,8 @@ function MainModule.ToggleSpeedHack(enabled)
                 end
             end
         end)
+        
+        table.insert(MainModule.ESPConnections, speedConnection)
     else
         local character = player.Character
         if character then
@@ -893,13 +1266,8 @@ end
 function MainModule.ToggleAntiStunQTE(enabled)
     MainModule.AutoQTE.AntiStunEnabled = enabled
     
-    if antiStunConnection then
-        antiStunConnection:Disconnect()
-        antiStunConnection = nil
-    end
-    
     if enabled then
-        antiStunConnection = RunService.Heartbeat:Connect(function()
+        local antiStunConnection = RunService.Heartbeat:Connect(function()
             if not MainModule.AutoQTE.AntiStunEnabled then return end
             
             pcall(function()
@@ -937,6 +1305,8 @@ function MainModule.ToggleAntiStunQTE(enabled)
                 end
             end)
         end)
+        
+        table.insert(MainModule.ESPConnections, antiStunConnection)
     end
 end
 
@@ -961,66 +1331,6 @@ function MainModule.TeleportToStart()
     end
 end
 
-function MainModule.ToggleGodMode(enabled)
-    MainModule.RLGL.GodMode = enabled
-    
-    if godModeConnection then
-        godModeConnection:Disconnect()
-        godModeConnection = nil
-        if MainModule.RLGL.GodModeTimeout then
-            MainModule.RLGL.GodModeTimeout:Disconnect()
-            MainModule.RLGL.GodModeTimeout = nil
-        end
-    end
-    
-    if enabled then
-        local character = LocalPlayer.Character
-        if character and character:FindFirstChild("HumanoidRootPart") then
-            MainModule.RLGL.OriginalHeight = character.HumanoidRootPart.Position.Y
-            local currentPos = character.HumanoidRootPart.Position
-            character.HumanoidRootPart.CFrame = CFrame.new(currentPos.X, 1184.9, currentPos.Z)
-        end
-        
-        godModeConnection = RunService.Heartbeat:Connect(function()
-            if not MainModule.RLGL.GodMode then return end
-            
-            local currentTime = tick()
-            if currentTime - MainModule.RLGL.LastDamageCheck < MainModule.RLGL.DamageCheckRate then return end
-            MainModule.RLGL.LastDamageCheck = currentTime
-            
-            local character = LocalPlayer.Character
-            if not character then return end
-            
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            if not humanoid then return end
-            
-            if humanoid.Health < humanoid.MaxHealth then
-                character.HumanoidRootPart.CFrame = CFrame.new(-856, 1184, -550)
-                humanoid.Health = humanoid.MaxHealth
-                
-                if MainModule.RLGL.GodModeTimeout then
-                    MainModule.RLGL.GodModeTimeout:Disconnect()
-                end
-                
-                MainModule.RLGL.GodModeTimeout = RunService.Heartbeat:Connect(function()
-                    task.wait(10)
-                    MainModule.ToggleGodMode(false)
-                    if MainModule.RLGL.GodModeTimeout then
-                        MainModule.RLGL.GodModeTimeout:Disconnect()
-                        MainModule.RLGL.GodModeTimeout = nil
-                    end
-                end)
-            end
-        end)
-    else
-        local character = LocalPlayer.Character
-        if character and character:FindFirstChild("HumanoidRootPart") and MainModule.RLGL.OriginalHeight then
-            local currentPos = character.HumanoidRootPart.Position
-            character.HumanoidRootPart.CFrame = CFrame.new(currentPos.X, MainModule.RLGL.OriginalHeight, currentPos.Z)
-        end
-    end
-end
-
 -- Guards функции
 function MainModule.SetGuardType(guardType)
     MainModule.Guards.SelectedGuard = guardType
@@ -1041,13 +1351,8 @@ end
 function MainModule.ToggleAutoFarm(enabled)
     MainModule.Guards.AutoFarm = enabled
     
-    if autoFarmConnection then
-        autoFarmConnection:Disconnect()
-        autoFarmConnection = nil
-    end
-    
     if enabled then
-        autoFarmConnection = RunService.Heartbeat:Connect(function()
+        local autoFarmConnection = RunService.Heartbeat:Connect(function()
             if MainModule.Guards.AutoFarm then
                 local args2 = {
                     "GameOver",
@@ -1058,6 +1363,8 @@ function MainModule.ToggleAutoFarm(enabled)
                 end)
             end
         end)
+        
+        table.insert(MainModule.ESPConnections, autoFarmConnection)
     end
 end
 
@@ -1065,13 +1372,8 @@ end
 function MainModule.ToggleRapidFire(enabled)
     MainModule.Guards.RapidFire = enabled
     
-    if rapidFireConnection then
-        rapidFireConnection:Disconnect()
-        rapidFireConnection = nil
-    end
-    
     if enabled then
-        rapidFireConnection = RunService.Heartbeat:Connect(function()
+        local rapidFireConnection = RunService.Heartbeat:Connect(function()
             if not MainModule.Guards.RapidFire then return end
             
             pcall(function()
@@ -1107,6 +1409,8 @@ function MainModule.ToggleRapidFire(enabled)
                 end
             end)
         end)
+        
+        table.insert(MainModule.ESPConnections, rapidFireConnection)
     else
         pcall(function()
             for obj, originalValue in pairs(MainModule.Guards.OriginalFireRates) do
@@ -1123,13 +1427,8 @@ end
 function MainModule.ToggleInfiniteAmmo(enabled)
     MainModule.Guards.InfiniteAmmo = enabled
     
-    if infiniteAmmoConnection then
-        infiniteAmmoConnection:Disconnect()
-        infiniteAmmoConnection = nil
-    end
-    
     if enabled then
-        infiniteAmmoConnection = RunService.Heartbeat:Connect(function()
+        local infiniteAmmoConnection = RunService.Heartbeat:Connect(function()
             if not MainModule.Guards.InfiniteAmmo then return end
             
             local character = LocalPlayer.Character
@@ -1152,6 +1451,8 @@ function MainModule.ToggleInfiniteAmmo(enabled)
                 end
             end
         end)
+        
+        table.insert(MainModule.ESPConnections, infiniteAmmoConnection)
     else
         pcall(function()
             for obj, originalValue in pairs(MainModule.Guards.OriginalAmmo) do
@@ -1168,15 +1469,10 @@ end
 function MainModule.ToggleHitboxExpander(enabled)
     MainModule.Guards.HitboxExpander = enabled
     
-    if hitboxConnection then
-        hitboxConnection:Disconnect()
-        hitboxConnection = nil
-    end
-    
     if enabled then
         local HITBOX_SIZE = 10
         
-        hitboxConnection = RunService.Stepped:Connect(function()
+        local hitboxConnection = RunService.Stepped:Connect(function()
             if not MainModule.Guards.HitboxExpander then 
                 for player, originalSizes in pairs(MainModule.Guards.OriginalHitboxes) do
                     if player and player.Character then
@@ -1216,6 +1512,8 @@ function MainModule.ToggleHitboxExpander(enabled)
                 end
             end)
         end)
+        
+        table.insert(MainModule.ESPConnections, hitboxConnection)
     else
         pcall(function()
             for player, originalSizes in pairs(MainModule.Guards.OriginalHitboxes) do
@@ -1262,13 +1560,8 @@ end
 function MainModule.ToggleAutoPull(enabled)
     MainModule.TugOfWar.AutoPull = enabled
     
-    if autoPullConnection then
-        autoPullConnection:Disconnect()
-        autoPullConnection = nil
-    end
-    
     if enabled then
-        autoPullConnection = RunService.Heartbeat:Connect(function()
+        local autoPullConnection = RunService.Heartbeat:Connect(function()
             if MainModule.TugOfWar.AutoPull then
                 pcall(function()
                     local Remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("TemporaryReachedBindable")
@@ -1280,17 +1573,14 @@ function MainModule.ToggleAutoPull(enabled)
                 task.wait(0.25)
             end
         end)
+        
+        table.insert(MainModule.ESPConnections, autoPullConnection)
     end
 end
 
 -- Misc функции
 function MainModule.ToggleInstaInteract(enabled)
     MainModule.Misc.InstaInteract = enabled
-    
-    if instaInteractConnection then
-        instaInteractConnection:Disconnect()
-        instaInteractConnection = nil
-    end
     
     if enabled then
         local function makePromptInstant(prompt)
@@ -1305,21 +1595,18 @@ function MainModule.ToggleInstaInteract(enabled)
             end
         end
 
-        instaInteractConnection = Workspace.DescendantAdded:Connect(function(obj)
+        local instaInteractConnection = Workspace.DescendantAdded:Connect(function(obj)
             if obj:IsA("ProximityPrompt") then
                 makePromptInstant(obj)
             end
         end)
+        
+        table.insert(MainModule.ESPConnections, instaInteractConnection)
     end
 end
 
 function MainModule.ToggleNoCooldownProximity(enabled)
     MainModule.Misc.NoCooldownProximity = enabled
-    
-    if noCooldownConnection then
-        noCooldownConnection:Disconnect()
-        noCooldownConnection = nil
-    end
     
     if enabled then
         for _, v in pairs(Workspace:GetDescendants()) do
@@ -1328,13 +1615,15 @@ function MainModule.ToggleNoCooldownProximity(enabled)
             end
         end
         
-        noCooldownConnection = Workspace.DescendantAdded:Connect(function(obj)
+        local noCooldownConnection = Workspace.DescendantAdded:Connect(function(obj)
             if MainModule.Misc.NoCooldownProximity then
                 if obj:IsA("ProximityPrompt") then
                     obj.HoldDuration = 0
                 end
             end
         end)
+        
+        table.insert(MainModule.ESPConnections, noCooldownConnection)
     end
 end
 
@@ -1350,20 +1639,21 @@ end
 
 -- Очистка при закрытии
 function MainModule.Cleanup()
-    local connections = {
-        speedConnection, autoFarmConnection, godModeConnection, instaInteractConnection,
-        noCooldownConnection, antiStunConnection, rapidFireConnection, infiniteAmmoConnection,
-        hitboxConnection, autoPullConnection, bypassRagdollConnection,
-        hnsKillAuraConnection, hnsKillSpikesConnection, hnsAutoDodgeConnection,
-        MainModule.GlassBridge.AntiFallConnection, MainModule.GlassBridge.AntiBreakConnection,
-        MainModule.GlassBridge.GlassVisionConnection
-    }
-    
-    for _, conn in pairs(connections) do
-        if conn then
+    -- Очищаем все соединения
+    for _, conn in pairs(MainModule.ESPConnections) do
+        if conn and conn.Disconnect then
             pcall(function() conn:Disconnect() end)
         end
     end
+    MainModule.ESPConnections = {}
+    
+    -- Очищаем ESP соединения игроков
+    for _, conn in pairs(MainModule.PlayerESPConnections) do
+        if conn and conn.Disconnect then
+            pcall(function() conn:Disconnect() end)
+        end
+    end
+    MainModule.PlayerESPConnections = {}
     
     -- Очищаем HNS
     MainModule.HNS.KillAuraEnabled = false
@@ -1371,10 +1661,40 @@ function MainModule.Cleanup()
     MainModule.HNS.DisableSpikesEnabled = false
     MainModule.HNS.AutoDodgeEnabled = false
     
+    if MainModule.HNS.KillAuraConnection then
+        pcall(function() MainModule.HNS.KillAuraConnection:Disconnect() end)
+        MainModule.HNS.KillAuraConnection = nil
+    end
+    
+    if MainModule.HNS.KillSpikesConnection then
+        pcall(function() MainModule.HNS.KillSpikesConnection:Disconnect() end)
+        MainModule.HNS.KillSpikesConnection = nil
+    end
+    
+    if MainModule.HNS.AutoDodgeConnection then
+        pcall(function() MainModule.HNS.AutoDodgeConnection:Disconnect() end)
+        MainModule.HNS.AutoDodgeConnection = nil
+    end
+    
     -- Очищаем Glass Bridge
     MainModule.RemoveGlassBridgeCover()
     MainModule.RemoveGlassBridgePlatforms()
     MainModule.RemoveGlassBridgeAntiFallPlatform()
+    
+    if MainModule.GlassBridge.AntiFallConnection then
+        pcall(function() MainModule.GlassBridge.AntiFallConnection:Disconnect() end)
+        MainModule.GlassBridge.AntiFallConnection = nil
+    end
+    
+    if MainModule.GlassBridge.AntiBreakConnection then
+        pcall(function() MainModule.GlassBridge.AntiBreakConnection:Disconnect() end)
+        MainModule.GlassBridge.AntiBreakConnection = nil
+    end
+    
+    if MainModule.GlassBridge.GlassVisionConnection then
+        pcall(function() MainModule.GlassBridge.GlassVisionConnection:Disconnect() end)
+        MainModule.GlassBridge.GlassVisionConnection = nil
+    end
     
     -- Восстанавливаем хитбоксы
     if MainModule.Guards.OriginalHitboxes then
@@ -1410,6 +1730,19 @@ function MainModule.Cleanup()
     
     -- Восстанавливаем шипы
     MainModule.ToggleDisableSpikes(false)
+    
+    -- Очищаем ESP
+    if MainModule.Misc.ESPEnabled then
+        MainModule.ToggleESP(false)
+    end
+    
+    -- Сбрасываем RLGL GodMode
+    if MainModule.RLGL.GodMode then
+        MainModule.ToggleGodMode(false)
+    end
+    
+    -- Сбрасываем HNS состояния
+    MainModule.HNS.TrackedHitboxes = {}
 end
 
 -- Автоматическая очистка при выходе
