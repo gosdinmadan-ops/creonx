@@ -497,28 +497,21 @@ local function CreateDropdown(options, default, callback)
     dropdownContainer.BackgroundTransparency = 1
     dropdownContainer.Parent = ContentScrolling
     
-    -- Создаем отдельный фрейм для выпадающего списка, чтобы он был поверх всего
-    local dropdownFrame = Instance.new("Frame")
-    dropdownFrame.Size = UDim2.new(1, 0, 1, 0)
-    dropdownFrame.BackgroundTransparency = 1
-    dropdownFrame.Parent = ContentFrame
-    dropdownFrame.ZIndex = 100
-    
     local dropdownButton = CreateButton(default .. " ▼")
-    dropdownButton.Parent = dropdownFrame
-    dropdownButton.Size = UDim2.new(1, -20, 1, 0)
-    dropdownButton.Position = UDim2.new(0, 10, 0, 0)
+    dropdownButton.Size = UDim2.new(1, 0, 1, 0)
+    dropdownButton.Position = UDim2.new(0, 0, 0, 0)
     dropdownButton.Text = default .. " ▼"
-    dropdownButton.ZIndex = 101
+    dropdownButton.ZIndex = 10
     
-    local dropdownList = Instance.new("Frame")
-    dropdownList.Size = UDim2.new(1, -20, 0, #options * 32)
-    dropdownList.Position = UDim2.new(0, 10, 1, 5)
+    local dropdownList = Instance.new("ScrollingFrame")
+    dropdownList.Size = UDim2.new(1, 0, 0, math.min(#options * 32, 100))
+    dropdownList.Position = UDim2.new(0, 0, 1, 5)
     dropdownList.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
     dropdownList.BorderSizePixel = 0
+    dropdownList.ScrollBarThickness = 6
     dropdownList.Visible = false
-    dropdownList.ZIndex = 102
-    dropdownList.Parent = dropdownFrame
+    dropdownList.ZIndex = 11
+    dropdownList.Parent = dropdownContainer
     
     local listCorner = Instance.new("UICorner")
     listCorner.CornerRadius = UDim.new(0, 6)
@@ -532,7 +525,7 @@ local function CreateDropdown(options, default, callback)
     for i, option in ipairs(options) do
         local optionButton = Instance.new("TextButton")
         optionButton.Size = UDim2.new(1, -8, 0, 28)
-        optionButton.Position = UDim2.new(0, 4, 0, (i-1)*32 + 2)
+        optionButton.Position = UDim2.new(0, 4, 0, (i-1)*32)
         optionButton.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
         optionButton.BorderSizePixel = 0
         optionButton.Text = option
@@ -540,7 +533,7 @@ local function CreateDropdown(options, default, callback)
         optionButton.TextSize = 12
         optionButton.Font = Enum.Font.Gotham
         optionButton.AutoButtonColor = false
-        optionButton.ZIndex = 103
+        optionButton.ZIndex = 12
         optionButton.Parent = dropdownList
         
         local optionCorner = Instance.new("UICorner")
@@ -586,7 +579,7 @@ local function CreateDropdown(options, default, callback)
         end
     end)
     
-    return dropdownFrame
+    return dropdownContainer
 end
 
 -- Функции для создания контента вкладок
@@ -598,7 +591,7 @@ local function ClearContent()
     end
 end
 
--- MAIN TAB
+-- MAIN TAB (обновленный с Bypass Ragdoll)
 local function CreateMainContent()
     ClearContent()
     
@@ -609,60 +602,72 @@ local function CreateMainContent()
     local speedToggle, updateSpeedToggle = CreateToggle("SpeedHack", MainModule.SpeedHack.Enabled, function(enabled)
         MainModule.ToggleSpeedHack(enabled)
     end)
+    speedToggle.LayoutOrder = 1
     
     -- Anti Stun QTE
     local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun QTE", MainModule.AutoQTE.AntiStunEnabled, function(enabled)
         MainModule.ToggleAntiStunQTE(enabled)
     end)
+    antiStunToggle.LayoutOrder = 2
     
-    -- Anti Stun + Ragdoll
-    local antiStunRagdollToggle, updateAntiStunRagdollToggle = CreateToggle("Anti Stun + Ragdoll", MainModule.Misc.AntiStunRagdoll, function(enabled)
-        MainModule.ToggleAntiStunRagdoll(enabled)
+    -- Bypass Ragdoll (новая функция)
+    local bypassRagdollToggle, updateBypassRagdollToggle = CreateToggle("Bypass Ragdoll", MainModule.Misc.BypassRagdollEnabled, function(enabled)
+        MainModule.ToggleBypassRagdoll(enabled)
     end)
+    bypassRagdollToggle.LayoutOrder = 3
     
-    -- Instance Interact (исправлено название)
+    -- Instance Interact
     local instaInteractToggle, updateInstaInteractToggle = CreateToggle("Instance Interact", MainModule.Misc.InstaInteract, function(enabled)
         MainModule.ToggleInstaInteract(enabled)
     end)
+    instaInteractToggle.LayoutOrder = 4
     
     -- No Cooldown Proximity
     local noCooldownToggle, updateNoCooldownToggle = CreateToggle("No Cooldown Proximity", MainModule.Misc.NoCooldownProximity, function(enabled)
         MainModule.ToggleNoCooldownProximity(enabled)
     end)
+    noCooldownToggle.LayoutOrder = 5
     
-    -- Remove Injured (отдельно)
+    -- Remove Injured
     local removeInjuredToggle, updateRemoveInjuredToggle = CreateToggle("Remove Injured", MainModule.Misc.RemoveInjuredEnabled, function(enabled)
         MainModule.ToggleRemoveInjured(enabled)
     end)
+    removeInjuredToggle.LayoutOrder = 6
     
-    -- Remove Stun (отдельно)
+    -- Remove Stun
     local removeStunToggle, updateRemoveStunToggle = CreateToggle("Remove Stun", MainModule.Misc.RemoveStunEnabled, function(enabled)
         MainModule.ToggleRemoveStun(enabled)
     end)
+    removeStunToggle.LayoutOrder = 7
     
-    -- Unlock Dash (Don't work)
+    -- Unlock Dash
     local unlockDashToggle, updateUnlockDashToggle = CreateToggle("Unlock Dash", MainModule.Misc.UnlockDashEnabled, function(enabled)
         MainModule.ToggleUnlockDash(enabled)
     end)
+    unlockDashToggle.LayoutOrder = 8
     
-    -- Unlock Phantom Step (Don't work)
+    -- Unlock Phantom Step
     local unlockPhantomToggle, updateUnlockPhantomToggle = CreateToggle("Unlock Phantom Step", MainModule.Misc.UnlockPhantomStepEnabled, function(enabled)
         MainModule.ToggleUnlockPhantomStep(enabled)
     end)
+    unlockPhantomToggle.LayoutOrder = 9
     
     -- Teleport Buttons
     local tpUpBtn = CreateButton("TP 100 blocks up")
+    tpUpBtn.LayoutOrder = 10
     tpUpBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportUp100()
     end)
     
     local tpDownBtn = CreateButton("TP 40 blocks down")
+    tpDownBtn.LayoutOrder = 11
     tpDownBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportDown40()
     end)
     
     -- Noclip status
     local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status)
+    noclipLabel.LayoutOrder = 12
     noclipLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     noclipLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
 end
@@ -689,6 +694,7 @@ local function CreateMiscContent()
     local espToggle, updateEspToggle = CreateToggle("ESP System", MainModule.Misc.ESPEnabled, function(enabled)
         MainModule.ToggleESP(enabled)
     end)
+    espToggle.LayoutOrder = 1
     
     -- ESP Settings
     local espPlayersToggle, updateEspPlayersToggle = CreateToggle("ESP Players", MainModule.Misc.ESPPlayers, function(enabled)
@@ -699,6 +705,7 @@ local function CreateMiscContent()
             MainModule.ToggleESP(true)
         end
     end)
+    espPlayersToggle.LayoutOrder = 2
     
     local espHidersToggle, updateEspHidersToggle = CreateToggle("ESP Hiders", MainModule.Misc.ESPHiders, function(enabled)
         MainModule.Misc.ESPHiders = enabled
@@ -708,6 +715,7 @@ local function CreateMiscContent()
             MainModule.ToggleESP(true)
         end
     end)
+    espHidersToggle.LayoutOrder = 3
     
     local espSeekersToggle, updateEspSeekersToggle = CreateToggle("ESP Seekers", MainModule.Misc.ESPSeekers, function(enabled)
         MainModule.Misc.ESPSeekers = enabled
@@ -717,6 +725,7 @@ local function CreateMiscContent()
             MainModule.ToggleESP(true)
         end
     end)
+    espSeekersToggle.LayoutOrder = 4
     
     local espCandiesToggle, updateEspCandiesToggle = CreateToggle("ESP Candies", MainModule.Misc.ESPCandies, function(enabled)
         MainModule.Misc.ESPCandies = enabled
@@ -726,6 +735,7 @@ local function CreateMiscContent()
             MainModule.ToggleESP(true)
         end
     end)
+    espCandiesToggle.LayoutOrder = 5
     
     local espKeysToggle, updateEspKeysToggle = CreateToggle("ESP Keys", MainModule.Misc.ESPKeys, function(enabled)
         MainModule.Misc.ESPKeys = enabled
@@ -735,6 +745,7 @@ local function CreateMiscContent()
             MainModule.ToggleESP(true)
         end
     end)
+    espKeysToggle.LayoutOrder = 6
     
     local espDoorsToggle, updateEspDoorsToggle = CreateToggle("ESP Doors", MainModule.Misc.ESPDoors, function(enabled)
         MainModule.Misc.ESPDoors = enabled
@@ -744,6 +755,7 @@ local function CreateMiscContent()
             MainModule.ToggleESP(true)
         end
     end)
+    espDoorsToggle.LayoutOrder = 7
     
     local espGuardsToggle, updateEspGuardsToggle = CreateToggle("ESP Guards", MainModule.Misc.ESPGuards, function(enabled)
         MainModule.Misc.ESPGuards = enabled
@@ -753,11 +765,13 @@ local function CreateMiscContent()
             MainModule.ToggleESP(true)
         end
     end)
+    espGuardsToggle.LayoutOrder = 8
     
     -- Snow ESP Settings
     local snowToggle, updateSnowToggle = CreateToggle("Snow ESP", MainModule.Misc.ESPSnow.Enabled, function(enabled)
         MainModule.ToggleSnowESP(enabled)
     end)
+    snowToggle.LayoutOrder = 9
     
     local snowDistanceToggle, updateSnowDistanceToggle = CreateToggle("Snow Distance", MainModule.Misc.ESPSnow.ShowDistance, function(enabled)
         MainModule.Misc.ESPSnow.ShowDistance = enabled
@@ -767,6 +781,7 @@ local function CreateMiscContent()
             MainModule.ToggleESP(true)
         end
     end)
+    snowDistanceToggle.LayoutOrder = 10
     
     local snowHPToggle, updateSnowHPToggle = CreateToggle("Snow HP", MainModule.Misc.ESPSnow.ShowHP, function(enabled)
         MainModule.Misc.ESPSnow.ShowHP = enabled
@@ -776,11 +791,13 @@ local function CreateMiscContent()
             MainModule.ToggleESP(true)
         end
     end)
+    snowHPToggle.LayoutOrder = 11
     
     -- Box ESP Settings
     local boxToggle, updateBoxToggle = CreateToggle("Box ESP", MainModule.Misc.ESPBox.Enabled, function(enabled)
         MainModule.ToggleBoxESP(enabled)
     end)
+    boxToggle.LayoutOrder = 12
     
     local boxDistanceToggle, updateBoxDistanceToggle = CreateToggle("Box Distance", MainModule.Misc.ESPBox.ShowDistance, function(enabled)
         MainModule.Misc.ESPBox.ShowDistance = enabled
@@ -790,6 +807,7 @@ local function CreateMiscContent()
             MainModule.ToggleESP(true)
         end
     end)
+    boxDistanceToggle.LayoutOrder = 13
     
     local boxNameToggle, updateBoxNameToggle = CreateToggle("Box Name", MainModule.Misc.ESPBox.ShowName, function(enabled)
         MainModule.Misc.ESPBox.ShowName = enabled
@@ -799,6 +817,7 @@ local function CreateMiscContent()
             MainModule.ToggleESP(true)
         end
     end)
+    boxNameToggle.LayoutOrder = 14
 end
 
 -- REBEL TAB
@@ -809,10 +828,12 @@ local function CreateRebelContent()
     rebelTitle.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
     rebelTitle.TextColor3 = Color3.fromRGB(255, 80, 80)
     rebelTitle.TextSize = 14
+    rebelTitle.LayoutOrder = 1
     
     local rebelToggle, updateRebelToggle = CreateToggle("Instant Rebel", MainModule.Rebel.Enabled, function(enabled)
         MainModule.ToggleRebel(enabled)
     end)
+    rebelToggle.LayoutOrder = 2
 end
 
 -- RLGL TAB
@@ -820,11 +841,13 @@ local function CreateRLGLContent()
     ClearContent()
     
     local tpEndBtn = CreateButton("TP TO END")
+    tpEndBtn.LayoutOrder = 1
     tpEndBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportToEnd()
     end)
     
     local tpStartBtn = CreateButton("TP TO START")
+    tpStartBtn.LayoutOrder = 2
     tpStartBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportToStart()
     end)
@@ -832,18 +855,100 @@ local function CreateRLGLContent()
     local godModeToggle, updateGodModeToggle = CreateToggle("GodMode", MainModule.RLGL.GodMode, function(enabled)
         MainModule.ToggleGodMode(enabled)
     end)
+    godModeToggle.LayoutOrder = 3
 end
 
--- GUARDS TAB (исправлен выпадающий список)
+-- GUARDS TAB (исправленный)
 local function CreateGuardsContent()
     ClearContent()
     
-    -- Dropdown для выбора Guard (теперь поверх всех кнопок)
-    local guardDropdown = CreateDropdown({"Circle", "Triangle", "Square"}, MainModule.Guards.SelectedGuard, function(selected)
-        MainModule.SetGuardType(selected)
+    -- Упрощенный Dropdown для выбора Guard
+    local dropdownContainer = Instance.new("Frame")
+    dropdownContainer.Size = UDim2.new(1, -10, 0, 32)
+    dropdownContainer.BackgroundTransparency = 1
+    dropdownContainer.LayoutOrder = 1
+    dropdownContainer.Parent = ContentScrolling
+    
+    local dropdownButton = CreateButton(MainModule.Guards.SelectedGuard .. " ▼")
+    dropdownButton.Size = UDim2.new(1, 0, 1, 0)
+    dropdownButton.Position = UDim2.new(0, 0, 0, 0)
+    dropdownButton.Text = MainModule.Guards.SelectedGuard .. " ▼"
+    dropdownButton.Parent = dropdownContainer
+    
+    -- Список опций (только основные)
+    local options = {"Circle", "Triangle", "Square"}
+    local dropdownList = Instance.new("ScrollingFrame")
+    dropdownList.Size = UDim2.new(1, 0, 0, math.min(#options * 32, 100))
+    dropdownList.Position = UDim2.new(0, 0, 1, 5)
+    dropdownList.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+    dropdownList.BorderSizePixel = 0
+    dropdownList.ScrollBarThickness = 6
+    dropdownList.Visible = false
+    dropdownList.ZIndex = 100
+    dropdownList.Parent = dropdownContainer
+    
+    local listCorner = Instance.new("UICorner")
+    listCorner.CornerRadius = UDim.new(0, 6)
+    listCorner.Parent = dropdownList
+    
+    local listStroke = Instance.new("UIStroke")
+    listStroke.Color = Color3.fromRGB(80, 80, 100)
+    listStroke.Thickness = 1
+    listStroke.Parent = dropdownList
+    
+    for i, option in ipairs(options) do
+        local optionButton = Instance.new("TextButton")
+        optionButton.Size = UDim2.new(1, -8, 0, 28)
+        optionButton.Position = UDim2.new(0, 4, 0, (i-1)*32)
+        optionButton.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+        optionButton.BorderSizePixel = 0
+        optionButton.Text = option
+        optionButton.TextColor3 = Color3.fromRGB(240, 240, 255)
+        optionButton.TextSize = 12
+        optionButton.Font = Enum.Font.Gotham
+        optionButton.AutoButtonColor = false
+        optionButton.ZIndex = 101
+        optionButton.Parent = dropdownList
+        
+        local optionCorner = Instance.new("UICorner")
+        optionCorner.CornerRadius = UDim.new(0, 6)
+        optionCorner.Parent = optionButton
+        
+        local optionStroke = Instance.new("UIStroke")
+        optionStroke.Color = Color3.fromRGB(80, 80, 100)
+        optionStroke.Thickness = 1.2
+        optionStroke.Parent = optionButton
+        
+        optionButton.MouseButton1Click:Connect(function()
+            MainModule.SetGuardType(option)
+            dropdownButton.Text = option .. " ▼"
+            dropdownList.Visible = false
+        end)
+    end
+    
+    dropdownButton.MouseButton1Click:Connect(function()
+        dropdownList.Visible = not dropdownList.Visible
     end)
     
+    -- Закрываем список при клике вне его
+    game:GetService("UserInputService").InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if dropdownList.Visible then
+                local mousePos = input.Position
+                local listAbsolutePos = dropdownList.AbsolutePosition
+                local listSize = dropdownList.AbsoluteSize
+                
+                if not (mousePos.X >= listAbsolutePos.X and mousePos.X <= listAbsolutePos.X + listSize.X and
+                       mousePos.Y >= listAbsolutePos.Y and mousePos.Y <= listAbsolutePos.Y + listSize.Y) then
+                    dropdownList.Visible = false
+                end
+            end
+        end
+    end)
+    
+    -- Остальные кнопки Guards
     local spawnBtn = CreateButton("Spawn as Guard")
+    spawnBtn.LayoutOrder = 2
     spawnBtn.MouseButton1Click:Connect(function()
         MainModule.SpawnAsGuard()
     end)
@@ -851,18 +956,22 @@ local function CreateGuardsContent()
     local rapidFireToggle, updateRapidFireToggle = CreateToggle("Rapid Fire", MainModule.Guards.RapidFire, function(enabled)
         MainModule.ToggleRapidFire(enabled)
     end)
+    rapidFireToggle.LayoutOrder = 3
     
     local infiniteAmmoToggle, updateInfiniteAmmoToggle = CreateToggle("Infinite Ammo", MainModule.Guards.InfiniteAmmo, function(enabled)
         MainModule.ToggleInfiniteAmmo(enabled)
     end)
+    infiniteAmmoToggle.LayoutOrder = 4
     
     local hitboxToggle, updateHitboxToggle = CreateToggle("Hitbox Expander", MainModule.Guards.HitboxExpander, function(enabled)
         MainModule.ToggleHitboxExpander(enabled)
     end)
+    hitboxToggle.LayoutOrder = 5
     
     local autoFarmToggle, updateAutoFarmToggle = CreateToggle("AutoFarm", MainModule.Guards.AutoFarm, function(enabled)
         MainModule.ToggleAutoFarm(enabled)
     end)
+    autoFarmToggle.LayoutOrder = 6
 end
 
 -- DALGONA TAB
@@ -870,70 +979,90 @@ local function CreateDalgonaContent()
     ClearContent()
     
     local completeBtn = CreateButton("Complete Dalgona")
+    completeBtn.LayoutOrder = 1
     completeBtn.MouseButton1Click:Connect(function()
         MainModule.CompleteDalgona()
     end)
     
     local lighterBtn = CreateButton("Free Lighter")
+    lighterBtn.LayoutOrder = 2
     lighterBtn.MouseButton1Click:Connect(function()
         MainModule.FreeLighter()
     end)
 end
 
--- HNS TAB
+-- HNS TAB (полностью обновленный)
 local function CreateHNSContent()
     ClearContent()
     
-    local spikesKillToggle, updateSpikesKillToggle = CreateToggle("Spikes Kill", MainModule.HNS.SpikesKill, function(enabled)
-        MainModule.ToggleSpikesKill(enabled)
+    -- Kill Aura
+    local killAuraToggle, updateKillAuraToggle = CreateToggle("Kill Aura (Hiders)", MainModule.HNS.KillAuraEnabled, function(enabled)
+        MainModule.ToggleKillAura(enabled)
     end)
+    killAuraToggle.LayoutOrder = 1
     
+    -- Kill Hiders (телепортация к шипам)
+    local killHidersToggle, updateKillHidersToggle = CreateToggle("Kill Hiders", MainModule.HNS.KillSpikesEnabled, function(enabled)
+        MainModule.ToggleKillSpikes(enabled)
+    end)
+    killHidersToggle.LayoutOrder = 2
+    
+    -- Disable Spikes (кнопка)
     local disableSpikesBtn = CreateButton("Disable Spikes")
+    disableSpikesBtn.LayoutOrder = 3
     disableSpikesBtn.MouseButton1Click:Connect(function()
-        MainModule.ToggleDisableSpikes(not MainModule.HNS.DisableSpikes)
-        if MainModule.HNS.DisableSpikes then
+        local newState = not MainModule.HNS.DisableSpikesEnabled
+        MainModule.ToggleDisableSpikes(newState)
+        if newState then
             disableSpikesBtn.Text = "Disable Spikes (ON)"
+            disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
         else
             disableSpikesBtn.Text = "Disable Spikes"
+            disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
         end
     end)
     
-    local killHidersToggle, updateKillHidersToggle = CreateToggle("Kill Hiders", MainModule.HNS.KillHiders, function(enabled)
-        MainModule.ToggleKillHiders(enabled)
+    -- Teleport to Hider (кнопка)
+    local tpToHiderBtn = CreateButton("Teleport to Hider")
+    tpToHiderBtn.LayoutOrder = 4
+    tpToHiderBtn.MouseButton1Click:Connect(function()
+        MainModule.TeleportToHider()
     end)
     
-    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", MainModule.HNS.AutoDodge, function(enabled)
+    -- Auto Dodge
+    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", MainModule.HNS.AutoDodgeEnabled, function(enabled)
         MainModule.ToggleAutoDodge(enabled)
     end)
+    autoDodgeToggle.LayoutOrder = 5
 end
 
--- GLASS BRIDGE TAB
+-- GLASS BRIDGE TAB (обновленный)
 local function CreateGlassBridgeContent()
     ClearContent()
     
-    local tpEndBtn = CreateButton("TP END")
-    tpEndBtn.MouseButton1Click:Connect(function()
-        MainModule.TeleportToEnd()
+    -- Glass Vision
+    local glassVisionToggle, updateGlassVisionToggle = CreateToggle("Glass Vision", MainModule.GlassBridge.GlassVisionEnabled, function(enabled)
+        MainModule.ToggleGlassVision(enabled)
     end)
+    glassVisionToggle.LayoutOrder = 1
     
-    local glassEspBtn = CreateButton("GLASS ESP")
-    glassEspBtn.MouseButton1Click:Connect(function()
-        MainModule.ToggleGlassBridgeESP(not MainModule.GlassBridge.GlassESPEnabled)
-        if MainModule.GlassBridge.GlassESPEnabled then
-            glassEspBtn.Text = "GLASS ESP (ON)"
-        else
-            glassEspBtn.Text = "GLASS ESP"
-        end
-    end)
-    
-    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("Anti Break", MainModule.GlassBridge.AntiBreak, function(enabled)
+    -- Anti Break
+    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("Anti Break", MainModule.GlassBridge.AntiBreakEnabled, function(enabled)
         MainModule.ToggleAntiBreak(enabled)
     end)
+    antiBreakToggle.LayoutOrder = 2
     
-    local antiFallBtn = CreateButton("Anti Fall")
-    antiFallBtn.MouseButton1Click:Connect(function()
-        MainModule.ToggleJumpRopeAntiFall(true)
-        antiFallBtn.Text = "Anti Fall (ON)"
+    -- Anti Fall
+    local antiFallToggle, updateAntiFallToggle = CreateToggle("Anti Fall", MainModule.GlassBridge.AntiFallEnabled, function(enabled)
+        MainModule.ToggleAntiFall(enabled)
+    end)
+    antiFallToggle.LayoutOrder = 3
+    
+    -- Teleport to End (кнопка)
+    local tpEndBtn = CreateButton("Teleport to End")
+    tpEndBtn.LayoutOrder = 4
+    tpEndBtn.MouseButton1Click:Connect(function()
+        MainModule.TeleportToGlassBridgeEnd()
     end)
 end
 
@@ -944,6 +1073,7 @@ local function CreateTugOfWarContent()
     local autoPullToggle, updateAutoPullToggle = CreateToggle("Auto Pull", MainModule.TugOfWar.AutoPull, function(enabled)
         MainModule.ToggleAutoPull(enabled)
     end)
+    autoPullToggle.LayoutOrder = 1
 end
 
 -- JUMP ROPE TAB
@@ -951,33 +1081,38 @@ local function CreateJumpRopeContent()
     ClearContent()
     
     local tpEndBtn = CreateButton("Teleport to End")
+    tpEndBtn.LayoutOrder = 1
     tpEndBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportToJumpRopeEnd()
     end)
     
     local deleteRopeBtn = CreateButton("Delete The Rope")
+    deleteRopeBtn.LayoutOrder = 2
     deleteRopeBtn.MouseButton1Click:Connect(function()
         MainModule.DeleteJumpRope()
     end)
     
     local antiFallBtn = CreateButton("Anti Fall")
+    antiFallBtn.LayoutOrder = 3
     antiFallBtn.MouseButton1Click:Connect(function()
         MainModule.ToggleJumpRopeAntiFall(true)
         antiFallBtn.Text = "Anti Fall (ON)"
+        antiFallBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
     end)
 end
 
--- SKY SQUID TAB
+-- SKY SQUID TAB (временно пустой)
 local function CreateSkySquidContent()
     ClearContent()
     
-    local antiFallToggle, updateAntiFallToggle = CreateToggle("Anti Fall", MainModule.SkySquid.AntiFall, function(enabled)
-        MainModule.ToggleSkySquidAntiFall(enabled)
-    end)
-    
-    local voidKillToggle, updateVoidKillToggle = CreateToggle("Void Kill", MainModule.SkySquid.VoidKill, function(enabled)
-        MainModule.ToggleSkySquidVoidKill(enabled)
-    end)
+    local comingSoon = Instance.new("TextLabel")
+    comingSoon.Size = UDim2.new(1, 0, 0, 40)
+    comingSoon.BackgroundTransparency = 1
+    comingSoon.Text = "Sky Squid Features Coming Soon"
+    comingSoon.TextColor3 = Color3.fromRGB(200, 200, 200)
+    comingSoon.TextSize = 16
+    comingSoon.Font = Enum.Font.Gotham
+    comingSoon.Parent = ContentScrolling
 end
 
 -- SETTINGS TAB
@@ -986,20 +1121,26 @@ local function CreateSettingsContent()
     
     local creatorLabel = CreateButton("Creator: Creon")
     creatorLabel.TextXAlignment = Enum.TextXAlignment.Left
+    creatorLabel.LayoutOrder = 1
     
     local versionLabel = CreateButton("Version: 2.1")
     versionLabel.TextXAlignment = Enum.TextXAlignment.Left
+    versionLabel.LayoutOrder = 2
     
     local executorLabel = CreateButton("Executor: " .. executorName)
     executorLabel.TextXAlignment = Enum.TextXAlignment.Left
+    executorLabel.LayoutOrder = 3
     
     local supportedLabel = CreateButton("Supported: " .. (isSupported and "YES" or "NO"))
     supportedLabel.TextXAlignment = Enum.TextXAlignment.Left
+    supportedLabel.LayoutOrder = 4
     
     local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
     positionLabel.TextXAlignment = Enum.TextXAlignment.Left
+    positionLabel.LayoutOrder = 5
     
     local cleanupBtn = CreateButton("Cleanup Script")
+    cleanupBtn.LayoutOrder = 6
     cleanupBtn.MouseButton1Click:Connect(function()
         MainModule.Cleanup()
         ScreenGui:Destroy()
