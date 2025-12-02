@@ -31,14 +31,23 @@ local player = Players.LocalPlayer
 -- Загрузка Main модуля
 local MainModule
 local success, err = pcall(function()
-    -- Используем исправленный MainModule
+    -- Попробуем загрузить с GitHub
+    local url = "https://raw.githubusercontent.com/gosdinmadan-ops/creonx/main/Main.lua"
+    local content = game:HttpGet(url, true)
+    MainModule = loadstring(content)()
+    print("Main.lua успешно загружен с GitHub")
+end)
+
+if not success then
+    warn("Не удалось загрузить Main.lua с GitHub: " .. tostring(err))
+    -- Создаем заглушку с правильными функциями
+    print("Используем встроенную реализацию")
+    
+    -- Создаем мини-реализацию MainModule
     MainModule = {
-        -- Копируем все настройки из исправленного Main.lua
         SpeedHack = {Enabled = false, DefaultSpeed = 16, CurrentSpeed = 16, MaxSpeed = 150, MinSpeed = 16},
         Noclip = {Enabled = false, Status = "Don't work, Disabled"},
         AutoQTE = {AntiStunEnabled = false},
-        AntiStun = {Enabled = false, RemoveInjured = true, RemoveStun = true, RemoveSlow = true, ImmuneToDebuffs = true},
-        AntiRagdoll = {Enabled = false, PreventFalling = true, KeepUpright = true, ForceStand = true},
         Rebel = {Enabled = false},
         RLGL = {GodMode = false, OriginalHeight = nil},
         Guards = {
@@ -47,7 +56,6 @@ local success, err = pcall(function()
             RapidFire = false,
             InfiniteAmmo = false,
             HitboxExpander = false,
-            HitboxSize = 1000,
             OriginalFireRates = {},
             OriginalAmmo = {},
             OriginalHitboxes = {}
@@ -60,7 +68,9 @@ local success, err = pcall(function()
             AutoDodge = false,
             LastDodgeTime = 0,
             DodgeCooldown = 1.0,
-            DodgeRange = 10
+            DodgeRange = 10,
+            LastDodgeKeyTime = 0,
+            DodgeKeyCooldown = 0.1
         },
         TugOfWar = {AutoPull = false},
         GlassBridge = {
@@ -68,21 +78,13 @@ local success, err = pcall(function()
             GlassESPEnabled = false,
             GlassPlatform = false,
             FakeGlassCover = false,
-            AntiFallPlatform = nil,
-            WaterRemoved = false
-        },
-        JumpRope = {
-            TeleportToEnd = false, 
-            DeleteRope = false,
-            AntiFall = false,
             AntiFallPlatform = nil
         },
+        JumpRope = {TeleportToEnd = false, DeleteRope = false},
         SkySquid = {AntiFall = false, VoidKill = false, AntiFallPlatform = nil, SafePlatform = nil},
         Misc = {
             InstaInteract = false, 
             NoCooldownProximity = false,
-            UnlockDash = false,
-            UnlockPhantomStep = false,
             ESPEnabled = false,
             ESPPlayers = true,
             ESPHiders = true,
@@ -96,11 +98,10 @@ local success, err = pcall(function()
             ESPDistance = true,
             ESPNames = true,
             ESPBoxes = true,
-            ESPSnow = true,
-            ESPHP = true,
-            ESPFillTransparency = 0.3,
+            ESPFillTransparency = 0.7,
             ESPOutlineTransparency = 0,
-            ESPTextSize = 18
+            ESPTextSize = 18,
+            AntiStunRagdoll = false
         },
         
         -- Реализация функций
@@ -156,53 +157,12 @@ local success, err = pcall(function()
             end
         end,
         
-        ToggleAntiStun = function(enabled)
-            MainModule.AntiStun.Enabled = enabled
-            if enabled then
-                -- Удаляем Injured эффекты
-                local character = player.Character
-                if character then
-                    for _, obj in pairs(character:GetDescendants()) do
-                        if obj.Name == "InjuredWalking" or obj.Name:lower():find("injured") then
-                            obj:Destroy()
-                        end
-                    end
-                end
-            end
-        end,
-        
-        ToggleAntiRagdoll = function(enabled)
-            MainModule.AntiRagdoll.Enabled = enabled
-            if enabled then
-                -- Предотвращаем рагдолл
-                local character = player.Character
-                if character then
-                    local humanoid = character:FindFirstChildOfClass("Humanoid")
-                    if humanoid then
-                        humanoid:ChangeState(Enum.HumanoidStateType.Running)
-                    end
-                end
-            end
-        end,
-        
         ToggleAntiStunQTE = function(enabled)
             MainModule.AutoQTE.AntiStunEnabled = enabled
         end,
         
-        ToggleInstaInteract = function(enabled)
-            MainModule.Misc.InstaInteract = enabled
-        end,
-        
-        ToggleNoCooldownProximity = function(enabled)
-            MainModule.Misc.NoCooldownProximity = enabled
-        end,
-        
-        ToggleUnlockDash = function(enabled)
-            MainModule.Misc.UnlockDash = enabled
-        end,
-        
-        ToggleUnlockPhantomStep = function(enabled)
-            MainModule.Misc.UnlockPhantomStep = enabled
+        ToggleAntiStunRagdoll = function(enabled)
+            MainModule.Misc.AntiStunRagdoll = enabled
         end,
         
         ToggleRebel = function(enabled)
@@ -274,6 +234,66 @@ local success, err = pcall(function()
         
         ToggleAutoDodge = function(enabled)
             MainModule.HNS.AutoDodge = enabled
+            if enabled then
+                warn("AutoDodge: Включен (базовая реализация)")
+                
+                -- Простая реализация AutoDodge
+                local lastDodgeTime = 0
+                local dodgeCooldown = 1.0
+                
+                RunService.Heartbeat:Connect(function()
+                    if not MainModule.HNS.AutoDodge then return end
+                    
+                    local currentTime = tick()
+                    if currentTime - lastDodgeTime < dodgeCooldown then return end
+                    
+                    local character = player.Character
+                    if not character then return end
+                    
+                    local rootPart = character:FindFirstChild("HumanoidRootPart")
+                    local humanoid = character:FindFirstChildOfClass("Humanoid")
+                    if not rootPart or not humanoid or humanoid.Health <= 0 then return end
+                    
+                    -- Ищем игроков с ножом
+                    for _, otherPlayer in pairs(Players:GetPlayers()) do
+                        if otherPlayer ~= player and otherPlayer.Character then
+                            local targetChar = otherPlayer.Character
+                            local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                            local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
+                            
+                            if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
+                                local distance = (rootPart.Position - targetRoot.Position).Magnitude
+                                
+                                if distance <= 10 then
+                                    -- Проверяем наличие ножа
+                                    local hasKnife = false
+                                    for _, tool in pairs(targetChar:GetChildren()) do
+                                        if tool:IsA("Tool") and (tool.Name:lower():find("knife") or 
+                                           tool.Name:lower():find("fork") or tool.Name:lower():find("dagger")) then
+                                            hasKnife = true
+                                            break
+                                        end
+                                    end
+                                    
+                                    if hasKnife and distance < 3 then
+                                        -- Нажимаем клавишу 1 для уклонения
+                                        pcall(function()
+                                            game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.One, false, game)
+                                            task.wait(0.05)
+                                            game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.One, false, game)
+                                        end)
+                                        
+                                        lastDodgeTime = tick()
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end)
+            else
+                warn("AutoDodge: Выключен")
+            end
         end,
         
         ToggleAutoPull = function(enabled)
@@ -288,9 +308,10 @@ local success, err = pcall(function()
             MainModule.GlassBridge.GlassESPEnabled = enabled
         end,
         
-        ToggleJumpRopeAntiFall = function(enabled)
-            MainModule.JumpRope.AntiFall = enabled
-        end,
+        CreateGlassBridgeCover = function() end,
+        RemoveGlassBridgeCover = function() end,
+        CreateHugeAntiFallPlatform = function() end,
+        RemoveHugeAntiFallPlatform = function() end,
         
         TeleportToJumpRopeEnd = function()
             local character = player.Character
@@ -316,6 +337,14 @@ local success, err = pcall(function()
             MainModule.SkySquid.VoidKill = enabled
         end,
         
+        ToggleInstaInteract = function(enabled)
+            MainModule.Misc.InstaInteract = enabled
+        end,
+        
+        ToggleNoCooldownProximity = function(enabled)
+            MainModule.Misc.NoCooldownProximity = enabled
+        end,
+        
         ToggleESP = function(enabled)
             MainModule.Misc.ESPEnabled = enabled
         end,
@@ -333,7 +362,6 @@ local success, err = pcall(function()
             warn("Cleanup выполнен")
         end
     }
-    print("Используем встроенную реализацию")
 end
 
 -- GUI Creon X v2.1
@@ -341,7 +369,7 @@ local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
 local TitleBar = Instance.new("Frame")
 local TitleLabel = Instance.new("TextLabel")
-local MinimizeButton = Instance.new("TextButton")
+local CloseButton = Instance.new("TextButton")
 local TabButtons = Instance.new("Frame")
 local ContentFrame = Instance.new("Frame")
 local ContentScrolling = Instance.new("ScrollingFrame")
@@ -424,22 +452,22 @@ TitleLabel.TextSize = 14
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.Parent = TitleBar
 
--- Кнопка скрытия (_ вместо ×)
-MinimizeButton.Size = UDim2.new(0, 25, 0, 25)
-MinimizeButton.Position = UDim2.new(1, -30, 0.5, -12.5)
-MinimizeButton.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-MinimizeButton.BorderSizePixel = 0
-MinimizeButton.Text = "_"
-MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinimizeButton.TextSize = 16
-MinimizeButton.Font = Enum.Font.GothamBold
-MinimizeButton.Parent = TitleBar
+-- Кнопка закрытия
+CloseButton.Size = UDim2.new(0, 25, 0, 25)
+CloseButton.Position = UDim2.new(1, -30, 0.5, -12.5)
+CloseButton.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+CloseButton.BorderSizePixel = 0
+CloseButton.Text = "×"
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.TextSize = 14
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.Parent = TitleBar
 
-local minimizeCorner = Instance.new("UICorner")
-minimizeCorner.CornerRadius = UDim.new(0, 6)
-minimizeCorner.Parent = MinimizeButton
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 6)
+closeCorner.Parent = CloseButton
 
-MinimizeButton.MouseButton1Click:Connect(function()
+CloseButton.MouseButton1Click:Connect(function()
     MainFrame.Visible = false
     DisableMenuMouse()
     if UIS.TouchEnabled then
@@ -495,20 +523,20 @@ SoonLabel.Font = Enum.Font.Gotham
 SoonLabel.Visible = false
 SoonLabel.Parent = ContentScrolling
 
--- Кнопка для мобильных устройств (стиль как у дельты)
+-- Кнопка для мобильных устройств
 if UIS.TouchEnabled then
-    MobileButton.Size = UDim2.new(0, 120, 0, 40)
-    MobileButton.Position = UDim2.new(0.5, -60, 0.2, 0) -- Чуть выше центра
-    MobileButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45) -- Серо-черный дизайн
+    MobileButton.Size = UDim2.new(0, 100, 0, 36)
+    MobileButton.Position = UDim2.new(0.5, -50, 0, 8)
+    MobileButton.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
     MobileButton.BorderSizePixel = 0
-    MobileButton.Text = "OPEN"
+    MobileButton.Text = "Creon X"
     MobileButton.TextColor3 = Color3.fromRGB(220, 220, 255)
-    MobileButton.TextSize = 14
+    MobileButton.TextSize = 12
     MobileButton.Font = Enum.Font.GothamBold
     MobileButton.Parent = ScreenGui
     
     local mobileCorner = Instance.new("UICorner")
-    mobileCorner.CornerRadius = UDim.new(0, 8)
+    mobileCorner.CornerRadius = UDim.new(0, 6)
     mobileCorner.Parent = MobileButton
     
     local mobileStroke = Instance.new("UIStroke")
@@ -516,63 +544,10 @@ if UIS.TouchEnabled then
     mobileStroke.Thickness = 2
     mobileStroke.Parent = MobileButton
     
-    -- Анимация при нажатии
-    MobileButton.MouseButton1Down:Connect(function()
-        TweenService:Create(MobileButton, TweenInfo.new(0.1), {
-            BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-        }):Play()
-    end)
-    
-    MobileButton.MouseButton1Up:Connect(function()
-        TweenService:Create(MobileButton, TweenInfo.new(0.1), {
-            BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-        }):Play()
-    end)
-    
     MobileButton.MouseButton1Click:Connect(function()
         MainFrame.Visible = true
         MobileButton.Visible = false
         EnableMenuMouse()
-    end)
-    
-    -- Делаем кнопку подвижной
-    local mobileDragging = false
-    local mobileDragStart, mobileStartPos
-    
-    local function mobileUpdate(input)
-        local delta = input.Position - mobileDragStart
-        MobileButton.Position = UDim2.new(
-            mobileStartPos.X.Scale, 
-            mobileStartPos.X.Offset + delta.X,
-            mobileStartPos.Y.Scale,
-            mobileStartPos.Y.Offset + delta.Y
-        )
-    end
-    
-    MobileButton.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            mobileDragging = true
-            mobileDragStart = input.Position
-            mobileStartPos = MobileButton.Position
-            
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    mobileDragging = false
-                end
-            end)
-        end
-    end)
-    
-    MobileButton.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            mobileDragInput = input
-        end
-    end)
-    
-    UIS.InputChanged:Connect(function(input)
-        if input == mobileDragInput and mobileDragging then
-            mobileUpdate(input)
-        end
     end)
     
     MainFrame.Visible = false
@@ -580,6 +555,41 @@ else
     MainFrame.Visible = true
     SaveMouseState()
 end
+
+-- Функция для перемещения GUI
+local dragging = false
+local dragInput, dragStart, startPos
+
+local function update(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+TitleBar.InputChanged:Connect(function(input)
+    if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        dragInput = input
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
 
 -- Функция для создания кнопок
 local function CreateButton(text)
@@ -638,7 +648,6 @@ local function CreateToggle(text, enabled, callback)
     local toggleContainer = Instance.new("Frame")
     toggleContainer.Size = UDim2.new(1, -10, 0, 32)
     toggleContainer.BackgroundTransparency = 1
-    toggleContainer.LayoutOrder = 999
     toggleContainer.Parent = ContentScrolling
     
     -- Текст
@@ -792,33 +801,18 @@ local function CreateSpeedSlider()
     return speedLabel
 end
 
--- Функция для создания выпадающего списка (исправленная)
+-- Функция для создания выпадающего списка
 local function CreateDropdown(options, default, callback)
     local dropdownContainer = Instance.new("Frame")
     dropdownContainer.Size = UDim2.new(1, -10, 0, 32)
     dropdownContainer.BackgroundTransparency = 1
     dropdownContainer.Parent = ContentScrolling
     
-    local dropdownButton = Instance.new("TextButton")
+    local dropdownButton = CreateButton(default .. " ▼")
+    dropdownButton.Parent = dropdownContainer
     dropdownButton.Size = UDim2.new(1, 0, 1, 0)
     dropdownButton.Position = UDim2.new(0, 0, 0, 0)
-    dropdownButton.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-    dropdownButton.BorderSizePixel = 0
     dropdownButton.Text = default .. " ▼"
-    dropdownButton.TextColor3 = Color3.fromRGB(240, 240, 255)
-    dropdownButton.TextSize = 12
-    dropdownButton.Font = Enum.Font.Gotham
-    dropdownButton.AutoButtonColor = false
-    dropdownButton.Parent = dropdownContainer
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = dropdownButton
-    
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(80, 80, 100)
-    stroke.Thickness = 1.2
-    stroke.Parent = dropdownButton
     
     local dropdownList = Instance.new("Frame")
     dropdownList.Size = UDim2.new(1, 0, 0, #options * 32)
@@ -826,7 +820,6 @@ local function CreateDropdown(options, default, callback)
     dropdownList.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
     dropdownList.BorderSizePixel = 0
     dropdownList.Visible = false
-    dropdownList.ZIndex = 100 -- Выше других элементов
     dropdownList.Parent = dropdownContainer
     
     local listCorner = Instance.new("UICorner")
@@ -844,7 +837,6 @@ local function CreateDropdown(options, default, callback)
         optionButton.Size = UDim2.new(1, -8, 0, 28)
         optionButton.Position = UDim2.new(0, 4, 0, (i-1)*32 + 2)
         optionButton.Text = option
-        optionButton.ZIndex = 101 -- Выше dropdownList
         
         optionButton.MouseButton1Click:Connect(function()
             dropdownButton.Text = option .. " ▼"
@@ -883,32 +875,20 @@ local function CreateMainContent()
         MainModule.ToggleSpeedHack(enabled)
     end)
     
-    local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun", MainModule.AntiStun.Enabled, function(enabled)
-        MainModule.ToggleAntiStun(enabled)
-    end)
-    
-    local antiRagdollToggle, updateAntiRagdollToggle = CreateToggle("Anti Ragdoll", MainModule.AntiRagdoll.Enabled, function(enabled)
-        MainModule.ToggleAntiRagdoll(enabled)
-    end)
-    
-    local antiStunQTEToggle, updateAntiStunQTEToggle = CreateToggle("Anti Stun QTE", MainModule.AutoQTE.AntiStunEnabled, function(enabled)
+    local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun QTE", MainModule.AutoQTE.AntiStunEnabled, function(enabled)
         MainModule.ToggleAntiStunQTE(enabled)
     end)
     
-    local instaInteractToggle, updateInstaInteractToggle = CreateToggle("Instance Interact", MainModule.Misc.InstaInteract, function(enabled)
+    local antiStunRagdollToggle, updateAntiStunRagdollToggle = CreateToggle("Anti Stun + Ragdoll", MainModule.Misc.AntiStunRagdoll, function(enabled)
+        MainModule.ToggleAntiStunRagdoll(enabled)
+    end)
+    
+    local instaInteractToggle, updateInstaInteractToggle = CreateToggle("Insta Interact", MainModule.Misc.InstaInteract, function(enabled)
         MainModule.ToggleInstaInteract(enabled)
     end)
     
     local noCooldownToggle, updateNoCooldownToggle = CreateToggle("No Cooldown Proximity", MainModule.Misc.NoCooldownProximity, function(enabled)
         MainModule.ToggleNoCooldownProximity(enabled)
-    end)
-    
-    local unlockDashToggle, updateUnlockDashToggle = CreateToggle("Unlock Dash (Don't work)", MainModule.Misc.UnlockDash, function(enabled)
-        MainModule.ToggleUnlockDash(enabled)
-    end)
-    
-    local unlockPhantomToggle, updateUnlockPhantomToggle = CreateToggle("Unlock Phantom Step (Don't work)", MainModule.Misc.UnlockPhantomStep, function(enabled)
-        MainModule.ToggleUnlockPhantomStep(enabled)
     end)
     
     local tpUpBtn = CreateButton("TP 100 blocks up")
@@ -937,59 +917,6 @@ local function CreateMiscContent()
     
     local espToggle, updateEspToggle = CreateToggle("ESP System", MainModule.Misc.ESPEnabled, function(enabled)
         MainModule.ToggleESP(enabled)
-    end)
-    
-    -- ESP настройки
-    local espPlayersToggle, updateEspPlayersToggle = CreateToggle("ESP Players", MainModule.Misc.ESPPlayers, function(enabled)
-        MainModule.Misc.ESPPlayers = enabled
-    end)
-    
-    local espHidersToggle, updateEspHidersToggle = CreateToggle("ESP Hiders", MainModule.Misc.ESPHiders, function(enabled)
-        MainModule.Misc.ESPHiders = enabled
-    end)
-    
-    local espSeekersToggle, updateEspSeekersToggle = CreateToggle("ESP Seekers", MainModule.Misc.ESPSeekers, function(enabled)
-        MainModule.Misc.ESPSeekers = enabled
-    end)
-    
-    local espGuardsToggle, updateEspGuardsToggle = CreateToggle("ESP Guards", MainModule.Misc.ESPGuards, function(enabled)
-        MainModule.Misc.ESPGuards = enabled
-    end)
-    
-    local espCandiesToggle, updateEspCandiesToggle = CreateToggle("ESP Candies", MainModule.Misc.ESPCandies, function(enabled)
-        MainModule.Misc.ESPCandies = enabled
-    end)
-    
-    local espKeysToggle, updateEspKeysToggle = CreateToggle("ESP Keys", MainModule.Misc.ESPKeys, function(enabled)
-        MainModule.Misc.ESPKeys = enabled
-    end)
-    
-    local espDoorsToggle, updateEspDoorsToggle = CreateToggle("ESP Doors", MainModule.Misc.ESPDoors, function(enabled)
-        MainModule.Misc.ESPDoors = enabled
-    end)
-    
-    local espEscapeDoorsToggle, updateEspEscapeDoorsToggle = CreateToggle("ESP Escape Doors", MainModule.Misc.ESPEscapeDoors, function(enabled)
-        MainModule.Misc.ESPEscapeDoors = enabled
-    end)
-    
-    local espBoxesToggle, updateEspBoxesToggle = CreateToggle("ESP Boxes", MainModule.Misc.ESPBoxes, function(enabled)
-        MainModule.Misc.ESPBoxes = enabled
-    end)
-    
-    local espSnowToggle, updateEspSnowToggle = CreateToggle("ESP Snow Distance", MainModule.Misc.ESPSnow, function(enabled)
-        MainModule.Misc.ESPSnow = enabled
-    end)
-    
-    local espHPToggle, updateEspHPToggle = CreateToggle("ESP HP", MainModule.Misc.ESPHP, function(enabled)
-        MainModule.Misc.ESPHP = enabled
-    end)
-    
-    local espDistanceToggle, updateEspDistanceToggle = CreateToggle("ESP Distance", MainModule.Misc.ESPDistance, function(enabled)
-        MainModule.Misc.ESPDistance = enabled
-    end)
-    
-    local espNamesToggle, updateEspNamesToggle = CreateToggle("ESP Names", MainModule.Misc.ESPNames, function(enabled)
-        MainModule.Misc.ESPNames = enabled
     end)
 end
 
@@ -1027,7 +954,6 @@ end
 local function CreateGuardsContent()
     ClearContent()
     
-    -- Исправленный dropdown с ZIndex
     local guardDropdown = CreateDropdown({"Circle", "Triangle", "Square"}, MainModule.Guards.SelectedGuard, function(selected)
         MainModule.SetGuardType(selected)
     end)
@@ -1089,7 +1015,7 @@ local function CreateHNSContent()
         MainModule.ToggleKillHiders(enabled)
     end)
     
-    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge (Range: 10, Cooldown: 1s)", MainModule.HNS.AutoDodge, function(enabled)
+    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", MainModule.HNS.AutoDodge, function(enabled)
         MainModule.ToggleAutoDodge(enabled)
     end)
 end
@@ -1115,17 +1041,6 @@ local function CreateGlassBridgeContent()
     local antiBreakToggle, updateAntiBreakToggle = CreateToggle("Anti Break", MainModule.GlassBridge.AntiBreak, function(enabled)
         MainModule.ToggleAntiBreak(enabled)
     end)
-    
-    -- Anti Fall для Glass Bridge
-    local antiFallBtn = CreateButton("Anti Fall Platform")
-    antiFallBtn.MouseButton1Click:Connect(function()
-        MainModule.GlassBridge.AntiBreak = not MainModule.GlassBridge.AntiBreak
-        if MainModule.GlassBridge.AntiBreak then
-            antiFallBtn.Text = "Anti Fall Platform (ON)"
-        else
-            antiFallBtn.Text = "Anti Fall Platform"
-        end
-    end)
 end
 
 local function CreateTugOfWarContent()
@@ -1147,10 +1062,6 @@ local function CreateJumpRopeContent()
     local deleteRopeBtn = CreateButton("Delete The Rope")
     deleteRopeBtn.MouseButton1Click:Connect(function()
         MainModule.DeleteJumpRope()
-    end)
-    
-    local antiFallToggle, updateAntiFallToggle = CreateToggle("Anti Fall", MainModule.JumpRope.AntiFall, function(enabled)
-        MainModule.ToggleJumpRopeAntiFall(enabled)
     end)
 end
 
@@ -1256,44 +1167,9 @@ for i, name in pairs(tabs) do
     button.MouseButton1Click:Connect(ActivateTab)
 end
 
--- Функция для перемещения GUI (только для ПК)
-local dragging = false
-local dragInput, dragStart, startPos
-
-local function update(input)
-    local delta = input.Position - dragStart
-    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-end
-
-TitleBar.InputBegan:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not UIS.TouchEnabled then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-
-TitleBar.InputChanged:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and not UIS.TouchEnabled then
-        dragInput = input
-    end
-end)
-
-UIS.InputChanged:Connect(function(input)
-    if input == dragInput and dragging and not UIS.TouchEnabled then
-        update(input)
-    end
-end)
-
 -- Управление для ПК
 UIS.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.M and not UIS.TouchEnabled then
+    if input.KeyCode == Enum.KeyCode.M then
         MainFrame.Visible = not MainFrame.Visible
         if MainFrame.Visible then
             MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
@@ -1306,7 +1182,7 @@ end)
 
 -- Закрытие при нажатии ESC
 UIS.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.Escape and MainFrame.Visible and not UIS.TouchEnabled then
+    if input.KeyCode == Enum.KeyCode.Escape and MainFrame.Visible then
         MainFrame.Visible = false
         DisableMenuMouse()
     end
