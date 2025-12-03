@@ -251,7 +251,7 @@ local function IsSeeker(player)
     return player:GetAttribute("IsHunter") == true
 end
 
--- Улучшенная функция Bypass Ragdoll (с вашими дополнениями)
+-- Bypass Ragdoll функция с улучшенной защитой (исправленная версия)
 function MainModule.ToggleBypassRagdoll(enabled)
     MainModule.Misc.BypassRagdollEnabled = enabled
     
@@ -265,17 +265,17 @@ function MainModule.ToggleBypassRagdoll(enabled)
             if not MainModule.Misc.BypassRagdollEnabled then return end
             
             pcall(function()
-                local Character = GetCharacter()
+                local Character = LocalPlayer.Character
                 if not Character then return end
                 
-                local Humanoid = GetHumanoid(Character)
-                local HumanoidRootPart = GetRootPart(Character)
+                local Humanoid = Character:FindFirstChild("Humanoid")
+                local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
                 
                 if not (Humanoid and HumanoidRootPart) then return end
 
-                -- 1. Мягкое удаление Ragdoll объектов
+                -- 1. Мягкое удаление Ragdoll объектов (включая Ragdoll Stun и подобные)
                 for _, child in ipairs(Character:GetChildren()) do
-                    if child.Name == "Ragdoll" then
+                    if child.Name == "Ragdoll" or child.Name == "Ragdoll Stun" or string.find(child.Name:lower(), "ragdoll") then
                         task.spawn(function()
                             for i = 1, 10 do
                                 if child and child.Parent then
@@ -295,8 +295,16 @@ function MainModule.ToggleBypassRagdoll(enabled)
                     end
                 end
 
-                -- 2. Удаляем только вредоносные папки
-                local harmfulFolders = {"RotateDisabled", "RagdollWakeupImmunity"}
+                -- 2. Удаляем вредоносные папки и объекты
+                local harmfulFolders = {
+                    "RotateDisabled", 
+                    "RagdollWakeupImmunity",
+                    "RagdollStun",
+                    "Stun",
+                    "Knockout",
+                    "Paralyze"
+                }
+                
                 for _, folderName in pairs(harmfulFolders) do
                     local folder = Character:FindFirstChild(folderName)
                     if folder then
@@ -329,6 +337,9 @@ function MainModule.ToggleBypassRagdoll(enabled)
                                 if force.Velocity.Magnitude > 30 then
                                     force:Destroy()
                                 end
+                            elseif force:IsA("BodyGyro") or force:IsA("BodyAngularVelocity") then
+                                -- Удаляем вращающие силы
+                                force:Destroy()
                             end
                         end
                     end
@@ -367,30 +378,48 @@ function MainModule.ToggleBypassRagdoll(enabled)
                         end)
                     end
                 end
+                
+                -- 5. Проверяем состояние Humanoid
+                if Humanoid:GetState() == Enum.HumanoidStateType.FallingDown or
+                   Humanoid:GetState() == Enum.HumanoidStateType.Physics then
+                    Humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                    Humanoid.PlatformStand = false
+                end
             end)
         end)
         
         -- Слушатель для мгновенного удаления новых Ragdoll объектов
-        local char = GetCharacter()
+        local char = LocalPlayer.Character
         if char then
-            char.ChildAdded:Connect(function(child)
-                if child.Name == "Ragdoll" and MainModule.Misc.BypassRagdollEnabled then
+            local ragdollListener = char.ChildAdded:Connect(function(child)
+                if (child.Name == "Ragdoll" or 
+                    child.Name == "Ragdoll Stun" or 
+                    string.find(child.Name:lower(), "ragdoll")) and 
+                    MainModule.Misc.BypassRagdollEnabled then
+                    
                     task.wait(0.1)
                     pcall(function() child:Destroy() end)
                     
-                    local humanoid = GetHumanoid(char)
+                    local humanoid = char:FindFirstChild("Humanoid")
                     if humanoid then
                         humanoid.PlatformStand = false
                         humanoid:ChangeState(Enum.HumanoidStateType.Running)
                     end
                 end
             end)
+            
+            -- Сохраняем соединение для последующего отключения
+            bypassRagdollConnection.ragdollListener = ragdollListener
         end
     else
         -- При выключении очищаем слушатели
-        local character = GetCharacter()
+        if bypassRagdollConnection and bypassRagdollConnection.ragdollListener then
+            bypassRagdollConnection.ragdollListener:Disconnect()
+        end
+        
+        local character = LocalPlayer.Character
         if character then
-            local rootPart = GetRootPart(character)
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
             if rootPart then
                 for _, conn in pairs(getconnections(rootPart.ChildAdded)) do
                     conn:Disconnect()
@@ -399,7 +428,6 @@ function MainModule.ToggleBypassRagdoll(enabled)
         end
     end
 end
-
 -- Новый AutoDodge (исправленный и оптимизированный)
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.HNS.AutoDodgeEnabled = enabled
@@ -1645,3 +1673,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
