@@ -568,183 +568,362 @@ function MainModule.ToggleAutoDodge(enabled)
     end
 end
 
--- Bypass Ragdoll функция с улучшенной защитой (исправленная версия)
-function MainModule.ToggleBypassRagdoll(enabled)
-    MainModule.Misc.BypassRagdollEnabled = enabled
+-- ДОПОЛНИТЕЛЬНЫЙ МОДУЛЬ ДЛЯ УДАЛЕНИЯ НЕГАТИВНЫХ ЭФФЕКТОВ
+-- Этот код добавляется ОТДЕЛЬНО от вашего главного кода
+
+-- Таблица для хранения соединений
+local additionalEffectsConnection
+
+-- Список негативных объектов/эффектов для удаления
+local harmfulEffects = {
+    "RagdollStun",
+    "Stun", 
+    "Stunned",
+    "Knockback",
+    "Knockdown",
+    "Knockout",
+    "Dazed",
+    "Paralyzed",
+    "Freeze",
+    "Frozen",
+    "Sleep",
+    "Sleeping",
+    "Confusion",
+    "Slow",
+    "Root",
+    "Rooted",
+    "Bleed",
+    "Poison",
+    "Burn",
+    "Shock",
+    "Silence",
+    "Disarm",
+    "Blind",
+    "Fear",
+    "Taunt",
+    "Charm",
+    "Petrify",
+    "GravityWell",
+    "VoidZone",
+    "DeathMark"
+}
+
+-- Список вредоносных звуков и частиц
+local harmfulMedia = {
+    "StunSound",
+    "DazedEffect",
+    "ParalyzeParticle",
+    "FreezeEmitter",
+    "SleepCloud",
+    "ConfusionAura",
+    "SlowField",
+    "RootVines",
+    "BleedParticle",
+    "PoisonCloud",
+    "BurnFire",
+    "ShockSparkles",
+    "SilenceBubble",
+    "BlindFog",
+    "FearAura"
+}
+
+-- Список вредоносных скриптов и локальных скриптов
+local harmfulScripts = {
+    "RagdollController",
+    "StunHandler",
+    "KnockbackScript",
+    "StatusEffect",
+    "DebuffManager",
+    "CC_Handler", -- Crowd Control Handler
+    "RagdollModule",
+    "ForceModule"
+}
+
+-- Функция для безопасного получения персонажа
+local function GetSafeCharacter()
+    return LocalPlayer and LocalPlayer.Character
+end
+
+-- Функция для удаления негативных эффектов
+local function RemoveNegativeEffects(character)
+    if not character then return end
     
-    if bypassRagdollConnection then
-        bypassRagdollConnection:Disconnect()
-        bypassRagdollConnection = nil
-    end
-    
-    if enabled then
-        bypassRagdollConnection = RunService.Stepped:Connect(function()
-            if not MainModule.Misc.BypassRagdollEnabled then return end
-            
-            pcall(function()
-                local Character = LocalPlayer.Character
-                if not Character then return end
-                
-                local Humanoid = Character:FindFirstChild("Humanoid")
-                local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-                
-                if not (Humanoid and HumanoidRootPart) then return end
-
-                -- 1. Мягкое удаление Ragdoll объектов (включая Ragdoll Stun и подобные)
-                for _, child in ipairs(Character:GetChildren()) do
-                    if child.Name == "Ragdoll" or child.Name == "Ragdoll Stun" or string.find(child.Name:lower(), "ragdoll") then
-                        task.spawn(function()
-                            for i = 1, 10 do
-                                if child and child.Parent then
-                                    for _, part in pairs(child:GetChildren()) do
-                                        if part:IsA("BasePart") then
-                                            part.Transparency = part.Transparency + 0.1
-                                        end
-                                    end
-                                    task.wait(0.05)
-                                end
-                            end
-                            pcall(function() child:Destroy() end)
-                        end)
-                        
-                        Humanoid.PlatformStand = false
-                        Humanoid:ChangeState(Enum.HumanoidStateType.Running)
-                    end
-                end
-
-                -- 2. Удаляем вредоносные папки и объекты
-                local harmfulFolders = {
-                    "RotateDisabled", 
-                    "RagdollWakeupImmunity",
-                    "RagdollStun",
-                    "Stun",
-                    "Knockout",
-                    "Paralyze"
-                }
-                
-                for _, folderName in pairs(harmfulFolders) do
-                    local folder = Character:FindFirstChild(folderName)
-                    if folder then
-                        folder:Destroy()
-                    end
-                end
-
-                -- 3. Основная защита от толчков
-                for _, part in pairs(Character:GetChildren()) do
-                    if part:IsA("BasePart") then
-                        local currentVelocity = part.Velocity
-                        local horizontalSpeed = Vector3.new(currentVelocity.X, 0, currentVelocity.Z).Magnitude
-                        
-                        if horizontalSpeed > 50 and part ~= HumanoidRootPart then
-                            local newVelocity = Vector3.new(
-                                currentVelocity.X * 0.8,
-                                currentVelocity.Y,
-                                currentVelocity.Z * 0.8
-                            )
-                            part.Velocity = newVelocity
-                        end
-                        
-                        for _, force in pairs(part:GetChildren()) do
-                            if force:IsA("BodyForce") then
-                                local forceMagnitude = force.Force.Magnitude
-                                if forceMagnitude > 1000 then
-                                    force:Destroy()
-                                end
-                            elseif force:IsA("BodyVelocity") then
-                                if force.Velocity.Magnitude > 30 then
-                                    force:Destroy()
-                                end
-                            elseif force:IsA("BodyGyro") or force:IsA("BodyAngularVelocity") then
-                                -- Удаляем вращающие силы
-                                force:Destroy()
+    pcall(function()
+        -- 1. Удаление объектов по именам из списка
+        for _, effectName in ipairs(harmfulEffects) do
+            local effect = character:FindFirstChild(effectName)
+            if effect then
+                -- Мягкое удаление с анимацией
+                task.spawn(function()
+                    if effect:IsA("BasePart") then
+                        for i = 1, 10 do
+                            if effect and effect.Parent then
+                                effect.Transparency = effect.Transparency + 0.1
+                                task.wait(0.03)
                             end
                         end
                     end
-                end
-                
-                -- 4. Защита корневого объекта
-                local playerInputVelocity = HumanoidRootPart.Velocity
-                local externalForces = {}
-                
-                for _, force in pairs(HumanoidRootPart:GetChildren()) do
-                    if force:IsA("BodyForce") or force:IsA("BodyVelocity") then
-                        table.insert(externalForces, force)
-                    end
-                end
-                
-                if #externalForces > 0 then
-                    local filteredVelocity = Vector3.new(
-                        playerInputVelocity.X,
-                        HumanoidRootPart.Velocity.Y,
-                        playerInputVelocity.Z
-                    )
-                    
-                    HumanoidRootPart.Velocity = filteredVelocity
-                    
-                    for _, force in pairs(externalForces) do
-                        task.spawn(function()
-                            if force:IsA("BodyVelocity") then
-                                for i = 1, 5 do
-                                    if force and force.Parent then
-                                        force.Velocity = force.Velocity * 0.5
-                                        task.wait(0.02)
-                                    end
-                                end
-                            end
-                            pcall(function() force:Destroy() end)
-                        end)
-                    end
-                end
-                
-                -- 5. Проверяем состояние Humanoid
-                if Humanoid:GetState() == Enum.HumanoidStateType.FallingDown or
-                   Humanoid:GetState() == Enum.HumanoidStateType.Physics then
-                    Humanoid:ChangeState(Enum.HumanoidStateType.Running)
-                    Humanoid.PlatformStand = false
-                end
-            end)
-        end)
-        
-        -- Слушатель для мгновенного удаления новых Ragdoll объектов
-        local char = LocalPlayer.Character
-        if char then
-            local ragdollListener = char.ChildAdded:Connect(function(child)
-                if (child.Name == "Ragdoll" or 
-                    child.Name == "Ragdoll Stun" or 
-                    string.find(child.Name:lower(), "ragdoll")) and 
-                    MainModule.Misc.BypassRagdollEnabled then
-                    
-                    task.wait(0.1)
-                    pcall(function() child:Destroy() end)
-                    
-                    local humanoid = char:FindFirstChild("Humanoid")
-                    if humanoid then
-                        humanoid.PlatformStand = false
-                        humanoid:ChangeState(Enum.HumanoidStateType.Running)
-                    end
-                end
-            end)
-            
-            -- Сохраняем соединение для последующего отключения
-            bypassRagdollConnection.ragdollListener = ragdollListener
-        end
-    else
-        -- При выключении очищаем слушатели
-        if bypassRagdollConnection and bypassRagdollConnection.ragdollListener then
-            bypassRagdollConnection.ragdollListener:Disconnect()
+                    effect:Destroy()
+                end)
+            end
         end
         
-        local character = LocalPlayer.Character
-        if character then
-            local rootPart = character:FindFirstChild("HumanoidRootPart")
-            if rootPart then
-                for _, conn in pairs(getconnections(rootPart.ChildAdded)) do
-                    conn:Disconnect()
+        -- 2. Удаление медиа-эффектов (звуки, частицы)
+        for _, mediaName in ipairs(harmfulMedia) do
+            local media = character:FindFirstChild(mediaName)
+            if media then
+                if media:IsA("Sound") then
+                    media:Stop()
+                end
+                media:Destroy()
+            end
+            
+            -- Также ищем в потомках
+            for _, child in pairs(character:GetDescendants()) do
+                if child.Name == mediaName then
+                    if child:IsA("Sound") then
+                        child:Stop()
+                    end
+                    child:Destroy()
                 end
             end
         end
+        
+        -- 3. Удаление вредоносных скриптов
+        for _, scriptName in ipairs(harmfulScripts) do
+            local scriptObj = character:FindFirstChild(scriptName)
+            if scriptObj and (scriptObj:IsA("Script") or scriptObj:IsA("LocalScript")) then
+                scriptObj.Disabled = true
+                scriptObj:Destroy()
+            end
+            
+            -- Ищем в потомках
+            for _, child in pairs(character:GetDescendants()) do
+                if child.Name == scriptName and (child:IsA("Script") or child:IsA("LocalScript")) then
+                    child.Disabled = true
+                    child:Destroy()
+                end
+            end
+        end
+        
+        -- 4. Удаление вредоносных атрибутов у Humanoid
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            local harmfulAttributes = {
+                "Stunned",
+                "Paralyzed", 
+                "Frozen",
+                "Asleep",
+                "Confused",
+                "Slowed",
+                "Rooted",
+                "Silenced",
+                "Disarmed",
+                "Blinded",
+                "Feared"
+            }
+            
+            for _, attr in ipairs(harmfulAttributes) do
+                if humanoid:GetAttribute(attr) then
+                    humanoid:SetAttribute(attr, false)
+                end
+            end
+            
+            -- Восстановление нормального состояния
+            if humanoid.PlatformStand then
+                humanoid.PlatformStand = false
+            end
+            
+            -- Восстановление скорости
+            if humanoid.WalkSpeed < 16 then
+                humanoid.WalkSpeed = 16
+            end
+            
+            if humanoid.JumpPower < 50 then
+                humanoid.JumpPower = 50
+            end
+        end
+        
+        -- 5. Удаление вредоносных BodyMovers
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                -- Проверяем BodyMovers
+                for _, mover in pairs(part:GetChildren()) do
+                    if mover:IsA("BodyMover") then
+                        local isHarmful = false
+                        
+                        -- Проверяем, является ли mover вредоносным
+                        if mover:IsA("BodyVelocity") then
+                            if mover.Velocity.Magnitude > 30 then
+                                isHarmful = true
+                            end
+                        elseif mover:IsA("BodyForce") then
+                            if mover.Force.Magnitude > 1000 then
+                                isHarmful = true
+                            end
+                        elseif mover:IsA("BodyAngularVelocity") then
+                            isHarmful = true
+                        elseif mover:IsA("BodyThrust") then
+                            isHarmful = true
+                        end
+                        
+                        if isHarmful then
+                            -- Плавное удаление
+                            task.spawn(function()
+                                for i = 1, 5 do
+                                    if mover and mover.Parent then
+                                        if mover:IsA("BodyVelocity") then
+                                            mover.Velocity = mover.Velocity * 0.5
+                                        elseif mover:IsA("BodyForce") then
+                                            mover.Force = mover.Force * 0.5
+                                        end
+                                        task.wait(0.02)
+                                    end
+                                end
+                                mover:Destroy()
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- 6. Удаление вредоносных Constraints (связей)
+        for _, constraint in pairs(character:GetDescendants()) do
+            if constraint:IsA("Constraint") then
+                local constraintName = constraint.Name:lower()
+                if constraintName:find("stun") or 
+                   constraintName:find("ragdoll") or 
+                   constraintName:find("freeze") or
+                   constraintName:find("root") then
+                    constraint:Destroy()
+                end
+            end
+        end
+        
+        -- 7. Очистка от негативных ParticleEmitters
+        for _, emitter in pairs(character:GetDescendants()) do
+            if emitter:IsA("ParticleEmitter") then
+                local emitterName = emitter.Name:lower()
+                if emitterName:find("stun") or 
+                   emitterName:find("daze") or 
+                   emitterName:find("paralyze") or
+                   emitterName:find("freeze") or
+                   emitterName:find("sleep") then
+                    emitter.Enabled = false
+                    emitter:Destroy()
+                end
+            end
+        end
+        
+        -- 8. Восстановление прозрачности частей тела
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") and part.Transparency > 0.5 then
+                -- Медленно восстанавливаем прозрачность
+                task.spawn(function()
+                    for i = 1, 10 do
+                        if part and part.Parent then
+                            part.Transparency = math.max(0, part.Transparency - 0.1)
+                            task.wait(0.05)
+                        end
+                    end
+                end)
+            end
+        end
+    end)
+end
+
+-- Функция для запуска дополнительной защиты
+function MainModule.ToggleEnhancedProtection(enabled)
+    if additionalEffectsConnection then
+        additionalEffectsConnection:Disconnect()
+        additionalEffectsConnection = nil
+    end
+    
+    if enabled then
+        -- Слушатель для постоянной очистки
+        additionalEffectsConnection = RunService.Heartbeat:Connect(function()
+            local character = GetSafeCharacter()
+            if character then
+                RemoveNegativeEffects(character)
+            end
+        end)
+        
+        -- Слушатель для новых объектов
+        local character = GetSafeCharacter()
+        if character then
+            character.ChildAdded:Connect(function(child)
+                task.wait(0.1) -- Небольшая задержка для стабильности
+                
+                -- Проверяем, является ли объект вредоносным
+                local childName = child.Name
+                for _, effectName in ipairs(harmfulEffects) do
+                    if childName == effectName then
+                        task.spawn(function()
+                            RemoveNegativeEffects(character)
+                        end)
+                        break
+                    end
+                end
+                
+                -- Проверяем скрипты
+                if child:IsA("Script") or child:IsA("LocalScript") then
+                    for _, scriptName in ipairs(harmfulScripts) do
+                        if childName == scriptName then
+                            child.Disabled = true
+                            task.wait(0.05)
+                            child:Destroy()
+                            break
+                        end
+                    end
+                end
+            end)
+        end
+        
+        print("Enhanced protection ENABLED - защита от Ragdoll Stun и других эффектов активирована")
+    else
+        print("Enhanced protection DISABLED - дополнительная защита отключена")
     end
 end
+
+-- Функция для разовой очистки
+function MainModule.CleanNegativeEffects()
+    local character = GetSafeCharacter()
+    if character then
+        RemoveNegativeEffects(character)
+        print("Отрицательные эффекты очищены")
+        return true
+    end
+    return false
+end
+
+-- Автоматическая интеграция с вашей основной функцией
+-- (Не изменяет ваш главный код, только дополняет его)
+local function IntegrateWithMainModule()
+    if MainModule and MainModule.ToggleBypassRagdoll then
+        -- Сохраняем оригинальную функцию
+        local originalToggle = MainModule.ToggleBypassRagdoll
+        
+        -- Создаем обертку
+        MainModule.ToggleBypassRagdoll = function(enabled, ...)
+            -- Вызываем оригинальную функцию
+            originalToggle(enabled, ...)
+            
+            -- Автоматически включаем/выключаем дополнительную защиту
+            if MainModule.Misc then
+                MainModule.ToggleEnhancedProtection(enabled)
+            end
+        end
+        
+        print("Enhanced protection интегрирована с MainModule")
+    end
+end
+
+-- Автозапуск интеграции
+task.spawn(function()
+    task.wait(2) -- Ждем загрузку
+    IntegrateWithMainModule()
+end)
 
 -- Исправленный Kill Hiders
 function MainModule.ToggleKillHiders(enabled)
@@ -1842,3 +2021,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
