@@ -1088,19 +1088,23 @@ local function CreateDalgonaContent()
     end)
 end
 
--- HNS TAB
+-- HNS TAB (исправленный - с AutoDodge)
 local function CreateHNSContent()
     ClearContent()
     
     -- Kill Aura
     local killAuraToggle, updateKillAuraToggle = CreateToggle("Kill Aura (Hiders)", MainModule.HNS.KillAuraEnabled, function(enabled)
-        MainModule.ToggleKillAura(enabled)
+        if MainModule.ToggleKillHiders then
+            MainModule.ToggleKillHiders(enabled)
+        end
     end)
     killAuraToggle.LayoutOrder = 1
     
     -- Kill Hiders
     local killHidersToggle, updateKillHidersToggle = CreateToggle("Kill Hiders", MainModule.HNS.KillSpikesEnabled, function(enabled)
-        MainModule.ToggleKillSpikes(enabled)
+        if MainModule.ToggleKillSpikes then
+            MainModule.ToggleKillSpikes(enabled)
+        end
     end)
     killHidersToggle.LayoutOrder = 2
     
@@ -1109,13 +1113,15 @@ local function CreateHNSContent()
     disableSpikesBtn.LayoutOrder = 3
     disableSpikesBtn.MouseButton1Click:Connect(function()
         local newState = not MainModule.HNS.DisableSpikesEnabled
-        MainModule.ToggleDisableSpikes(newState)
-        if newState then
-            disableSpikesBtn.Text = "Disable Spikes (ON)"
-            disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-        else
-            disableSpikesBtn.Text = "Disable Spikes"
-            disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+        if MainModule.ToggleDisableSpikes then
+            MainModule.ToggleDisableSpikes(newState)
+            if newState then
+                disableSpikesBtn.Text = "Disable Spikes (ON)"
+                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+            else
+                disableSpikesBtn.Text = "Disable Spikes"
+                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+            end
         end
     end)
     
@@ -1123,14 +1129,66 @@ local function CreateHNSContent()
     local tpToHiderBtn = CreateButton("Teleport to Hider")
     tpToHiderBtn.LayoutOrder = 4
     tpToHiderBtn.MouseButton1Click:Connect(function()
-        MainModule.TeleportToHider()
+        if MainModule.TeleportToHider then
+            MainModule.TeleportToHider()
+        end
     end)
     
-    -- Auto Dodge
-    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", MainModule.AutoDodge.Enabled, function(enabled)
-        MainModule.ToggleAutoDodge(enabled)
+    -- Auto Dodge (исправленный)
+    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", MainModule.HNS.AutoDodgeEnabled, function(enabled)
+        if MainModule.ToggleAutoDodge then
+            MainModule.ToggleAutoDodge(enabled)
+        end
     end)
     autoDodgeToggle.LayoutOrder = 5
+    
+    -- Расширенная информация о HNS
+    local hnsInfoLabel = Instance.new("TextLabel")
+    hnsInfoLabel.Size = UDim2.new(1, -10, 0, 40)
+    hnsInfoLabel.BackgroundTransparency = 1
+    hnsInfoLabel.Text = "HNS Features: Requires Knife"
+    hnsInfoLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    hnsInfoLabel.TextSize = 12
+    hnsInfoLabel.Font = Enum.Font.Gotham
+    hnsInfoLabel.TextXAlignment = Enum.TextXAlignment.Center
+    hnsInfoLabel.LayoutOrder = 6
+    hnsInfoLabel.Parent = ContentScrolling
+    
+    -- Информация о цели
+    local targetInfoLabel = Instance.new("TextLabel")
+    targetInfoLabel.Size = UDim2.new(1, -10, 0, 25)
+    targetInfoLabel.BackgroundTransparency = 1
+    targetInfoLabel.Text = "Target: None | Distance: 0"
+    targetInfoLabel.TextColor3 = Color3.fromRGB(200, 200, 220)
+    targetInfoLabel.TextSize = 11
+    targetInfoLabel.Font = Enum.Font.Gotham
+    targetInfoLabel.LayoutOrder = 7
+    targetInfoLabel.Parent = ContentScrolling
+    
+    -- Обновление информации о цели
+    if MainModule.HNS then
+        game:GetService("RunService").Heartbeat:Connect(function()
+            if MainModule.HNS.CurrentTargetName then
+                local targetName = MainModule.HNS.CurrentTargetName
+                local distance = MainModule.HNS.TargetDistance or 0
+                targetInfoLabel.Text = string.format("Target: %s | Distance: %.1f", targetName, distance)
+                targetInfoLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            else
+                targetInfoLabel.Text = "Target: None | Distance: 0"
+                targetInfoLabel.TextColor3 = Color3.fromRGB(200, 200, 220)
+            end
+        end)
+    end
+    
+    -- Кнопка сброса цели
+    local resetTargetBtn = CreateButton("Reset Target")
+    resetTargetBtn.LayoutOrder = 8
+    resetTargetBtn.MouseButton1Click:Connect(function()
+        if MainModule.HNS then
+            MainModule.HNS.CurrentTarget = nil
+            MainModule.HNS.CurrentTargetName = nil
+        end
+    end)
 end
 
 -- GLASS BRIDGE TAB
@@ -1387,3 +1445,4 @@ if not isSupported then
 else
     print("Executor " .. executorName .. " is supported")
 end
+
