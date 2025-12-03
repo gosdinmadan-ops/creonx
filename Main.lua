@@ -391,6 +391,7 @@ function MainModule.ToggleBypassRagdoll(enabled)
         end
     end
 end
+
 -- HNS System функции (исправлено)
 
 -- Kill Aura (автоматическое убийство хайдеров)
@@ -1667,6 +1668,7 @@ game:GetService("Players").LocalPlayer:GetPropertyChangedSignal("Parent"):Connec
 end)
 
 return MainModule
+
 
 
 
