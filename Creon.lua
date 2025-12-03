@@ -102,7 +102,7 @@ TitleLabel.TextSize = 14
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.Parent = TitleBar
 
--- Кнопка сворачивания (изменили на "_")
+-- Кнопка сворачивания
 MinimizeButton.Size = UDim2.new(0, 25, 0, 25)
 MinimizeButton.Position = UDim2.new(1, -30, 0.5, -12.5)
 MinimizeButton.BackgroundColor3 = Color3.fromRGB(100, 100, 120)
@@ -166,7 +166,7 @@ ContentLayout.Parent = ContentScrolling
 -- Кнопка для мобильных устройств (Delta Mobile)
 if UIS.TouchEnabled then
     MobileOpenButton.Size = UDim2.new(0, 120, 0, 40)
-    MobileOpenButton.Position = UDim2.new(0.5, -60, 0.2, 0)  -- Чуть выше центра
+    MobileOpenButton.Position = UDim2.new(0.5, -60, 0.2, 0)
     MobileOpenButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
     MobileOpenButton.BorderSizePixel = 0
     MobileOpenButton.Text = "OPEN"
@@ -184,7 +184,6 @@ if UIS.TouchEnabled then
     mobileStroke.Thickness = 2
     mobileStroke.Parent = MobileOpenButton
     
-    -- Анимация при наведении (для мобилок с поддержкой мыши)
     MobileOpenButton.MouseEnter:Connect(function()
         TweenService:Create(MobileOpenButton, TweenInfo.new(0.2), {
             BackgroundColor3 = Color3.fromRGB(45, 45, 60),
@@ -205,7 +204,6 @@ if UIS.TouchEnabled then
         MobileOpenButton.Visible = false
     end)
     
-    -- Делаем кнопку подвижной для мобилок
     local mobileDragging = false
     local mobileDragStart, mobileStartPos
     
@@ -490,7 +488,7 @@ local function CreateSpeedSlider()
     return speedLabel
 end
 
--- Функция для создания выпадающего списка с высоким ZIndex
+-- Функция для создания выпадающего списка (исправлено)
 local function CreateGuardsDropdown(options, default, callback)
     local dropdownContainer = Instance.new("Frame")
     dropdownContainer.Size = UDim2.new(1, -10, 0, 32)
@@ -498,11 +496,41 @@ local function CreateGuardsDropdown(options, default, callback)
     dropdownContainer.LayoutOrder = 1
     dropdownContainer.Parent = ContentScrolling
     
-    local dropdownButton = CreateButton(default .. " ▼")
+    local dropdownButton = Instance.new("TextButton")
     dropdownButton.Size = UDim2.new(1, 0, 1, 0)
-    dropdownButton.Position = UDim2.new(0, 0, 0, 0)
+    dropdownButton.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+    dropdownButton.BorderSizePixel = 0
     dropdownButton.Text = default .. " ▼"
-    dropdownButton.ZIndex = 100
+    dropdownButton.TextColor3 = Color3.fromRGB(240, 240, 255)
+    dropdownButton.TextSize = 12
+    dropdownButton.Font = Enum.Font.Gotham
+    dropdownButton.AutoButtonColor = false
+    dropdownButton.Parent = dropdownContainer
+    dropdownButton.ZIndex = 10
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = dropdownButton
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(80, 80, 100)
+    stroke.Thickness = 1.2
+    stroke.Parent = dropdownButton
+    
+    -- Анимация для кнопки
+    dropdownButton.MouseEnter:Connect(function()
+        TweenService:Create(dropdownButton, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(65, 65, 85),
+            TextColor3 = Color3.fromRGB(255, 255, 255)
+        }):Play()
+    end)
+    
+    dropdownButton.MouseLeave:Connect(function()
+        TweenService:Create(dropdownButton, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(50, 50, 65),
+            TextColor3 = Color3.fromRGB(240, 240, 255)
+        }):Play()
+    end)
     
     local dropdownList = Instance.new("ScrollingFrame")
     dropdownList.Size = UDim2.new(1, 0, 0, math.min(#options * 32, 100))
@@ -511,8 +539,8 @@ local function CreateGuardsDropdown(options, default, callback)
     dropdownList.BorderSizePixel = 0
     dropdownList.ScrollBarThickness = 6
     dropdownList.Visible = false
-    dropdownList.ZIndex = 200
-    dropdownList.Parent = dropdownContainer
+    dropdownList.ZIndex = 100
+    dropdownList.Parent = ScreenGui
     
     local listCorner = Instance.new("UICorner")
     listCorner.CornerRadius = UDim.new(0, 6)
@@ -534,7 +562,7 @@ local function CreateGuardsDropdown(options, default, callback)
         optionButton.TextSize = 12
         optionButton.Font = Enum.Font.Gotham
         optionButton.AutoButtonColor = false
-        optionButton.ZIndex = 201
+        optionButton.ZIndex = 101
         optionButton.Parent = dropdownList
         
         local optionCorner = Instance.new("UICorner")
@@ -554,7 +582,6 @@ local function CreateGuardsDropdown(options, default, callback)
             dropdownList.Visible = false
         end)
         
-        -- Анимация для кнопок опций
         optionButton.MouseEnter:Connect(function()
             TweenService:Create(optionButton, TweenInfo.new(0.2), {
                 BackgroundColor3 = Color3.fromRGB(65, 65, 85),
@@ -572,37 +599,40 @@ local function CreateGuardsDropdown(options, default, callback)
     
     dropdownButton.MouseButton1Click:Connect(function()
         dropdownList.Visible = not dropdownList.Visible
+        if dropdownList.Visible then
+            local buttonPos = dropdownButton.AbsolutePosition
+            local buttonSize = dropdownButton.AbsoluteSize
+            
+            dropdownList.Position = UDim2.new(
+                0, buttonPos.X,
+                0, buttonPos.Y + buttonSize.Y + 5
+            )
+            dropdownList.Size = UDim2.new(0, buttonSize.X, 0, math.min(#options * 32, 100))
+        end
     end)
     
-    -- Закрываем список при клике вне его
+    -- Закрытие при клике вне списка
     local function closeDropdown()
         dropdownList.Visible = false
     end
     
-    local closeConnections = {}
-    
-    -- Обработчик для закрытия при клике вне
-    local inputBeganConn = UIS.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            if dropdownList.Visible then
-                local mousePos = input.Position
-                local listAbsolutePos = dropdownList.AbsolutePosition
-                local listSize = dropdownList.AbsoluteSize
-                
-                if not (mousePos.X >= listAbsolutePos.X and mousePos.X <= listAbsolutePos.X + listSize.X and
-                       mousePos.Y >= listAbsolutePos.Y and mousePos.Y <= listAbsolutePos.Y + listSize.Y) then
-                    closeDropdown()
-                end
+    UIS.InputBegan:Connect(function(input)
+        if dropdownList.Visible and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+            local mousePos = input.Position
+            local listPos = dropdownList.AbsolutePosition
+            local listSize = dropdownList.AbsoluteSize
+            
+            if not (mousePos.X >= listPos.X and mousePos.X <= listPos.X + listSize.X and
+                   mousePos.Y >= listPos.Y and mousePos.Y <= listPos.Y + listSize.Y) then
+                closeDropdown()
             end
         end
     end)
     
-    table.insert(closeConnections, inputBeganConn)
-    
-    -- Очистка соединений при уничтожении
+    -- Очистка при удалении
     dropdownContainer.Destroying:Connect(function()
-        for _, conn in ipairs(closeConnections) do
-            conn:Disconnect()
+        if dropdownList then
+            dropdownList:Destroy()
         end
     end)
     
@@ -618,7 +648,7 @@ local function ClearContent()
     end
 end
 
--- MAIN TAB (с исправленным Anti Stun)
+-- MAIN TAB (с исправленным Anti Stun + Anti Ragdoll)
 local function CreateMainContent()
     ClearContent()
     
@@ -637,64 +667,53 @@ local function CreateMainContent()
     end)
     antiStunToggle.LayoutOrder = 2
     
-    -- Anti Stun (объединенная функция Remove Stun + Remove Injured)
-    local antiStunState = MainModule.Misc.RemoveStunEnabled or MainModule.Misc.RemoveInjuredEnabled
-    local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun", antiStunState, function(enabled)
-        -- Включаем/выключаем обе функции вместе
-        MainModule.Misc.RemoveStunEnabled = enabled
-        MainModule.Misc.RemoveInjuredEnabled = enabled
-        
-        -- Применяем изменения
-        MainModule.ToggleRemoveStun(enabled)
-    end)
-    antiStunToggle.LayoutOrder = 3
-    
-    -- Bypass Ragdoll
-    local bypassRagdollToggle, updateBypassRagdollToggle = CreateToggle("Bypass Ragdoll", MainModule.Misc.BypassRagdollEnabled, function(enabled)
+    -- Anti Stun + Anti Ragdoll (объединенная кнопка)
+    local antiStunState = MainModule.Misc.BypassRagdollEnabled
+    local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun + Anti Ragdoll", antiStunState, function(enabled)
         MainModule.ToggleBypassRagdoll(enabled)
     end)
-    bypassRagdollToggle.LayoutOrder = 4
+    antiStunToggle.LayoutOrder = 3
     
     -- Instance Interact
     local instaInteractToggle, updateInstaInteractToggle = CreateToggle("Instance Interact", MainModule.Misc.InstaInteract, function(enabled)
         MainModule.ToggleInstaInteract(enabled)
     end)
-    instaInteractToggle.LayoutOrder = 5
+    instaInteractToggle.LayoutOrder = 4
     
     -- No Cooldown Proximity
     local noCooldownToggle, updateNoCooldownToggle = CreateToggle("No Cooldown Proximity", MainModule.Misc.NoCooldownProximity, function(enabled)
         MainModule.ToggleNoCooldownProximity(enabled)
     end)
-    noCooldownToggle.LayoutOrder = 6
+    noCooldownToggle.LayoutOrder = 5
     
     -- Unlock Dash
     local unlockDashToggle, updateUnlockDashToggle = CreateToggle("Unlock Dash", MainModule.Misc.UnlockDashEnabled, function(enabled)
         MainModule.ToggleUnlockDash(enabled)
     end)
-    unlockDashToggle.LayoutOrder = 7
+    unlockDashToggle.LayoutOrder = 6
     
     -- Unlock Phantom Step
     local unlockPhantomToggle, updateUnlockPhantomToggle = CreateToggle("Unlock Phantom Step", MainModule.Misc.UnlockPhantomStepEnabled, function(enabled)
         MainModule.ToggleUnlockPhantomStep(enabled)
     end)
-    unlockPhantomToggle.LayoutOrder = 8
+    unlockPhantomToggle.LayoutOrder = 7
     
     -- Teleport Buttons
     local tpUpBtn = CreateButton("TP 100 blocks up")
-    tpUpBtn.LayoutOrder = 9
+    tpUpBtn.LayoutOrder = 8
     tpUpBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportUp100()
     end)
     
     local tpDownBtn = CreateButton("TP 40 blocks down")
-    tpDownBtn.LayoutOrder = 10
+    tpDownBtn.LayoutOrder = 9
     tpDownBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportDown40()
     end)
     
     -- Noclip status
     local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status)
-    noclipLabel.LayoutOrder = 11
+    noclipLabel.LayoutOrder = 10
     noclipLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     noclipLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
 end
@@ -872,7 +891,7 @@ local function CreateRLGLContent()
     godModeToggle.LayoutOrder = 3
 end
 
--- GUARDS TAB (исправленный с высоким ZIndex)
+-- GUARDS TAB (исправленный)
 local function CreateGuardsContent()
     ClearContent()
     
@@ -882,13 +901,14 @@ local function CreateGuardsContent()
         MainModule.SetGuardType(selected)
     end)
     
-    -- Остальные кнопки Guards
+    -- Spawn as Guard кнопка
     local spawnBtn = CreateButton("Spawn as Guard")
     spawnBtn.LayoutOrder = 2
     spawnBtn.MouseButton1Click:Connect(function()
         MainModule.SpawnAsGuard()
     end)
     
+    -- Остальные переключатели
     local rapidFireToggle, updateRapidFireToggle = CreateToggle("Rapid Fire", MainModule.Guards.RapidFire, function(enabled)
         MainModule.ToggleRapidFire(enabled)
     end)
@@ -937,7 +957,7 @@ local function CreateHNSContent()
     end)
     killAuraToggle.LayoutOrder = 1
     
-    -- Kill Hiders (телепортация к шипам)
+    -- Kill Hiders
     local killHidersToggle, updateKillHidersToggle = CreateToggle("Kill Hiders", MainModule.HNS.KillSpikesEnabled, function(enabled)
         MainModule.ToggleKillSpikes(enabled)
     end)
