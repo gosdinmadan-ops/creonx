@@ -716,11 +716,30 @@ function MainModule.ToggleBypassRagdoll(enabled)
             end
         end
     end
+    
+    -- ==================== АВТОМАТИЧЕСКОЕ ВКЛЮЧЕНИЕ ДОПОЛНИТЕЛЬНЫХ ФУНКЦИЙ ====================
+    -- ЭТО ЕДИНСТВЕННОЕ ДОБАВЛЕНИЕ К ВАШЕМУ КОДУ (в самом конце функции)
+    
+    -- Запускаем дополнительные защиты при включении
+    if enabled then
+        -- Ждем немного для стабильности
+        task.wait(0.5)
+        
+        -- Запускаем дополнительную очистку эффектов
+        MainModule.StartEnhancedProtection()
+        
+        -- Запускаем очистку суставов и констрейнтов
+        MainModule.StartJointCleaning()
+    else
+        -- Останавливаем дополнительные защиты при выключении
+        MainModule.StopEnhancedProtection()
+        MainModule.StopJointCleaning()
+    end
 end
 -- ==================== КОНЕЦ ВАШЕГО КОДА ====================
 
--- ==================== ДОПОЛНИТЕЛЬНЫЙ КОД ДЛЯ УДАЛЕНИЯ ЭФФЕКТОВ ====================
--- ТАБЛИЦЫ И КОНСТАНТЫ
+-- ==================== ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ ====================
+-- ТАБЛИЦЫ ДЛЯ ОЧИСТКИ ЭФФЕКТОВ
 local harmfulEffectsList = {
     "RagdollStun", "Stun", "Stunned", "StunEffect", "StunHit",
     "Knockback", "Knockdown", "Knockout", "KB_Effect",
@@ -730,35 +749,21 @@ local harmfulEffectsList = {
     "Bleed", "Bleeding", "Poison", "Poisoned", "Burn", "Burning",
     "Shock", "Shocked", "Electrocuted", "Silence", "Silenced",
     "Disarm", "Disarmed", "Blind", "Blinded", "Fear", "Feared",
-    "Taunt", "Taunted", "Charm", "Charmed", "Petrify", "Petrified",
-    "GravityWell", "VoidZone", "DeathMark", "Doom", "Curse"
-}
-
-local harmfulMediaList = {
-    "StunSound", "DazedEffect", "ParalyzeParticle", "FreezeEmitter", 
-    "SleepCloud", "ConfusionAura", "SlowField", "RootVines",
-    "BleedParticle", "PoisonCloud", "BurnFire", "ShockSparkles",
-    "SilenceBubble", "BlindFog", "FearAura", "TauntMark",
-    "CharmHeart", "PetrifyStone", "GravityVortex", "VoidRing"
-}
-
-local harmfulScriptsList = {
-    "RagdollController", "StunHandler", "KnockbackScript", "StatusEffect",
-    "DebuffManager", "CC_Handler", "RagdollModule", "ForceModule",
-    "StunModule", "KnockbackModule", "FreezeScript", "RootScript",
-    "SlowScript", "SilenceScript", "BlindScript", "FearScript"
+    "Taunt", "Taunted", "Charm", "Charmed", "Petrify", "Petrified"
 }
 
 -- ПЕРЕМЕННЫЕ
-local effectsCleanerConnection = nil
+local enhancedProtectionConnection = nil
+local jointCleaningConnection = nil
+local ragdollBlockConnection = nil
 local childAddedConnections = {}
 
--- ФУНКЦИИ ДЛЯ ОЧИСТКИ ЭФФЕКТОВ
+-- ФУНКЦИЯ 1: УДАЛЕНИЕ ЭФФЕКТОВ (Stun, Knockback и т.д.)
 local function CleanNegativeEffects(character)
     if not character or not MainModule.Misc.BypassRagdollEnabled then return end
     
     pcall(function()
-        -- УДАЛЕНИЕ ЭФФЕКТОВ ПО ИМЕНИ
+        -- Удаление эффектов по имени
         for _, effectName in ipairs(harmfulEffectsList) do
             local effect = character:FindFirstChild(effectName)
             if effect then
@@ -778,32 +783,7 @@ local function CleanNegativeEffects(character)
             end
         end
         
-        -- ОЧИСТКА МЕДИА
-        for _, child in pairs(character:GetDescendants()) do
-            for _, mediaName in ipairs(harmfulMediaList) do
-                if child.Name == mediaName then
-                    if child:IsA("Sound") then
-                        child:Stop()
-                    elseif child:IsA("ParticleEmitter") then
-                        child.Enabled = false
-                    end
-                    pcall(function() child:Destroy() end)
-                end
-            end
-        end
-        
-        -- УДАЛЕНИЕ ВРЕДОНОСНЫХ СКРИПТОВ
-        for _, child in pairs(character:GetDescendants()) do
-            for _, scriptName in ipairs(harmfulScriptsList) do
-                if child.Name == scriptName and (child:IsA("Script") or child:IsA("LocalScript")) then
-                    child.Disabled = true
-                    task.wait(0.01)
-                    pcall(function() child:Destroy() end)
-                end
-            end
-        end
-        
-        -- ОЧИСТКА HUMANOID АТРИБУТОВ
+        -- Очистка Humanoid атрибутов
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if humanoid then
             local badAttributes = {"Stunned", "Paralyzed", "Frozen", "Asleep", "Confused", 
@@ -813,171 +793,162 @@ local function CleanNegativeEffects(character)
                     humanoid:SetAttribute(attr, false)
                 end
             end
-            
-            -- ВОССТАНОВЛЕНИЕ СОСТОЯНИЯ
-            if humanoid.PlatformStand then
-                humanoid.PlatformStand = false
-            end
-            if humanoid.WalkSpeed < 16 then
-                humanoid.WalkSpeed = 16
-            end
-            if humanoid.JumpPower < 50 then
-                humanoid.JumpPower = 50
-            end
-        end
-        
-        -- УДАЛЕНИЕ ВРЕДНЫХ BODY MOVERS
-        for _, part in pairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                for _, mover in pairs(part:GetChildren()) do
-                    if mover:IsA("BodyVelocity") and mover.Velocity.Magnitude > 25 then
-                        task.spawn(function()
-                            for i = 1, 3 do
-                                if mover and mover.Parent then
-                                    mover.Velocity = mover.Velocity * 0.3
-                                    task.wait(0.01)
-                                end
-                            end
-                            pcall(function() mover:Destroy() end)
-                        end)
-                    elseif mover:IsA("BodyForce") and mover.Force.Magnitude > 500 then
-                        pcall(function() mover:Destroy() end)
-                    elseif mover:IsA("BodyAngularVelocity") or mover:IsA("BodyThrust") then
-                        pcall(function() mover:Destroy() end)
-                    end
-                end
-            end
         end
     end)
 end
 
--- ФУНКЦИЯ ДЛЯ НАСТРОЙКИ СЛУШАТЕЛЕЙ
-local function SetupEffectsCleaner(character)
+-- ФУНКЦИЯ 2: ОЧИСТКА СУСТАВОВ И КОНСТРЕЙНТОВ (из вашего второго кода)
+local function CleanJointsAndConstraints(character)
     if not character then return end
     
-    -- Очищаем старые соединения
-    if childAddedConnections[character] then
-        childAddedConnections[character]:Disconnect()
-        childAddedConnections[character] = nil
-    end
-    
-    -- Слушатель для новых объектов
-    childAddedConnections[character] = character.ChildAdded:Connect(function(child)
-        task.wait(0.05)
+    pcall(function()
+        local Humanoid = character:FindFirstChild("Humanoid")
+        local HumanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        local Torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
         
-        -- Быстрая проверка по имени
-        local childName = child.Name
-        for _, effectName in ipairs(harmfulEffectsList) do
-            if childName == effectName then
-                task.spawn(function()
-                    CleanNegativeEffects(character)
-                end)
-                return
+        if not (Humanoid and HumanoidRootPart and Torso) then return end
+
+        -- Удаление существующих Ragdoll папок
+        for _, child in ipairs(character:GetChildren()) do
+            if child.Name == "Ragdoll" then
+                pcall(function() child:Destroy() end)
+            end
+        end
+
+        -- Удаление других связанных папок
+        for _, folderName in pairs({"Stun", "RotateDisabled", "RagdollWakeupImmunity", "InjuredWalking"}) do
+            local folder = character:FindFirstChild(folderName)
+            if folder then
+                folder:Destroy()
+            end
+        end
+
+        -- Удаление констрейнтов с HumanoidRootPart
+        for _, obj in pairs(HumanoidRootPart:GetChildren()) do
+            if obj:IsA("BallSocketConstraint") or obj.Name:match("^CacheAttachment") then
+                obj:Destroy()
             end
         end
         
-        -- Проверка скриптов
-        if (child:IsA("Script") or child:IsA("LocalScript")) then
-            for _, scriptName in ipairs(harmfulScriptsList) do
-                if childName == scriptName then
-                    child.Disabled = true
-                    task.wait(0.02)
-                    pcall(function() child:Destroy() end)
-                    return
-                end
+        -- Восстановление соединений суставов
+        local joints = {"Left Hip", "Left Shoulder", "Neck", "Right Hip", "Right Shoulder"}
+        for _, jointName in pairs(joints) do
+            local motor = Torso:FindFirstChild(jointName)
+            if motor and motor:IsA("Motor6D") and not motor.Part0 then
+                motor.Part0 = Torso
+            end
+        end
+        
+        -- Удаление BoneCustom
+        for _, part in pairs(character:GetChildren()) do
+            if part:IsA("BasePart") and part:FindFirstChild("BoneCustom") then
+                part.BoneCustom:Destroy()
             end
         end
     end)
 end
 
--- ГЛАВНАЯ ФУНКЦИЯ ДОПОЛНИТЕЛЬНОЙ ЗАЩИТЫ
-function MainModule.ToggleEffectsCleaner(enabled)
-    if effectsCleanerConnection then
-        effectsCleanerConnection:Disconnect()
-        effectsCleanerConnection = nil
+-- ФУНКЦИЯ 3: СЛУШАТЕЛЬ ДЛЯ НОВЫХ RAGDOLL ОБЪЕКТОВ (из вашего второго кода)
+local function SetupRagdollListener(character)
+    if not character then return end
+    
+    -- Удаляем старое соединение
+    if ragdollBlockConnection then
+        ragdollBlockConnection:Disconnect()
+        ragdollBlockConnection = nil
     end
     
-    for char, conn in pairs(childAddedConnections) do
-        conn:Disconnect()
-    end
-    childAddedConnections = {}
+    local Humanoid = character:FindFirstChild("Humanoid")
+    if not Humanoid then return end
     
-    if enabled then
-        -- Постоянная очистка
-        effectsCleanerConnection = RunService.Heartbeat:Connect(function()
-            if not MainModule.Misc.BypassRagdollEnabled then return end
-            local character = GetCharacter()
-            if character then
-                CleanNegativeEffects(character)
-            end
-        end)
-        
-        -- Настройка слушателей для текущего персонажа
+    -- Настраиваем слушатель для новых Ragdoll объектов
+    ragdollBlockConnection = character.ChildAdded:Connect(function(child)
+        if child.Name == "Ragdoll" then
+            pcall(function() child:Destroy() end)
+            pcall(function()
+                Humanoid.PlatformStand = false
+                Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+            end)
+        end
+    end)
+end
+
+-- ФУНКЦИИ ДЛЯ ЗАПУСКА/ОСТАНОВКИ ДОПОЛНИТЕЛЬНЫХ ЗАЩИТ
+function MainModule.StartEnhancedProtection()
+    if enhancedProtectionConnection then
+        enhancedProtectionConnection:Disconnect()
+    end
+    
+    enhancedProtectionConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Misc.BypassRagdollEnabled then return end
         local character = GetCharacter()
-        SetupEffectsCleaner(character)
-        
-        -- Слушатель смены персонажа
-        LocalPlayer.CharacterAdded:Connect(function(newChar)
-            task.wait(1)
-            SetupEffectsCleaner(newChar)
-        end)
+        if character then
+            CleanNegativeEffects(character)
+        end
+    end)
+end
+
+function MainModule.StopEnhancedProtection()
+    if enhancedProtectionConnection then
+        enhancedProtectionConnection:Disconnect()
+        enhancedProtectionConnection = nil
     end
 end
 
--- АВТОМАТИЧЕСКАЯ ИНТЕГРАЦИЯ С ВАШИМ КОДОМ
-local originalToggleFunction = MainModule.ToggleBypassRagdoll
-
-MainModule.ToggleBypassRagdoll = function(enabled, ...)
-    -- Вызываем вашу оригинальную функцию
-    originalToggleFunction(enabled, ...)
+function MainModule.StartJointCleaning()
+    if jointCleaningConnection then
+        jointCleaningConnection:Disconnect()
+    end
     
-    -- Автоматически включаем/выключаем очистку эффектов
-    if MainModule.Misc then
-        MainModule.ToggleEffectsCleaner(enabled)
+    -- Очистка сразу при запуске
+    local character = GetCharacter()
+    if character then
+        CleanJointsAndConstraints(character)
+        SetupRagdollListener(character)
+    end
+    
+    -- Постоянная очистка
+    jointCleaningConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Misc.BypassRagdollEnabled then return end
+        local character = GetCharacter()
+        if character then
+            CleanJointsAndConstraints(character)
+        end
+    end)
+    
+    -- Слушатель смены персонажа
+    LocalPlayer.CharacterAdded:Connect(function(newChar)
+        task.wait(1)
+        SetupRagdollListener(newChar)
+        CleanJointsAndConstraints(newChar)
+    end)
+end
+
+function MainModule.StopJointCleaning()
+    if jointCleaningConnection then
+        jointCleaningConnection:Disconnect()
+        jointCleaningConnection = nil
+    end
+    
+    if ragdollBlockConnection then
+        ragdollBlockConnection:Disconnect()
+        ragdollBlockConnection = nil
     end
 end
 
--- ФУНКЦИЯ ДЛЯ РУЧНОЙ ОЧИСТКИ
-function MainModule.CleanAllEffects()
+-- ФУНКЦИЯ ДЛЯ РУЧНОЙ ОЧИСТКИ ВСЕГО
+function MainModule.FullCleanup()
     local character = GetCharacter()
     if character then
         CleanNegativeEffects(character)
+        CleanJointsAndConstraints(character)
         return true
     end
     return false
 end
-
--- ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ЭФФЕКТОВ
-function MainModule.CheckForEffects()
-    local character = GetCharacter()
-    if not character then return {} end
-    
-    local foundEffects = {}
-    
-    for _, effectName in ipairs(harmfulEffectsList) do
-        if character:FindFirstChild(effectName) then
-            table.insert(foundEffects, effectName)
-        end
-    end
-    
-    for _, child in pairs(character:GetDescendants()) do
-        for _, mediaName in ipairs(harmfulMediaList) do
-            if child.Name == mediaName then
-                table.insert(foundEffects, mediaName)
-            end
-        end
-    end
-    
-    return foundEffects
-end
-
--- ИНИЦИАЛИЗАЦИЯ ПРИ ЗАГРУЗКЕ
-task.spawn(function()
-    task.wait(3)
-    if MainModule.Misc and MainModule.Misc.BypassRagdollEnabled then
-        MainModule.ToggleEffectsCleaner(true)
-    end
-end)
 
 -- Исправленный Kill Hiders
 function MainModule.ToggleKillHiders(enabled)
@@ -1693,7 +1664,7 @@ function MainModule.ToggleHitboxExpander(enabled)
     end
     
     if enabled then
-        local HITBOX_SIZE = 10
+        local HITBOX_SIZE = 100
         
         hitboxConnection = RunService.Stepped:Connect(function()
             if not MainModule.Guards.HitboxExpander then 
@@ -2075,5 +2046,6 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
