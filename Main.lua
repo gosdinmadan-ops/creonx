@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
+local Debris = game:GetService("Debris")
 
 -- Локальный игрок
 local LocalPlayer = Players.LocalPlayer
@@ -36,14 +37,22 @@ MainModule.Rebel = {
     Enabled = false
 }
 
+-- RLGL System (исправлено с фейковой телепортацией)
 MainModule.RLGL = {
     GodMode = false,
     OriginalHeight = nil,
-    GodModeTimeout = nil,
     LastDamageTime = 0,
     DamageCheckRate = 0.1,
-    TeleportOnDamage = false,
-    LastHealth = 100
+    LastHealth = 100,
+    FakePosition = nil,
+    SmoothTeleport = false,
+    TeleportSpeed = 50,
+    GodModeHeight = 160,
+    NormalHeight = 80,
+    DamageTeleportPosition = Vector3.new(186.7, 54.3, -100.6),
+    StartPosition = Vector3.new(-55.3, 1023.1, -545.8),
+    EndPosition = Vector3.new(-214.4, 1023.1, 146.7),
+    Connection = nil
 }
 
 MainModule.Guards = {
@@ -54,7 +63,8 @@ MainModule.Guards = {
     HitboxExpander = false,
     OriginalFireRates = {},
     OriginalAmmo = {},
-    OriginalHitboxes = {}
+    OriginalHitboxes = {},
+    Connections = {}
 }
 
 MainModule.Dalgona = {
@@ -79,12 +89,15 @@ MainModule.HNS = {
     
     LastDodgeTime = 0,
     DodgeCooldown = 1.0,
-    DodgeRange = 10,
+    DodgeRange = 5,
+    PhysicalCheckRange = 3,
+    DodgeOnContactOnly = true,
     
     SpikePositions = {},
     OriginalSpikeData = {},
     OriginalSpikeTransparency = {},
-    SpikesDisabled = false
+    SpikesDisabled = false,
+    Connections = {}
 }
 
 -- Glass Bridge System (исправлено)
@@ -105,21 +118,23 @@ MainModule.GlassBridge = {
 }
 
 MainModule.TugOfWar = {
-    AutoPull = false
+    AutoPull = false,
+    Connection = nil
 }
 
 MainModule.JumpRope = {
     TeleportToEnd = false,
     DeleteRope = false,
     AntiFallPlatform = nil,
-    JumpRopeConnection = nil
+    Connection = nil
 }
 
 MainModule.SkySquid = {
     AntiFall = false,
     VoidKill = false,
     AntiFallPlatform = nil,
-    SafePlatform = nil
+    SafePlatform = nil,
+    Connection = nil
 }
 
 MainModule.Misc = {
@@ -151,22 +166,14 @@ MainModule.Misc = {
 }
 
 -- ESP System (переработано для оптимизации)
-MainModule.ESPTable = {
+MainModule.ESP = {
     Players = {},
-    Hiders = {},
-    Seekers = {},
-    Guards = {},
-    Doors = {},
-    Keys = {},
-    EscapeDoors = {}
+    Objects = {},
+    Connections = {},
+    Folder = nil,
+    MainConnection = nil,
+    UpdateRate = 0.1
 }
-
-MainModule.ESPFolder = nil
-MainModule.ESPUpdateRate = 0.1 -- Более частые обновления для плавности
-MainModule.ESPCache = {}
-MainModule.ESPConnection = nil
-MainModule.PlayerESPConnections = {}
-MainModule.ESPInstances = {} -- Для хранения ESP объектов
 
 -- Постоянные соединения
 local speedConnection = nil
@@ -249,6 +256,316 @@ end
 local function IsSeeker(player)
     if not player then return false end
     return player:GetAttribute("IsHunter") == true
+end
+
+-- Функция для плавной фейковой телепортации
+local function FakeTeleportToPosition(targetPosition, duration)
+    local character = GetCharacter()
+    if not character then return end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return end
+    
+    local startPos = rootPart.Position
+    local startTime = tick()
+    local endTime = startTime + duration
+    
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        local currentTime = tick()
+        if currentTime >= endTime then
+            connection:Disconnect()
+            rootPart.CFrame = CFrame.new(targetPosition)
+            return
+        end
+        
+        local progress = (currentTime - startTime) / duration
+        progress = progress * progress * (3 - 2 * progress)
+        
+        local currentPos = startPos:Lerp(targetPosition, progress)
+        
+        rootPart.Velocity = Vector3.new(0, 0, 0)
+        rootPart.CFrame = CFrame.new(currentPos)
+    end)
+    
+    return connection
+end
+
+-- Функция для получения безопасной позиции выше
+local function GetSafePositionAbove(currentPosition, height)
+    local rayOrigin = currentPosition + Vector3.new(0, 5, 0)
+    local rayDirection = Vector3.new(0, -1, 0)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+    
+    local result = workspace:Raycast(rayOrigin, rayDirection * 100, raycastParams)
+    
+    if result and result.Position then
+        return result.Position + Vector3.new(0, height, 0)
+    else
+        return currentPosition + Vector3.new(0, height, 0)
+    end
+end
+
+-- Исправленный GodMode для RLGL с фейковой телепортацией
+function MainModule.ToggleGodMode(enabled)
+    MainModule.RLGL.GodMode = enabled
+    
+    if MainModule.RLGL.Connection then
+        MainModule.RLGL.Connection:Disconnect()
+        MainModule.RLGL.Connection = nil
+    end
+    
+    if enabled then
+        -- Запоминаем начальное здоровье
+        local character = GetCharacter()
+        if character then
+            local humanoid = GetHumanoid(character)
+            if humanoid then
+                MainModule.RLGL.LastHealth = humanoid.Health
+                MainModule.RLGL.OriginalHeight = humanoid.RootPart.Position.Y
+            end
+        end
+        
+        -- Плавная телепортация вверх
+        local character = GetCharacter()
+        if character and character.HumanoidRootPart then
+            local currentPos = character.HumanoidRootPart.Position
+            local targetHeight = currentPos.Y + MainModule.RLGL.GodModeHeight
+            local targetPos = Vector3.new(currentPos.X, targetHeight, currentPos.Z)
+            
+            FakeTeleportToPosition(targetPos, 1.0)
+        end
+        
+        MainModule.RLGL.Connection = RunService.Heartbeat:Connect(function()
+            if not MainModule.RLGL.GodMode then return end
+            
+            local currentTime = tick()
+            if currentTime - MainModule.RLGL.LastDamageTime < MainModule.RLGL.DamageCheckRate then return end
+            
+            pcall(function()
+                local character = GetCharacter()
+                if not character then return end
+                
+                local humanoid = GetHumanoid(character)
+                local rootPart = GetRootPart(character)
+                
+                if not (humanoid and rootPart) then return end
+                
+                -- Проверяем, получили ли мы урон
+                if humanoid.Health < MainModule.RLGL.LastHealth then
+                    MainModule.RLGL.LastDamageTime = currentTime
+                    
+                    -- Телепортируем на указанные координаты
+                    FakeTeleportToPosition(MainModule.RLGL.DamageTeleportPosition, 0.5)
+                    
+                    -- Восстанавливаем здоровье
+                    humanoid.Health = MainModule.RLGL.LastHealth
+                    
+                    -- Отключаем GodMode после телепортации
+                    task.wait(0.1)
+                    MainModule.ToggleGodMode(false)
+                else
+                    -- Обновляем запомненное здоровье
+                    MainModule.RLGL.LastHealth = humanoid.Health
+                    
+                    -- Поддерживаем высоту GodMode
+                    if rootPart.Position.Y < (MainModule.RLGL.OriginalHeight + MainModule.RLGL.GodModeHeight - 10) then
+                        local currentPos = rootPart.Position
+                        local targetPos = Vector3.new(currentPos.X, MainModule.RLGL.OriginalHeight + MainModule.RLGL.GodModeHeight, currentPos.Z)
+                        rootPart.CFrame = rootPart.CFrame:Lerp(CFrame.new(targetPos), 0.1)
+                    end
+                end
+            end)
+        end)
+    else
+        -- Плавная телепортация вниз при выключении
+        local character = GetCharacter()
+        if character then
+            local rootPart = GetRootPart(character)
+            if rootPart then
+                local currentPos = rootPart.Position
+                local targetHeight = (MainModule.RLGL.OriginalHeight or currentPos.Y) + MainModule.RLGL.NormalHeight
+                local targetPos = Vector3.new(currentPos.X, targetHeight, currentPos.Z)
+                
+                FakeTeleportToPosition(targetPos, 1.0)
+            end
+        end
+        
+        -- Сбрасываем значения
+        MainModule.RLGL.LastHealth = 100
+        MainModule.RLGL.OriginalHeight = nil
+    end
+end
+
+-- Функции телепортации RLGL с фейковым движением
+function MainModule.TeleportToEnd()
+    local character = GetCharacter()
+    if character then
+        local rootPart = GetRootPart(character)
+        if rootPart then
+            FakeTeleportToPosition(MainModule.RLGL.EndPosition, 2.0)
+        end
+    end
+end
+
+function MainModule.TeleportToStart()
+    local character = GetCharacter()
+    if character then
+        local rootPart = GetRootPart(character)
+        if rootPart then
+            FakeTeleportToPosition(MainModule.RLGL.StartPosition, 2.0)
+        end
+    end
+end
+
+-- Исправленный AutoDodge (только при физическом контакте)
+function MainModule.ToggleAutoDodge(enabled)
+    MainModule.HNS.AutoDodgeEnabled = enabled
+    
+    if MainModule.HNS.Connections.AutoDodge then
+        MainModule.HNS.Connections.AutoDodge:Disconnect()
+        MainModule.HNS.Connections.AutoDodge = nil
+    end
+    
+    if enabled then
+        MainModule.HNS.Connections.AutoDodge = RunService.Heartbeat:Connect(function()
+            if not MainModule.HNS.AutoDodgeEnabled then return end
+            
+            pcall(function()
+                local character = GetCharacter()
+                if not character then return end
+                
+                local humanoid = GetHumanoid(character)
+                local rootPart = GetRootPart(character)
+                
+                if not (humanoid and rootPart) then return end
+                
+                -- Проверяем, есть ли у нас нож
+                local hasKnife, knifeTool = playerHasKnife(LocalPlayer)
+                if not hasKnife then return end
+                
+                -- Проверяем наличие игроков с ножами вблизи
+                local shouldDodge = false
+                
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player ~= LocalPlayer then
+                        local targetChar = player.Character
+                        if targetChar then
+                            local targetHumanoid = GetHumanoid(targetChar)
+                            local targetRoot = GetRootPart(targetChar)
+                            
+                            if targetHumanoid and targetHumanoid.Health > 0 and targetRoot then
+                                -- Проверяем, есть ли у игрока нож
+                                local otherHasKnife = playerHasKnife(player)
+                                if otherHasKnife then
+                                    local distance = GetDistance(rootPart.Position, targetRoot.Position)
+                                    
+                                    if distance < MainModule.HNS.DodgeRange then
+                                        -- Проверяем физический контакт
+                                        local raycastParams = RaycastParams.new()
+                                        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+                                        raycastParams.FilterDescendantsInstances = {character}
+                                        
+                                        local direction = (targetRoot.Position - rootPart.Position).Unit
+                                        local raycastResult = workspace:Raycast(
+                                            rootPart.Position,
+                                            direction * MainModule.HNS.PhysicalCheckRange,
+                                            raycastParams
+                                        )
+                                        
+                                        -- Если луч попал в игрока - это физический контакт
+                                        if raycastResult and raycastResult.Instance:IsDescendantOf(targetChar) then
+                                            shouldDodge = true
+                                            break
+                                        end
+                                        
+                                        -- Дополнительная проверка через области
+                                        for _, part in pairs(character:GetChildren()) do
+                                            if part:IsA("BasePart") then
+                                                for _, targetPart in pairs(targetChar:GetChildren()) do
+                                                    if targetPart:IsA("BasePart") then
+                                                        local partDistance = GetDistance(part.Position, targetPart.Position)
+                                                        if partDistance < 2 then
+                                                            shouldDodge = true
+                                                            break
+                                                        end
+                                                    end
+                                                end
+                                                if shouldDodge then break end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        if shouldDodge then break end
+                    end
+                end
+                
+                -- Также проверяем опасные объекты
+                if not shouldDodge then
+                    for _, part in pairs(Workspace:GetDescendants()) do
+                        if part:IsA("BasePart") and part.Name ~= "AutoDodgeHitbox" then
+                            local distance = GetDistance(rootPart.Position, part.Position)
+                            if distance < MainModule.HNS.PhysicalCheckRange and part:GetAttribute("Dangerous") then
+                                shouldDodge = true
+                                break
+                            end
+                        end
+                    end
+                end
+                
+                if shouldDodge then
+                    -- Проверяем кулдаун
+                    local currentTime = tick()
+                    if currentTime - MainModule.HNS.LastDodgeTime < MainModule.HNS.DodgeCooldown then return end
+                    
+                    MainModule.HNS.LastDodgeTime = currentTime
+                    
+                    -- Активируем додж
+                    if UserInputService.TouchEnabled then
+                        -- Для мобильных устройств
+                        pcall(function()
+                            local backpack = LocalPlayer:FindFirstChild("Backpack")
+                            if backpack then
+                                local tool = backpack:FindFirstChildOfClass("Tool")
+                                if tool then
+                                    tool.Parent = character
+                                    task.wait(0.1)
+                                    tool.Parent = backpack
+                                end
+                            end
+                        end)
+                    else
+                        -- Для ПК
+                        pcall(function()
+                            game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.One, false, game)
+                            task.wait(0.05)
+                            game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.One, false, game)
+                        end)
+                    end
+                    
+                    -- Визуальная обратная связь
+                    local effect = Instance.new("Part")
+                    effect.Size = Vector3.new(5, 0.2, 5)
+                    effect.Position = rootPart.Position - Vector3.new(0, 3, 0)
+                    effect.Color = Color3.fromRGB(255, 255, 0)
+                    effect.Material = Enum.Material.Neon
+                    effect.Anchored = true
+                    effect.CanCollide = false
+                    effect.Transparency = 0.7
+                    effect.Parent = Workspace
+                    
+                    Debris:AddItem(effect, 0.3)
+                    
+                    -- Небольшой отскок
+                    rootPart.Velocity = rootPart.Velocity + Vector3.new(0, 20, 0)
+                end
+            end)
+        end)
+    end
 end
 
 -- Bypass Ragdoll функция с улучшенной защитой (исправленная версия)
@@ -428,106 +745,8 @@ function MainModule.ToggleBypassRagdoll(enabled)
         end
     end
 end
--- Новый AutoDodge (исправленный и оптимизированный)
-function MainModule.ToggleAutoDodge(enabled)
-    MainModule.HNS.AutoDodgeEnabled = enabled
-    
-    if hnsAutoDodgeConnection then
-        hnsAutoDodgeConnection:Disconnect()
-        hnsAutoDodgeConnection = nil
-    end
-    
-    if enabled then
-        hnsAutoDodgeConnection = RunService.Heartbeat:Connect(function()
-            if not MainModule.HNS.AutoDodgeEnabled then return end
-            
-            pcall(function()
-                local character = GetCharacter()
-                if not character then return end
-                
-                local humanoid = GetHumanoid(character)
-                local rootPart = GetRootPart(character)
-                
-                if not (humanoid and rootPart) then return end
-                
-                -- Проверяем, есть ли у нас нож
-                local hasKnife, knifeTool = playerHasKnife(LocalPlayer)
-                if not hasKnife then return end
-                
-                -- Проверяем наличие опасных объектов рядом
-                local shouldDodge = false
-                
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player ~= LocalPlayer then
-                        local targetChar = player.Character
-                        if targetChar and targetChar:FindFirstChild("HumanoidRootPart") then
-                            local targetRoot = targetChar.HumanoidRootPart
-                            local distance = GetDistance(rootPart.Position, targetRoot.Position)
-                            
-                            -- Проверяем, держит ли другой игрок нож
-                            local otherHasKnife = playerHasKnife(player)
-                            if otherHasKnife and distance < MainModule.HNS.DodgeRange then
-                                shouldDodge = true
-                                break
-                            end
-                        end
-                    end
-                end
-                
-                -- Также проверяем наличие опасных частей в workspace
-                for _, part in pairs(Workspace:GetDescendants()) do
-                    if part:IsA("BasePart") and part.Name ~= "AutoDodgeHitbox" then
-                        local distance = GetDistance(rootPart.Position, part.Position)
-                        if distance < MainModule.HNS.DodgeRange and part:GetAttribute("Dangerous") then
-                            shouldDodge = true
-                            break
-                        end
-                    end
-                end
-                
-                if shouldDodge then
-                    -- Активируем додж
-                    if UserInputService.TouchEnabled then
-                        -- Для мобильных устройств
-                        pcall(function()
-                            local backpack = LocalPlayer:FindFirstChild("Backpack")
-                            if backpack then
-                                local tool = backpack:FindFirstChildOfClass("Tool")
-                                if tool then
-                                    tool.Parent = character
-                                    task.wait(0.1)
-                                    tool.Parent = backpack
-                                end
-                            end
-                        end)
-                    else
-                        -- Для ПК
-                        pcall(function()
-                            game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.One, false, game)
-                            task.wait(0.05)
-                            game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.One, false, game)
-                        end)
-                    end
-                    
-                    -- Визуальная обратная связь
-                    local effect = Instance.new("Part")
-                    effect.Size = Vector3.new(5, 0.2, 5)
-                    effect.Position = rootPart.Position - Vector3.new(0, 3, 0)
-                    effect.Color = Color3.fromRGB(255, 255, 0)
-                    effect.Material = Enum.Material.Neon
-                    effect.Anchored = true
-                    effect.CanCollide = false
-                    effect.Transparency = 0.7
-                    effect.Parent = Workspace
-                    
-                    game:GetService("Debris"):AddItem(effect, 0.3)
-                end
-            end)
-        end)
-    end
-end
 
--- Исправленный Kill Hiders (HNS система)
+-- Исправленный Kill Hiders
 function MainModule.ToggleKillHiders(enabled)
     MainModule.HNS.KillAuraEnabled = enabled
     
@@ -539,7 +758,6 @@ function MainModule.ToggleKillHiders(enabled)
     end
     
     if enabled then
-        -- Отключаем шипы при включении
         MainModule.ToggleDisableSpikes(true)
         
         hnsKillAuraConnection = RunService.Heartbeat:Connect(function()
@@ -554,16 +772,13 @@ function MainModule.ToggleKillHiders(enabled)
                 
                 if not (humanoid and rootPart and humanoid.Health > 0) then return end
                 
-                -- Проверяем, есть ли у нас нож
                 local hasKnife, knifeTool = playerHasKnife(LocalPlayer)
                 if not hasKnife then return end
                 
-                -- Ищем цель
                 local targetPlayer = nil
                 local targetRoot = nil
                 local closestDistance = math.huge
                 
-                -- Если у нас уже есть цель, проверяем ее
                 if MainModule.HNS.CurrentTarget and MainModule.HNS.CurrentTarget.Character then
                     local targetChar = MainModule.HNS.CurrentTarget.Character
                     local targetHumanoid = GetHumanoid(targetChar)
@@ -578,18 +793,15 @@ function MainModule.ToggleKillHiders(enabled)
                             closestDistance = distance
                             MainModule.HNS.TargetDistance = distance
                         else
-                            -- Цель умерла или вышла за пределы радиуса
                             MainModule.HNS.CurrentTarget = nil
                             MainModule.HNS.CurrentTargetName = nil
                         end
                     else
-                        -- Цель умерла
                         MainModule.HNS.CurrentTarget = nil
                         MainModule.HNS.CurrentTargetName = nil
                     end
                 end
                 
-                -- Если нет цели, ищем новую
                 if not targetPlayer then
                     for _, player in pairs(Players:GetPlayers()) do
                         if player ~= LocalPlayer and IsHider(player) then
@@ -613,60 +825,31 @@ function MainModule.ToggleKillHiders(enabled)
                     end
                 end
                 
-                -- Сохраняем новую цель
                 if targetPlayer and targetPlayer ~= MainModule.HNS.CurrentTarget then
                     MainModule.HNS.CurrentTarget = targetPlayer
                     MainModule.HNS.CurrentTargetName = targetPlayer.Name
                 end
                 
-                -- Если нашли цель, телепортируемся к ней
                 if targetPlayer and targetRoot then
-                    -- Телепортируемся перед целью на фиксированном расстоянии
-                    local frontPosition = targetRoot.Position + (targetRoot.CFrame.LookVector * -2)
-                    rootPart.CFrame = CFrame.new(frontPosition, targetRoot.Position)
+                    local direction = (targetRoot.Position - rootPart.Position).Unit
+                    local moveSpeed = 50
+                    rootPart.Velocity = direction * moveSpeed
                     
-                    -- Делаем себя статичным (следуем за целью)
-                    local weld = Instance.new("WeldConstraint")
-                    weld.Part0 = rootPart
-                    weld.Part1 = targetRoot
-                    weld.Parent = rootPart
-                    
-                    -- Удаляем старый weld если он есть
-                    for _, child in pairs(rootPart:GetChildren()) do
-                        if child:IsA("WeldConstraint") and child ~= weld then
-                            child:Destroy()
-                        end
-                    end
-                    
-                    -- Атакуем
                     if knifeTool and knifeTool:FindFirstChild("RemoteEvent") then
                         knifeTool.RemoteEvent:FireServer()
-                    end
-                else
-                    -- Если нет цели, удаляем weld
-                    for _, child in pairs(rootPart:GetChildren()) do
-                        if child:IsA("WeldConstraint") then
-                            child:Destroy()
-                        end
                     end
                 end
             end)
         end)
     else
-        -- Отключаем weld при выключении
         local character = GetCharacter()
         if character then
             local rootPart = GetRootPart(character)
             if rootPart then
-                for _, child in pairs(rootPart:GetChildren()) do
-                    if child:IsA("WeldConstraint") then
-                        child:Destroy()
-                    end
-                end
+                rootPart.Velocity = Vector3.new(0, rootPart.Velocity.Y, 0)
             end
         end
         
-        -- Включаем шипы обратно
         MainModule.ToggleDisableSpikes(false)
         
         MainModule.HNS.CurrentTarget = nil
@@ -717,336 +900,251 @@ function MainModule.ToggleDisableSpikes(enabled)
     end
 end
 
--- Исправленный ESP System (оптимизированный и без лагов)
+-- ESP System
 function MainModule.ToggleESP(enabled)
     MainModule.Misc.ESPEnabled = enabled
     
-    if MainModule.ESPConnection then
-        MainModule.ESPConnection:Disconnect()
-        MainModule.ESPConnection = nil
+    if MainModule.ESP.MainConnection then
+        MainModule.ESP.MainConnection:Disconnect()
+        MainModule.ESP.MainConnection = nil
     end
     
-    -- Очищаем старые ESP объекты
+    -- Очищаем все ESP объекты
     MainModule.ClearESP()
     
     if enabled then
         -- Создаем папку для ESP
-        MainModule.ESPFolder = Instance.new("Folder")
-        MainModule.ESPFolder.Name = "CreonXESP"
-        MainModule.ESPFolder.Parent = CoreGui
+        MainModule.ESP.Folder = Instance.new("Folder")
+        MainModule.ESP.Folder.Name = "CreonXESP"
+        MainModule.ESP.Folder.Parent = CoreGui
         
-        -- Функция для создания ESP для игрока
+        -- Функция для создания ESP игрока
         local function CreatePlayerESP(player)
             if not player or player == LocalPlayer then return end
             
-            local character = player.Character
-            if not character then return end
+            if MainModule.ESP.Players[player] then return end
             
-            local humanoid = GetHumanoid(character)
-            local rootPart = GetRootPart(character)
-            
-            if not (humanoid and rootPart and humanoid.Health > 0) then return end
-            
-            -- Создаем Highlight
-            local highlight = Instance.new("Highlight")
-            highlight.Name = player.Name .. "_ESP"
-            highlight.Adornee = character
-            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            highlight.Enabled = true
-            
-            -- Настраиваем цвет в зависимости от типа игрока
-            if IsHider(player) and MainModule.Misc.ESPHiders then
-                highlight.FillColor = Color3.fromRGB(0, 255, 0) -- Зеленый для хайдеров
-                highlight.OutlineColor = Color3.fromRGB(0, 200, 0)
-            elseif IsSeeker(player) and MainModule.Misc.ESPSeekers then
-                highlight.FillColor = Color3.fromRGB(255, 0, 0) -- Красный для сикеров
-                highlight.OutlineColor = Color3.fromRGB(200, 0, 0)
-            elseif MainModule.Misc.ESPPlayers then
-                highlight.FillColor = Color3.fromRGB(0, 120, 255) -- Синий для обычных игроков
-                highlight.OutlineColor = Color3.fromRGB(0, 100, 200)
-            else
-                highlight:Destroy()
-                return
-            end
-            
-            highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
-            highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
-            highlight.Parent = MainModule.ESPFolder
-            
-            -- Создаем BillboardGui для текста
-            local billboard = Instance.new("BillboardGui")
-            billboard.Name = player.Name .. "_Text"
-            billboard.Adornee = rootPart
-            billboard.AlwaysOnTop = true
-            billboard.Size = UDim2.new(0, 200, 0, 50)
-            billboard.StudsOffset = Vector3.new(0, 3, 0)
-            
-            local textLabel = Instance.new("TextLabel")
-            textLabel.Size = UDim2.new(1, 0, 1, 0)
-            textLabel.BackgroundTransparency = 1
-            textLabel.Text = player.Name
-            textLabel.TextColor3 = highlight.FillColor
-            textLabel.TextSize = MainModule.Misc.ESPTextSize
-            textLabel.Font = Enum.Font.GothamBold
-            textLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
-            textLabel.TextStrokeTransparency = 0.5
-            textLabel.Parent = billboard
-            
-            billboard.Parent = MainModule.ESPFolder
-            
-            -- Сохраняем в таблицу
-            MainModule.ESPInstances[player] = {
-                Highlight = highlight,
-                Billboard = billboard,
-                Player = player
+            local espData = {
+                Player = player,
+                Highlight = nil,
+                Billboard = nil,
+                Label = nil,
+                Connections = {}
             }
             
-            -- Соединение для обновления здоровья
-            local healthConnection = humanoid:GetPropertyChangedSignal("Health"):Connect(function()
-                if humanoid.Health <= 0 then
-                    MainModule.RemovePlayerESP(player)
-                else
-                    UpdatePlayerESPText(player)
-                end
-            end)
+            MainModule.ESP.Players[player] = espData
             
-            -- Соединение для удаления при выходе
-            local removalConnection = player:GetPropertyChangedSignal("Parent"):Connect(function()
-                if not player.Parent then
-                    MainModule.RemovePlayerESP(player)
-                end
-            end)
-            
-            MainModule.PlayerESPConnections[player] = {
-                Health = healthConnection,
-                Removal = removalConnection
-            }
-            
-            -- Функция для обновления текста
-            function UpdatePlayerESPText(player)
-                if not MainModule.ESPInstances[player] then return end
-                
-                local espData = MainModule.ESPInstances[player]
-                if not espData.Billboard or not espData.Billboard.Parent then return end
-                
-                local textLabel = espData.Billboard:FindFirstChild("TextLabel")
-                if not textLabel then return end
+            local function updateESP()
+                if not MainModule.Misc.ESPEnabled then return end
                 
                 local character = player.Character
-                if not character then return end
+                if not character then
+                    if espData.Highlight then
+                        SafeDestroy(espData.Highlight)
+                        espData.Highlight = nil
+                    end
+                    if espData.Billboard then
+                        SafeDestroy(espData.Billboard)
+                        espData.Billboard = nil
+                    end
+                    return
+                end
                 
                 local humanoid = GetHumanoid(character)
                 local rootPart = GetRootPart(character)
-                local localRoot = GetRootPart(GetCharacter())
                 
-                if humanoid and rootPart then
-                    local healthText = string.format("%.0f", humanoid.Health)
-                    local distanceText = ""
-                    
-                    if MainModule.Misc.ESPDistance and localRoot then
-                        local distance = math.floor(GetDistance(rootPart.Position, localRoot.Position))
-                        distanceText = string.format(" [%d]", distance)
+                if not (humanoid and rootPart and humanoid.Health > 0) then
+                    if espData.Highlight then
+                        SafeDestroy(espData.Highlight)
+                        espData.Highlight = nil
+                    end
+                    if espData.Billboard then
+                        SafeDestroy(espData.Billboard)
+                        espData.Billboard = nil
+                    end
+                    return
+                end
+                
+                -- Создаем или обновляем Highlight
+                if not espData.Highlight then
+                    espData.Highlight = Instance.new("Highlight")
+                    espData.Highlight.Name = player.Name .. "_ESP"
+                    espData.Highlight.Adornee = character
+                    espData.Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    espData.Highlight.Enabled = MainModule.Misc.ESPHighlight
+                    espData.Highlight.Parent = MainModule.ESP.Folder
+                end
+                
+                -- Настраиваем цвет
+                if IsHider(player) and MainModule.Misc.ESPHiders then
+                    espData.Highlight.FillColor = Color3.fromRGB(0, 255, 0)
+                    espData.Highlight.OutlineColor = Color3.fromRGB(0, 200, 0)
+                elseif IsSeeker(player) and MainModule.Misc.ESPSeekers then
+                    espData.Highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                    espData.Highlight.OutlineColor = Color3.fromRGB(200, 0, 0)
+                elseif MainModule.Misc.ESPPlayers then
+                    espData.Highlight.FillColor = Color3.fromRGB(0, 120, 255)
+                    espData.Highlight.OutlineColor = Color3.fromRGB(0, 100, 200)
+                else
+                    espData.Highlight.Enabled = false
+                end
+                
+                espData.Highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+                espData.Highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+                
+                -- Создаем или обновляем Billboard
+                if MainModule.Misc.ESPNames then
+                    if not espData.Billboard then
+                        espData.Billboard = Instance.new("BillboardGui")
+                        espData.Billboard.Name = player.Name .. "_Text"
+                        espData.Billboard.Adornee = rootPart
+                        espData.Billboard.AlwaysOnTop = true
+                        espData.Billboard.Size = UDim2.new(0, 200, 0, 50)
+                        espData.Billboard.StudsOffset = Vector3.new(0, 3, 0)
+                        espData.Billboard.Parent = MainModule.ESP.Folder
+                        
+                        espData.Label = Instance.new("TextLabel")
+                        espData.Label.Size = UDim2.new(1, 0, 1, 0)
+                        espData.Label.BackgroundTransparency = 1
+                        espData.Label.TextColor3 = espData.Highlight.FillColor
+                        espData.Label.TextSize = MainModule.Misc.ESPTextSize
+                        espData.Label.Font = Enum.Font.GothamBold
+                        espData.Label.TextStrokeColor3 = Color3.new(0, 0, 0)
+                        espData.Label.TextStrokeTransparency = 0.5
+                        espData.Label.Parent = espData.Billboard
                     end
                     
-                    textLabel.Text = player.Name .. " (" .. healthText .. "HP)" .. distanceText
+                    espData.Billboard.Enabled = true
+                    
+                    -- Обновляем текст
+                    local localCharacter = GetCharacter()
+                    local localRoot = localCharacter and GetRootPart(localCharacter)
+                    
+                    local distanceText = ""
+                    if MainModule.Misc.ESPDistance and localRoot then
+                        local distance = math.floor(GetDistance(rootPart.Position, localRoot.Position))
+                        distanceText = string.format(" [%dm]", distance)
+                    end
+                    
+                    local healthText = string.format("HP: %d/%d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
+                    local nameText = player.DisplayName or player.Name
+                    
+                    espData.Label.Text = string.format("%s\n%s%s", nameText, healthText, distanceText)
+                    espData.Label.TextColor3 = espData.Highlight.FillColor
+                elseif espData.Billboard then
+                    espData.Billboard.Enabled = false
                 end
             end
             
-            -- Начальное обновление
-            UpdatePlayerESPText(player)
-        end
-        
-        -- Функция для обновления всех ESP
-        local function UpdateAllESP()
-            for player, espData in pairs(MainModule.ESPInstances) do
-                if player and player.Parent and player.Character then
-                    UpdatePlayerESPText(player)
+            -- Инициализация
+            updateESP()
+            
+            -- Слушатели
+            espData.Connections.CharacterAdded = player.CharacterAdded:Connect(function()
+                task.wait(0.5)
+                updateESP()
+            end)
+            
+            espData.Connections.CharacterRemoving = player.CharacterRemoving:Connect(function()
+                if espData.Highlight then
+                    SafeDestroy(espData.Highlight)
+                    espData.Highlight = nil
                 end
-            end
+                if espData.Billboard then
+                    SafeDestroy(espData.Billboard)
+                    espData.Billboard = nil
+                end
+            end)
+            
+            -- Слушатель атрибутов
+            espData.Connections.AttributeChanged = player:GetAttributeChangedSignal("IsHider"):Connect(updateESP)
+            espData.Connections.AttributeChanged2 = player:GetAttributeChangedSignal("IsHunter"):Connect(updateESP)
         end
         
-        -- Создаем ESP для существующих игроков
+        -- Создаем ESP для всех игроков
         for _, player in pairs(Players:GetPlayers()) do
             CreatePlayerESP(player)
         end
         
-        -- Обработка новых игроков
-        local playerAddedConnection = Players.PlayerAdded:Connect(function(player)
+        -- Слушатель для новых игроков
+        MainModule.ESP.Connections.PlayerAdded = Players.PlayerAdded:Connect(function(player)
             if MainModule.Misc.ESPEnabled then
                 CreatePlayerESP(player)
             end
         end)
         
-        -- Обработка атрибутов (hider/seeker)
-        local function MonitorAttributes(player)
-            if not player then return end
-            
-            local hiderConnection = player:GetAttributeChangedSignal("IsHider"):Connect(function()
-                if MainModule.ESPInstances[player] then
-                    MainModule.RemovePlayerESP(player)
-                    CreatePlayerESP(player)
-                end
-            end)
-            
-            local seekerConnection = player:GetAttributeChangedSignal("IsHunter"):Connect(function()
-                if MainModule.ESPInstances[player] then
-                    MainModule.RemovePlayerESP(player)
-                    CreatePlayerESP(player)
-                end
-            end)
-            
-            MainModule.PlayerESPConnections[player] = MainModule.PlayerESPConnections[player] or {}
-            MainModule.PlayerESPConnections[player].Hider = hiderConnection
-            MainModule.PlayerESPConnections[player].Seeker = seekerConnection
-        end
-        
-        for _, player in pairs(Players:GetPlayers()) do
-            MonitorAttributes(player)
-        end
+        -- Слушатель для удаленных игроков
+        MainModule.ESP.Connections.PlayerRemoving = Players.PlayerRemoving:Connect(function(player)
+            MainModule.RemovePlayerESP(player)
+        end)
         
         -- Основной цикл обновления ESP
-        MainModule.ESPConnection = RunService.RenderStepped:Connect(function()
+        MainModule.ESP.MainConnection = RunService.RenderStepped:Connect(function()
             if not MainModule.Misc.ESPEnabled then return end
             
-            UpdateAllESP()
-            
-            -- Обновляем прозрачность
-            for _, espData in pairs(MainModule.ESPInstances) do
-                if espData.Highlight then
-                    espData.Highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
-                    espData.Highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+            for player, espData in pairs(MainModule.ESP.Players) do
+                if player and player.Parent then
+                    if player.Character and espData.Highlight then
+                        espData.Highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+                        espData.Highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+                    end
+                else
+                    MainModule.RemovePlayerESP(player)
                 end
             end
         end)
-        
-        -- Сохраняем соединения
-        table.insert(MainModule.PlayerESPConnections, playerAddedConnection)
-    else
-        MainModule.ClearESP()
     end
 end
 
 -- Функция для удаления ESP игрока
 function MainModule.RemovePlayerESP(player)
-    if MainModule.ESPInstances[player] then
-        local espData = MainModule.ESPInstances[player]
+    if MainModule.ESP.Players[player] then
+        local espData = MainModule.ESP.Players[player]
+        
         if espData.Highlight then
             SafeDestroy(espData.Highlight)
         end
         if espData.Billboard then
             SafeDestroy(espData.Billboard)
         end
-        MainModule.ESPInstances[player] = nil
-    end
-    
-    if MainModule.PlayerESPConnections[player] then
-        for _, connection in pairs(MainModule.PlayerESPConnections[player]) do
-            if connection then
-                pcall(function() connection:Disconnect() end)
+        
+        -- Отключаем соединения
+        if espData.Connections then
+            for _, connection in pairs(espData.Connections) do
+                if connection then
+                    pcall(function() connection:Disconnect() end)
+                end
             end
         end
-        MainModule.PlayerESPConnections[player] = nil
+        
+        MainModule.ESP.Players[player] = nil
     end
 end
 
 -- Функция для очистки всего ESP
 function MainModule.ClearESP()
-    for player, _ in pairs(MainModule.ESPInstances) do
+    for player, _ in pairs(MainModule.ESP.Players) do
         MainModule.RemovePlayerESP(player)
     end
-    MainModule.ESPInstances = {}
+    MainModule.ESP.Players = {}
     
-    for _, connections in pairs(MainModule.PlayerESPConnections) do
-        for _, connection in pairs(connections) do
+    if MainModule.ESP.Connections then
+        for name, connection in pairs(MainModule.ESP.Connections) do
             if connection then
                 pcall(function() connection:Disconnect() end)
+                MainModule.ESP.Connections[name] = nil
             end
         end
     end
-    MainModule.PlayerESPConnections = {}
     
-    if MainModule.ESPFolder then
-        SafeDestroy(MainModule.ESPFolder)
-        MainModule.ESPFolder = nil
-    end
-end
-
--- Исправленная функция Guards
-function MainModule.SetGuardType(guardType)
-    -- Корректная обработка выбора типа охранника
-    if guardType == "Circle" then
-        MainModule.Guards.SelectedGuard = "Circle"
-    elseif guardType == "Triangle" then
-        MainModule.Guards.SelectedGuard = "Triangle"
-    elseif guardType == "Square" then
-        MainModule.Guards.SelectedGuard = "Square"
-    else
-        MainModule.Guards.SelectedGuard = "Circle" -- По умолчанию
-    end
-end
-
--- Исправленная функция GodMode для RLGL
-function MainModule.ToggleGodMode(enabled)
-    MainModule.RLGL.GodMode = enabled
-    
-    if godModeConnection then
-        godModeConnection:Disconnect()
-        godModeConnection = nil
+    if MainModule.ESP.Folder then
+        SafeDestroy(MainModule.ESP.Folder)
+        MainModule.ESP.Folder = nil
     end
     
-    if enabled then
-        -- Запоминаем начальное здоровье
-        local character = GetCharacter()
-        if character then
-            local humanoid = GetHumanoid(character)
-            if humanoid then
-                MainModule.RLGL.LastHealth = humanoid.Health
-            end
-        end
-        
-        godModeConnection = RunService.Heartbeat:Connect(function()
-            if not MainModule.RLGL.GodMode then return end
-            
-            local currentTime = tick()
-            if currentTime - MainModule.RLGL.LastDamageTime < MainModule.RLGL.DamageCheckRate then return end
-            
-            pcall(function()
-                local character = GetCharacter()
-                if not character then return end
-                
-                local humanoid = GetHumanoid(character)
-                local rootPart = GetRootPart(character)
-                
-                if not (humanoid and rootPart) then return end
-                
-                -- Проверяем, получили ли мы урон
-                if humanoid.Health < MainModule.RLGL.LastHealth then
-                    MainModule.RLGL.LastDamageTime = currentTime
-                    
-                    -- Телепортируем на указанные координаты
-                    rootPart.CFrame = CFrame.new(186.7, 54.3, -100.6)
-                    
-                    -- Восстанавливаем здоровье
-                    humanoid.Health = MainModule.RLGL.LastHealth
-                    
-                    -- Отключаем GodMode после телепортации
-                    task.wait(0.1)
-                    MainModule.ToggleGodMode(false)
-                else
-                    -- Обновляем запомненное здоровье
-                    MainModule.RLGL.LastHealth = humanoid.Health
-                    
-                    -- Поднимаемся на высоту GodMode (если нужно)
-                    if rootPart.Position.Y < 1000 then
-                        local currentPos = rootPart.Position
-                        rootPart.CFrame = CFrame.new(currentPos.X, 1184.9, currentPos.Z)
-                    end
-                end
-            end)
-        end)
-    else
-        -- Сбрасываем значения
-        MainModule.RLGL.LastHealth = 100
+    if MainModule.ESP.MainConnection then
+        MainModule.ESP.MainConnection:Disconnect()
+        MainModule.ESP.MainConnection = nil
     end
 end
 
@@ -1104,13 +1202,14 @@ function MainModule.SetSpeed(value)
     return value
 end
 
--- Функции телепортации
+-- Функции телепортации с фейковым движением
 function MainModule.TeleportUp100()
     local character = GetCharacter()
     if character then
         local rootPart = GetRootPart(character)
         if rootPart then
-            rootPart.CFrame = rootPart.CFrame + Vector3.new(0, 100, 0)
+            local targetPos = rootPart.Position + Vector3.new(0, 100, 0)
+            FakeTeleportToPosition(targetPos, 1.0)
         end
     end
 end
@@ -1120,7 +1219,8 @@ function MainModule.TeleportDown40()
     if character then
         local rootPart = GetRootPart(character)
         if rootPart then
-            rootPart.CFrame = rootPart.CFrame + Vector3.new(0, -40, 0)
+            local targetPos = rootPart.Position + Vector3.new(0, -40, 0)
+            FakeTeleportToPosition(targetPos, 0.5)
         end
     end
 end
@@ -1198,24 +1298,16 @@ function MainModule.ToggleRebel(enabled)
     end
 end
 
--- RLGL функции
-function MainModule.TeleportToEnd()
-    local character = GetCharacter()
-    if character then
-        local rootPart = GetRootPart(character)
-        if rootPart then
-            rootPart.CFrame = CFrame.new(-214.4, 1023.1, 146.7)
-        end
-    end
-end
-
-function MainModule.TeleportToStart()
-    local character = GetCharacter()
-    if character then
-        local rootPart = GetRootPart(character)
-        if rootPart then
-            rootPart.CFrame = CFrame.new(-55.3, 1023.1, -545.8)
-        end
+-- Функция для установки типа Guard
+function MainModule.SetGuardType(guardType)
+    if guardType == "Circle" then
+        MainModule.Guards.SelectedGuard = "Circle"
+    elseif guardType == "Triangle" then
+        MainModule.Guards.SelectedGuard = "Triangle"
+    elseif guardType == "Square" then
+        MainModule.Guards.SelectedGuard = "Square"
+    else
+        MainModule.Guards.SelectedGuard = "Circle"
     end
 end
 
@@ -1358,7 +1450,7 @@ function MainModule.ToggleInfiniteAmmo(enabled)
     end
 end
 
--- Hitbox Expander функция (исправлено - без Z-Index)
+-- Hitbox Expander функция
 function MainModule.ToggleHitboxExpander(enabled)
     MainModule.Guards.HitboxExpander = enabled
     
@@ -1601,15 +1693,20 @@ function MainModule.GetPlayerPosition()
     return "Не доступно"
 end
 
+-- Функция для очистки всего ESP
+function MainModule.ClearAllESP()
+    MainModule.ClearESP()
+end
+
 -- Очистка при закрытии
 function MainModule.Cleanup()
+    -- Отключаем все соединения
     local connections = {
         speedConnection, autoFarmConnection, godModeConnection, instaInteractConnection,
         noCooldownConnection, antiStunConnection, rapidFireConnection, infiniteAmmoConnection,
         hitboxConnection, autoPullConnection, bypassRagdollConnection,
         hnsKillAuraConnection, hnsKillSpikesConnection, hnsAutoDodgeConnection,
-        MainModule.GlassBridge.AntiFallConnection, MainModule.GlassBridge.AntiBreakConnection,
-        MainModule.GlassBridge.GlassVisionConnection, MainModule.JumpRope.JumpRopeConnection
+        jumpRopeConnection
     }
     
     for _, conn in pairs(connections) do
@@ -1618,16 +1715,58 @@ function MainModule.Cleanup()
         end
     end
     
-    -- Очищаем ESP
+    -- Отключаем ESP
     MainModule.ClearESP()
     
-    -- Очищаем HNS
-    MainModule.HNS.KillAuraEnabled = false
-    MainModule.HNS.KillSpikesEnabled = false
-    MainModule.HNS.DisableSpikesEnabled = false
-    MainModule.HNS.AutoDodgeEnabled = false
-    MainModule.HNS.CurrentTarget = nil
-    MainModule.HNS.CurrentTargetName = nil
+    -- Отключаем RLGL
+    if MainModule.RLGL.Connection then
+        MainModule.RLGL.Connection:Disconnect()
+        MainModule.RLGL.Connection = nil
+    end
+    
+    -- Отключаем HNS соединения
+    if MainModule.HNS.Connections then
+        for name, conn in pairs(MainModule.HNS.Connections) do
+            if conn then
+                pcall(function() conn:Disconnect() end)
+                MainModule.HNS.Connections[name] = nil
+            end
+        end
+    end
+    
+    -- Отключаем Glass Bridge соединения
+    if MainModule.GlassBridge.AntiFallConnection then
+        MainModule.GlassBridge.AntiFallConnection:Disconnect()
+        MainModule.GlassBridge.AntiFallConnection = nil
+    end
+    
+    if MainModule.GlassBridge.AntiBreakConnection then
+        MainModule.GlassBridge.AntiBreakConnection:Disconnect()
+        MainModule.GlassBridge.AntiBreakConnection = nil
+    end
+    
+    if MainModule.GlassBridge.GlassVisionConnection then
+        MainModule.GlassBridge.GlassVisionConnection:Disconnect()
+        MainModule.GlassBridge.GlassVisionConnection = nil
+    end
+    
+    -- Отключаем Jump Rope соединения
+    if MainModule.JumpRope.Connection then
+        MainModule.JumpRope.Connection:Disconnect()
+        MainModule.JumpRope.Connection = nil
+    end
+    
+    -- Отключаем Sky Squid соединения
+    if MainModule.SkySquid.Connection then
+        MainModule.SkySquid.Connection:Disconnect()
+        MainModule.SkySquid.Connection = nil
+    end
+    
+    -- Отключаем Tug of War соединения
+    if MainModule.TugOfWar.Connection then
+        MainModule.TugOfWar.Connection:Disconnect()
+        MainModule.TugOfWar.Connection = nil
+    end
     
     -- Восстанавливаем хитбоксы
     if MainModule.Guards.OriginalHitboxes then
@@ -1663,6 +1802,36 @@ function MainModule.Cleanup()
     
     -- Восстанавливаем шипы
     MainModule.ToggleDisableSpikes(false)
+    
+    -- Восстанавливаем скорость
+    if MainModule.SpeedHack.Enabled then
+        MainModule.ToggleSpeedHack(false)
+    end
+    
+    -- Сбрасываем переменные
+    MainModule.SpeedHack.Enabled = false
+    MainModule.SpeedHack.CurrentSpeed = 16
+    MainModule.Noclip.Enabled = false
+    MainModule.AutoQTE.AntiStunEnabled = false
+    MainModule.Rebel.Enabled = false
+    MainModule.RLGL.GodMode = false
+    MainModule.Guards.AutoFarm = false
+    MainModule.Guards.RapidFire = false
+    MainModule.Guards.InfiniteAmmo = false
+    MainModule.Guards.HitboxExpander = false
+    MainModule.HNS.KillAuraEnabled = false
+    MainModule.HNS.AutoDodgeEnabled = false
+    MainModule.HNS.DisableSpikesEnabled = false
+    MainModule.Misc.ESPEnabled = false
+    MainModule.Misc.InstaInteract = false
+    MainModule.Misc.NoCooldownProximity = false
+    MainModule.Misc.BypassRagdollEnabled = false
+    MainModule.TugOfWar.AutoPull = false
+    MainModule.JumpRope.DeleteRope = false
+    MainModule.Dalgona.CompleteEnabled = false
+    MainModule.Dalgona.FreeLighterEnabled = false
+    
+    print("Creon X cleanup complete")
 end
 
 -- Автоматическая очистка при выходе
@@ -1673,4 +1842,3 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
-
