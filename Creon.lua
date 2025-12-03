@@ -1126,8 +1126,8 @@ local function CreateHNSContent()
         MainModule.TeleportToHider()
     end)
     
-    -- Auto Dodge
-    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", MainModule.AutoDodge.Enabled, function(enabled)
+    -- Auto Dodge (вернули обратно)
+    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", MainModule.HNS.AutoDodgeEnabled, function(enabled)
         MainModule.ToggleAutoDodge(enabled)
     end)
     autoDodgeToggle.LayoutOrder = 5
@@ -1387,3 +1387,4 @@ if not isSupported then
 else
     print("Executor " .. executorName .. " is supported")
 end
+
