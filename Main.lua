@@ -204,114 +204,152 @@ local function playerHasKnife(player)
     return false
 end
 
--- Anti Ragdoll функция (исправлено - добавлен цикл)
+-- Bypass Ragdoll функция с улучшенной защитой
 function MainModule.ToggleBypassRagdoll(enabled)
     MainModule.Misc.BypassRagdollEnabled = enabled
     
-    -- Хранилище для таймеров и соединений
-    if not MainModule.Misc.RagdollData then
-        MainModule.Misc.RagdollData = {
-            AntiRagdollLoop = nil,
-            RagdollBlockConn = nil
-        }
+    if bypassRagdollConnection then
+        bypassRagdollConnection:Disconnect()
+        bypassRagdollConnection = nil
     end
     
-    local function bypassRagdollFunction()
-        local Character = LocalPlayer.Character
-        if not Character then return end
-        
-        local Humanoid = Character:FindFirstChild("Humanoid")
-        local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-        local Torso = Character:FindFirstChild("UpperTorso") or Character:FindFirstChild("Torso")
-        
-        if not (Humanoid and HumanoidRootPart and Torso) then return end
-
-        -- Мягкое удаление Ragdoll объектов
-        for _, child in ipairs(Character:GetChildren()) do
-            if child.Name == "Ragdoll" then
-                task.spawn(function()
-                    for i = 1, 10 do
-                        if child and child.Parent then
-                            for _, part in pairs(child:GetChildren()) do
-                                if part:IsA("BasePart") then
-                                    part.Transparency = part.Transparency + 0.1
-                                end
-                            end
-                            task.wait(0.05)
-                        end
-                    end
-                    pcall(function() child:Destroy() end)
-                end)
-                
-                Humanoid.PlatformStand = false
-                Humanoid:ChangeState(Enum.HumanoidStateType.Running)
-            end
-        end
-
-        -- Удаляем только вредоносные папки
-        local harmfulFolders = {"RotateDisabled", "RagdollWakeupImmunity"}
-        for _, folderName in pairs(harmfulFolders) do
-            local folder = Character:FindFirstChild(folderName)
-            if folder then
-                folder:Destroy()
-            end
-        end
-
-        -- Основная защита от толчков
-        for _, part in pairs(Character:GetChildren()) do
-            if part:IsA("BasePart") then
-                local currentVelocity = part.Velocity
-                local horizontalSpeed = Vector3.new(currentVelocity.X, 0, currentVelocity.Z).Magnitude
-                
-                if horizontalSpeed > 50 and part ~= HumanoidRootPart then
-                    local newVelocity = Vector3.new(
-                        currentVelocity.X * 0.8,
-                        currentVelocity.Y,
-                        currentVelocity.Z * 0.8
-                    )
-                    part.Velocity = newVelocity
-                end
-                
-                for _, force in pairs(part:GetChildren()) do
-                    if force:IsA("BodyForce") then
-                        local forceMagnitude = force.Force.Magnitude
-                        if forceMagnitude > 1000 then
-                            force:Destroy()
-                        end
-                    elseif force:IsA("BodyVelocity") then
-                        if force.Velocity.Magnitude > 30 then
-                            force:Destroy()
-                        end
-                    end
-                end
-            end
-        end
-    end
+    -- Хранилище для наших защитников
+    local defenders = {}
+    local defenderConnections = {}
     
     if enabled then
-        -- Выполняем сразу один раз
-        bypassRagdollFunction()
-        
-        -- Запускаем цикл проверки
-        if MainModule.Misc.RagdollData.AntiRagdollLoop then
-            task.cancel(MainModule.Misc.RagdollData.AntiRagdollLoop)
-        end
-        
-        MainModule.Misc.RagdollData.AntiRagdollLoop = task.spawn(function()
-            while MainModule.Misc.BypassRagdollEnabled do
-                bypassRagdollFunction()
-                task.wait(0.1)
-            end
+        bypassRagdollConnection = RunService.Stepped:Connect(function()
+            if not MainModule.Misc.BypassRagdollEnabled then return end
+            
+            pcall(function()
+                local Character = LocalPlayer.Character
+                if not Character then return end
+                
+                local Humanoid = Character:FindFirstChild("Humanoid")
+                local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+                local Torso = Character:FindFirstChild("UpperTorso") or Character:FindFirstChild("Torso")
+                
+                if not (Humanoid and HumanoidRootPart and Torso) then return end
+
+                -- 1. Ищем защитников (NPC или других игроков, которые нас защищают)
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player ~= LocalPlayer then
+                        local defenderChar = player.Character
+                        if defenderChar and defenderChar:FindFirstChild("Humanoid") then
+                            local humanoid = defenderChar.Humanoid
+                            
+                            -- Проверяем, защищает ли нас этот NPC/игрок
+                            if humanoid:GetAttribute("IsProtecting") == LocalPlayer.Name then
+                                defenders[player] = defenderChar
+                                
+                                -- Настраиваем защитника для бесстолкновительной защиты
+                                setupDefender(defenderChar, player)
+                            end
+                        end
+                    end
+                end
+
+                -- 2. Мягкое удаление Ragdoll объектов
+                for _, child in ipairs(Character:GetChildren()) do
+                    if child.Name == "Ragdoll" then
+                        task.spawn(function()
+                            for i = 1, 10 do
+                                if child and child.Parent then
+                                    for _, part in pairs(child:GetChildren()) do
+                                        if part:IsA("BasePart") then
+                                            part.Transparency = part.Transparency + 0.1
+                                        end
+                                    end
+                                    task.wait(0.05)
+                                end
+                            end
+                            pcall(function() child:Destroy() end)
+                        end)
+                        
+                        Humanoid.PlatformStand = false
+                        Humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                    end
+                end
+
+                -- 3. Удаляем только вредоносные папки
+                local harmfulFolders = {"RotateDisabled", "RagdollWakeupImmunity"}
+                for _, folderName in pairs(harmfulFolders) do
+                    local folder = Character:FindFirstChild(folderName)
+                    if folder then
+                        folder:Destroy()
+                    end
+                end
+
+                -- 4. Основная защита от толчков
+                for _, part in pairs(Character:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        local currentVelocity = part.Velocity
+                        local horizontalSpeed = Vector3.new(currentVelocity.X, 0, currentVelocity.Z).Magnitude
+                        
+                        if horizontalSpeed > 50 and part ~= HumanoidRootPart then
+                            local newVelocity = Vector3.new(
+                                currentVelocity.X * 0.8,
+                                currentVelocity.Y,
+                                currentVelocity.Z * 0.8
+                            )
+                            part.Velocity = newVelocity
+                        end
+                        
+                        for _, force in pairs(part:GetChildren()) do
+                            if force:IsA("BodyForce") then
+                                local forceMagnitude = force.Force.Magnitude
+                                if forceMagnitude > 1000 then
+                                    force:Destroy()
+                                end
+                            elseif force:IsA("BodyVelocity") then
+                                if force.Velocity.Magnitude > 30 then
+                                    force:Destroy()
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                -- 5. Защита корневого объекта
+                local playerInputVelocity = HumanoidRootPart.Velocity
+                local externalForces = {}
+                
+                for _, force in pairs(HumanoidRootPart:GetChildren()) do
+                    if force:IsA("BodyForce") or force:IsA("BodyVelocity") then
+                        table.insert(externalForces, force)
+                    end
+                end
+                
+                if #externalForces > 0 then
+                    local filteredVelocity = Vector3.new(
+                        playerInputVelocity.X,
+                        HumanoidRootPart.Velocity.Y,
+                        playerInputVelocity.Z
+                    )
+                    
+                    HumanoidRootPart.Velocity = filteredVelocity
+                    
+                    for _, force in pairs(externalForces) do
+                        task.spawn(function()
+                            if force:IsA("BodyVelocity") then
+                                for i = 1, 5 do
+                                    if force and force.Parent then
+                                        force.Velocity = force.Velocity * 0.5
+                                        task.wait(0.02)
+                                    end
+                                end
+                            end
+                            pcall(function() force:Destroy() end)
+                        end)
+                    end
+                end
+            end)
         end)
         
-        -- Создаем соединение для мгновенного удаления новых Ragdoll объектов
+        -- Слушатель для мгновенного удаления новых Ragdoll объектов
         local char = LocalPlayer.Character
         if char then
-            if MainModule.Misc.RagdollData.RagdollBlockConn then
-                MainModule.Misc.RagdollData.RagdollBlockConn:Disconnect()
-            end
-            
-            MainModule.Misc.RagdollData.RagdollBlockConn = char.ChildAdded:Connect(function(child)
+            char.ChildAdded:Connect(function(child)
                 if child.Name == "Ragdoll" and MainModule.Misc.BypassRagdollEnabled then
                     task.wait(0.1)
                     pcall(function() child:Destroy() end)
@@ -325,15 +363,160 @@ function MainModule.ToggleBypassRagdoll(enabled)
             end)
         end
     else
-        -- Отключаем все
-        if MainModule.Misc.RagdollData.AntiRagdollLoop then
-            task.cancel(MainModule.Misc.RagdollData.AntiRagdollLoop)
-            MainModule.Misc.RagdollData.AntiRagdollLoop = nil
+        -- При выключении очищаем слушатели и настройки защитников
+        for player, connections in pairs(defenderConnections) do
+            for _, conn in ipairs(connections) do
+                conn:Disconnect()
+            end
         end
+        defenderConnections = {}
+        defenders = {}
         
-        if MainModule.Misc.RagdollData.RagdollBlockConn then
-            MainModule.Misc.RagdollData.RagdollBlockConn:Disconnect()
-            MainModule.Misc.RagdollData.RagdollBlockConn = nil
+        local character = LocalPlayer.Character
+        if character then
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if rootPart then
+                for _, conn in pairs(getconnections(rootPart.ChildAdded)) do
+                    conn:Disconnect()
+                end
+            end
+        end
+    end
+end
+
+-- Функция настройки защитника
+function setupDefender(defenderChar, player)
+    if defenderConnections[player] then return end
+    
+    defenderConnections[player] = {}
+    
+    -- Делаем защитника невидимым для коллизий с другими объектами
+    for _, part in pairs(defenderChar:GetChildren()) do
+        if part:IsA("BasePart") then
+            -- Настраиваем физику для бесстолкновительности
+            part.CanCollide = false
+            part.CanTouch = false
+            part.CanQuery = false
+            
+            -- Но сохраняем возможность атаковать через специальный механизм
+            local attackPart = Instance.new("Part")
+            attackPart.Name = "AttackCollider"
+            attackPart.Size = part.Size * 1.2
+            attackPart.Transparency = 1
+            attackPart.CanCollide = false
+            attackPart.Anchored = false
+            attackPart.Parent = part
+            
+            -- Прикрепляем к оригинальной части
+            local weld = Instance.new("Weld")
+            weld.Part0 = part
+            weld.Part1 = attackPart
+            weld.C0 = CFrame.new()
+            weld.Parent = part
+            
+            -- Создаем область для атаки (не сталкивается с игроком)
+            local safeZone = Instance.new("Part")
+            safeZone.Name = "SafeZone"
+            safeZone.Size = Vector3.new(5, 5, 5)
+            safeZone.Transparency = 1
+            safeZone.CanCollide = false
+            safeZone.Parent = defenderChar
+            
+            -- Делаем безопасную зону вокруг защищаемого игрока
+            local safeWeld = Instance.new("Weld")
+            safeWeld.Part0 = defenderChar.PrimaryPart or defenderChar:FindFirstChild("HumanoidRootPart")
+            safeWeld.Part1 = safeZone
+            safeWeld.C0 = CFrame.new(0, 0, 0)
+            safeWeld.Parent = safeZone
+        end
+    end
+    
+    -- Настраиваем Humanoid защитника
+    local defenderHumanoid = defenderChar:FindFirstChild("Humanoid")
+    if defenderHumanoid then
+        -- Защитник не может быть сбит с ног
+        defenderHumanoid.PlatformStand = false
+        defenderHumanoid.AutoRotate = true
+        
+        -- Добавляем слушатель для получения урона
+        local damageConnection = defenderHumanoid.Damage:Connect(function()
+            -- Защитник игнорирует урон, но может контратаковать
+            -- Реализуйте здесь логику контратаки
+        end)
+        table.insert(defenderConnections[player], damageConnection)
+    end
+    
+    -- Слушатель для обнаружения врагов
+    local proximityConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Misc.BypassRagdollEnabled then return end
+        
+        local myChar = LocalPlayer.Character
+        if not myChar then return end
+        
+        local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+        if not myRoot then return end
+        
+        -- Защитник следует за нами, но на безопасном расстоянии
+        local defenderRoot = defenderChar:FindFirstChild("HumanoidRootPart")
+        if defenderRoot then
+            -- Позиция следования (немного позади и сбоку)
+            local followPosition = myRoot.Position + 
+                (myRoot.CFrame.LookVector * -3) + 
+                (myRoot.CFrame.RightVector * 2)
+            
+            -- Плавное движение к позиции
+            defenderRoot.Velocity = (followPosition - defenderRoot.Position).Unit * 25
+        end
+    end)
+    table.insert(defenderConnections[player], proximityConnection)
+    
+    -- Механизм атаки защитника
+    local attackConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Misc.BypassRagdollEnabled then return end
+        
+        -- Поиск врагов рядом
+        for _, otherPlayer in pairs(Players:GetPlayers()) do
+            if otherPlayer ~= LocalPlayer and otherPlayer ~= player then
+                local enemyChar = otherPlayer.Character
+                if enemyChar then
+                    local enemyRoot = enemyChar:FindFirstChild("HumanoidRootPart")
+                    local defenderRoot = defenderChar:FindFirstChild("HumanoidRootPart")
+                    
+                    if enemyRoot and defenderRoot then
+                        local distance = (enemyRoot.Position - defenderRoot.Position).Magnitude
+                        
+                        -- Если враг слишком близко, защитник атакует
+                        if distance < 10 then
+                            -- Атака без физического столкновения
+                            local direction = (enemyRoot.Position - defenderRoot.Position).Unit
+                            
+                            -- Применяем силу к врагу (только если он агрессор)
+                            if enemyRoot.Velocity.Magnitude > 15 then -- Если враг движется быстро
+                                local bodyVelocity = Instance.new("BodyVelocity")
+                                bodyVelocity.Velocity = -direction * 50
+                                bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+                                bodyVelocity.Parent = enemyRoot
+                                
+                                -- Удаляем через короткое время
+                                task.delay(0.2, function()
+                                    pcall(function() bodyVelocity:Destroy() end)
+                                end)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    table.insert(defenderConnections[player], attackConnection)
+end
+
+-- Функция для создания/назначения защитника
+function MainModule.AssignDefender(player)
+    if player.Character then
+        local humanoid = player.Character:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid:SetAttribute("IsProtecting", LocalPlayer.Name)
         end
     end
 end
@@ -2126,4 +2309,5 @@ game:GetService("Players").LocalPlayer:GetPropertyChangedSignal("Parent"):Connec
 end)
 
 return MainModule
+
 
