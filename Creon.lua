@@ -38,6 +38,225 @@ if not success then
     return
 end
 
+-- Проверяем наличие необходимых функций ESP
+if not MainModule.ToggleESP then
+    -- Добавляем функцию ESP если ее нет
+    MainModule.ESP = {
+        Enabled = false,
+        Players = {},
+        Objects = {},
+        Connections = {}
+    }
+    
+    function MainModule.ToggleESP(enabled)
+        MainModule.Misc.ESPEnabled = enabled
+        
+        if MainModule.ESP.Connection then
+            MainModule.ESP.Connection:Disconnect()
+            MainModule.ESP.Connection = nil
+        end
+        
+        -- Очищаем все ESP объекты
+        MainModule.ClearESP()
+        
+        if enabled then
+            -- Основное соединение для обновления ESP
+            MainModule.ESP.Connection = RunService.RenderStepped:Connect(function()
+                if not MainModule.Misc.ESPEnabled then return end
+                MainModule.UpdateESP()
+            end)
+            
+            -- Создаем ESP для всех игроков
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= Players.LocalPlayer then
+                    MainModule.AddPlayerESP(player)
+                end
+            end
+            
+            -- Слушатель для новых игроков
+            MainModule.ESP.PlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
+                if MainModule.Misc.ESPEnabled then
+                    MainModule.AddPlayerESP(player)
+                end
+            end)
+            
+            -- Слушатель для ушедших игроков
+            MainModule.ESP.PlayerRemovingConnection = Players.PlayerRemoving:Connect(function(player)
+                if MainModule.ESP.Players[player] then
+                    local espData = MainModule.ESP.Players[player]
+                    if espData.Highlight then
+                        espData.Highlight:Destroy()
+                    end
+                    if espData.Billboard then
+                        espData.Billboard:Destroy()
+                    end
+                    MainModule.ESP.Players[player] = nil
+                end
+            end)
+        else
+            -- Очищаем все ESP объекты
+            MainModule.ClearESP()
+            
+            -- Отключаем соединения
+            if MainModule.ESP.PlayerAddedConnection then
+                MainModule.ESP.PlayerAddedConnection:Disconnect()
+                MainModule.ESP.PlayerAddedConnection = nil
+            end
+            
+            if MainModule.ESP.PlayerRemovingConnection then
+                MainModule.ESP.PlayerRemovingConnection:Disconnect()
+                MainModule.ESP.PlayerRemovingConnection = nil
+            end
+        end
+    end
+    
+    function MainModule.AddPlayerESP(player)
+        if MainModule.ESP.Players[player] then return end
+        
+        local espData = {
+            Player = player,
+            Highlight = nil,
+            Billboard = nil,
+            Label = nil
+        }
+        
+        -- Создаем ESP когда появляется персонаж
+        local function createESP()
+            local character = player.Character
+            if not character then return end
+            
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            
+            if not rootPart or not humanoid or humanoid.Health <= 0 then return end
+            
+            -- Создаем Highlight
+            if not espData.Highlight then
+                espData.Highlight = Instance.new("Highlight")
+                espData.Highlight.Name = player.Name .. "_Highlight"
+                espData.Highlight.Adornee = character
+                espData.Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                espData.Highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+                espData.Highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+                espData.Highlight.Enabled = MainModule.Misc.ESPHighlight
+                espData.Highlight.Parent = workspace
+                
+                -- Цвет в зависимости от типа
+                if player:GetAttribute("IsHider") then
+                    espData.Highlight.FillColor = Color3.fromRGB(0, 255, 0)
+                    espData.Highlight.OutlineColor = Color3.fromRGB(0, 200, 0)
+                elseif player:GetAttribute("IsHunter") then
+                    espData.Highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                    espData.Highlight.OutlineColor = Color3.fromRGB(200, 0, 0)
+                else
+                    espData.Highlight.FillColor = Color3.fromRGB(0, 120, 255)
+                    espData.Highlight.OutlineColor = Color3.fromRGB(0, 100, 200)
+                end
+            end
+            
+            -- Создаем Billboard
+            if not espData.Billboard then
+                espData.Billboard = Instance.new("BillboardGui")
+                espData.Billboard.Name = player.Name .. "_Billboard"
+                espData.Billboard.Adornee = rootPart
+                espData.Billboard.Size = UDim2.new(0, 200, 0, 50)
+                espData.Billboard.StudsOffset = Vector3.new(0, 3.5, 0)
+                espData.Billboard.AlwaysOnTop = true
+                espData.Billboard.Enabled = MainModule.Misc.ESPNames
+                espData.Billboard.Parent = workspace
+                
+                espData.Label = Instance.new("TextLabel")
+                espData.Label.Size = UDim2.new(1, 0, 1, 0)
+                espData.Label.BackgroundTransparency = 1
+                espData.Label.TextStrokeTransparency = 0.5
+                espData.Label.TextStrokeColor3 = Color3.new(0, 0, 0)
+                espData.Label.Font = Enum.Font.GothamBold
+                espData.Label.TextSize = MainModule.Misc.ESPTextSize
+                espData.Label.Parent = espData.Billboard
+                
+                -- Соединение для обновления здоровья
+                humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+                    if espData.Label and MainModule.Misc.ESPEnabled then
+                        local distance = ""
+                        if MainModule.Misc.ESPDistance and Players.LocalPlayer.Character then
+                            local localRoot = Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                            if localRoot then
+                                distance = string.format("[%dm]", math.floor((rootPart.Position - localRoot.Position).Magnitude))
+                            end
+                        end
+                        
+                        local healthText = string.format("HP: %d/%d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
+                        local nameText = player.DisplayName or player.Name
+                        local roleText = ""
+                        
+                        if player:GetAttribute("IsHider") then
+                            roleText = " (Hider)"
+                        elseif player:GetAttribute("IsHunter") then
+                            roleText = " (Seeker)"
+                        end
+                        
+                        espData.Label.Text = string.format("%s%s\n%s %s", nameText, roleText, healthText, distance)
+                    end
+                end)
+            end
+        end
+        
+        -- Создаем ESP при появлении персонажа
+        if player.Character then
+            createESP()
+        end
+        
+        -- Слушатель для нового персонажа
+        player.CharacterAdded:Connect(function(character)
+            task.wait(0.5)
+            createESP()
+        end)
+        
+        MainModule.ESP.Players[player] = espData
+    end
+    
+    function MainModule.UpdateESP()
+        for player, espData in pairs(MainModule.ESP.Players) do
+            if player and player.Parent then
+                local character = player.Character
+                if character and espData.Highlight then
+                    espData.Highlight.Enabled = MainModule.Misc.ESPHighlight and MainModule.Misc.ESPEnabled
+                    espData.Highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+                    espData.Highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+                    
+                    if espData.Billboard then
+                        espData.Billboard.Enabled = MainModule.Misc.ESPNames and MainModule.Misc.ESPEnabled
+                        if espData.Label then
+                            espData.Label.TextSize = MainModule.Misc.ESPTextSize
+                        end
+                    end
+                end
+            else
+                -- Игрок вышел
+                if espData.Highlight then
+                    espData.Highlight:Destroy()
+                end
+                if espData.Billboard then
+                    espData.Billboard:Destroy()
+                end
+                MainModule.ESP.Players[player] = nil
+            end
+        end
+    end
+    
+    function MainModule.ClearESP()
+        for player, espData in pairs(MainModule.ESP.Players) do
+            if espData.Highlight then
+                espData.Highlight:Destroy()
+            end
+            if espData.Billboard then
+                espData.Billboard:Destroy()
+            end
+        end
+        MainModule.ESP.Players = {}
+    end
+end
+
 -- GUI Creon X v2.1
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
@@ -488,155 +707,99 @@ local function CreateSpeedSlider()
     return speedLabel
 end
 
--- Функция для создания выпадающего списка (исправлено)
-local function CreateGuardsDropdown(options, default, callback)
-    local dropdownContainer = Instance.new("Frame")
-    dropdownContainer.Size = UDim2.new(1, -10, 0, 32)
-    dropdownContainer.BackgroundTransparency = 1
-    dropdownContainer.LayoutOrder = 1
-    dropdownContainer.Parent = ContentScrolling
+-- Простая кнопка выбора Guard типа (без выпадающего списка)
+local function CreateGuardTypeSelector()
+    local selectorContainer = Instance.new("Frame")
+    selectorContainer.Size = UDim2.new(1, -10, 0, 32)
+    selectorContainer.BackgroundTransparency = 1
+    selectorContainer.LayoutOrder = 1
+    selectorContainer.Parent = ContentScrolling
     
-    local dropdownButton = Instance.new("TextButton")
-    dropdownButton.Size = UDim2.new(1, 0, 1, 0)
-    dropdownButton.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-    dropdownButton.BorderSizePixel = 0
-    dropdownButton.Text = default .. " ▼"
-    dropdownButton.TextColor3 = Color3.fromRGB(240, 240, 255)
-    dropdownButton.TextSize = 12
-    dropdownButton.Font = Enum.Font.Gotham
-    dropdownButton.AutoButtonColor = false
-    dropdownButton.Parent = dropdownContainer
-    dropdownButton.ZIndex = 10
+    local selectorFrame = Instance.new("Frame")
+    selectorFrame.Size = UDim2.new(1, 0, 1, 0)
+    selectorFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+    selectorFrame.BorderSizePixel = 0
+    selectorFrame.Parent = selectorContainer
     
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = dropdownButton
+    corner.Parent = selectorFrame
     
     local stroke = Instance.new("UIStroke")
     stroke.Color = Color3.fromRGB(80, 80, 100)
     stroke.Thickness = 1.2
-    stroke.Parent = dropdownButton
+    stroke.Parent = selectorFrame
     
-    -- Анимация для кнопки
-    dropdownButton.MouseEnter:Connect(function()
-        TweenService:Create(dropdownButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(65, 65, 85),
+    -- Текст
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = "Guard Type: " .. MainModule.Guards.SelectedGuard
+    label.TextColor3 = Color3.fromRGB(240, 240, 255)
+    label.TextSize = 12
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = selectorFrame
+    
+    -- Кнопка смены типа
+    local changeBtn = Instance.new("TextButton")
+    changeBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
+    changeBtn.Position = UDim2.new(0.72, 0, 0.15, 0)
+    changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+    changeBtn.BorderSizePixel = 0
+    changeBtn.Text = "Change"
+    changeBtn.TextColor3 = Color3.fromRGB(240, 240, 255)
+    changeBtn.TextSize = 11
+    changeBtn.Font = Enum.Font.Gotham
+    changeBtn.AutoButtonColor = false
+    changeBtn.Parent = selectorFrame
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 4)
+    btnCorner.Parent = changeBtn
+    
+    local btnStroke = Instance.new("UIStroke")
+    btnStroke.Color = Color3.fromRGB(80, 80, 100)
+    btnStroke.Thickness = 1
+    btnStroke.Parent = changeBtn
+    
+    -- Анимации для кнопки
+    changeBtn.MouseEnter:Connect(function()
+        TweenService:Create(changeBtn, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(75, 75, 95),
             TextColor3 = Color3.fromRGB(255, 255, 255)
         }):Play()
     end)
     
-    dropdownButton.MouseLeave:Connect(function()
-        TweenService:Create(dropdownButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(50, 50, 65),
+    changeBtn.MouseLeave:Connect(function()
+        TweenService:Create(changeBtn, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(60, 60, 75),
             TextColor3 = Color3.fromRGB(240, 240, 255)
         }):Play()
     end)
     
-    local dropdownList = Instance.new("ScrollingFrame")
-    dropdownList.Size = UDim2.new(1, 0, 0, math.min(#options * 32, 100))
-    dropdownList.Position = UDim2.new(0, 0, 1, 5)
-    dropdownList.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-    dropdownList.BorderSizePixel = 0
-    dropdownList.ScrollBarThickness = 6
-    dropdownList.Visible = false
-    dropdownList.ZIndex = 100
-    dropdownList.Parent = ScreenGui
-    
-    local listCorner = Instance.new("UICorner")
-    listCorner.CornerRadius = UDim.new(0, 6)
-    listCorner.Parent = dropdownList
-    
-    local listStroke = Instance.new("UIStroke")
-    listStroke.Color = Color3.fromRGB(80, 80, 100)
-    listStroke.Thickness = 1
-    listStroke.Parent = dropdownList
-    
-    for i, option in ipairs(options) do
-        local optionButton = Instance.new("TextButton")
-        optionButton.Size = UDim2.new(1, -8, 0, 28)
-        optionButton.Position = UDim2.new(0, 4, 0, (i-1)*32)
-        optionButton.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-        optionButton.BorderSizePixel = 0
-        optionButton.Text = option
-        optionButton.TextColor3 = Color3.fromRGB(240, 240, 255)
-        optionButton.TextSize = 12
-        optionButton.Font = Enum.Font.Gotham
-        optionButton.AutoButtonColor = false
-        optionButton.ZIndex = 101
-        optionButton.Parent = dropdownList
-        
-        local optionCorner = Instance.new("UICorner")
-        optionCorner.CornerRadius = UDim.new(0, 6)
-        optionCorner.Parent = optionButton
-        
-        local optionStroke = Instance.new("UIStroke")
-        optionStroke.Color = Color3.fromRGB(80, 80, 100)
-        optionStroke.Thickness = 1.2
-        optionStroke.Parent = optionButton
-        
-        optionButton.MouseButton1Click:Connect(function()
-            if callback then
-                callback(option)
-            end
-            dropdownButton.Text = option .. " ▼"
-            dropdownList.Visible = false
-        end)
-        
-        optionButton.MouseEnter:Connect(function()
-            TweenService:Create(optionButton, TweenInfo.new(0.2), {
-                BackgroundColor3 = Color3.fromRGB(65, 65, 85),
-                TextColor3 = Color3.fromRGB(255, 255, 255)
-            }):Play()
-        end)
-        
-        optionButton.MouseLeave:Connect(function()
-            TweenService:Create(optionButton, TweenInfo.new(0.2), {
-                BackgroundColor3 = Color3.fromRGB(50, 50, 65),
-                TextColor3 = Color3.fromRGB(240, 240, 255)
-            }):Play()
-        end)
+    -- Циклическое переключение типов
+    local guardTypes = {"Circle", "Triangle", "Square"}
+    local currentIndex = 1
+    for i, guardType in ipairs(guardTypes) do
+        if guardType == MainModule.Guards.SelectedGuard then
+            currentIndex = i
+            break
+        end
     end
     
-    dropdownButton.MouseButton1Click:Connect(function()
-        dropdownList.Visible = not dropdownList.Visible
-        if dropdownList.Visible then
-            local buttonPos = dropdownButton.AbsolutePosition
-            local buttonSize = dropdownButton.AbsoluteSize
-            
-            dropdownList.Position = UDim2.new(
-                0, buttonPos.X,
-                0, buttonPos.Y + buttonSize.Y + 5
-            )
-            dropdownList.Size = UDim2.new(0, buttonSize.X, 0, math.min(#options * 32, 100))
+    changeBtn.MouseButton1Click:Connect(function()
+        currentIndex = currentIndex + 1
+        if currentIndex > #guardTypes then
+            currentIndex = 1
         end
+        
+        local newGuardType = guardTypes[currentIndex]
+        MainModule.SetGuardType(newGuardType)
+        label.Text = "Guard Type: " .. newGuardType
     end)
     
-    -- Закрытие при клике вне списка
-    local function closeDropdown()
-        dropdownList.Visible = false
-    end
-    
-    UIS.InputBegan:Connect(function(input)
-        if dropdownList.Visible and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-            local mousePos = input.Position
-            local listPos = dropdownList.AbsolutePosition
-            local listSize = dropdownList.AbsoluteSize
-            
-            if not (mousePos.X >= listPos.X and mousePos.X <= listPos.X + listSize.X and
-                   mousePos.Y >= listPos.Y and mousePos.Y <= listPos.Y + listSize.Y) then
-                closeDropdown()
-            end
-        end
-    end)
-    
-    -- Очистка при удалении
-    dropdownContainer.Destroying:Connect(function()
-        if dropdownList then
-            dropdownList:Destroy()
-        end
-    end)
-    
-    return dropdownContainer
+    return selectorContainer
 end
 
 -- Функции для создания контента вкладок
@@ -648,7 +811,7 @@ local function ClearContent()
     end
 end
 
--- MAIN TAB (с исправленным Anti Stun + Anti Ragdoll)
+-- MAIN TAB
 local function CreateMainContent()
     ClearContent()
     
@@ -667,7 +830,7 @@ local function CreateMainContent()
     end)
     antiStunToggle.LayoutOrder = 2
     
-    -- Anti Stun + Anti Ragdoll (объединенная кнопка)
+    -- Anti Stun + Anti Ragdoll
     local antiStunState = MainModule.Misc.BypassRagdollEnabled
     local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun + Anti Ragdoll", antiStunState, function(enabled)
         MainModule.ToggleBypassRagdoll(enabled)
@@ -686,34 +849,22 @@ local function CreateMainContent()
     end)
     noCooldownToggle.LayoutOrder = 5
     
-    -- Unlock Dash
-    local unlockDashToggle, updateUnlockDashToggle = CreateToggle("Unlock Dash", MainModule.Misc.UnlockDashEnabled, function(enabled)
-        MainModule.ToggleUnlockDash(enabled)
-    end)
-    unlockDashToggle.LayoutOrder = 6
-    
-    -- Unlock Phantom Step
-    local unlockPhantomToggle, updateUnlockPhantomToggle = CreateToggle("Unlock Phantom Step", MainModule.Misc.UnlockPhantomStepEnabled, function(enabled)
-        MainModule.ToggleUnlockPhantomStep(enabled)
-    end)
-    unlockPhantomToggle.LayoutOrder = 7
-    
     -- Teleport Buttons
     local tpUpBtn = CreateButton("TP 100 blocks up")
-    tpUpBtn.LayoutOrder = 8
+    tpUpBtn.LayoutOrder = 6
     tpUpBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportUp100()
     end)
     
     local tpDownBtn = CreateButton("TP 40 blocks down")
-    tpDownBtn.LayoutOrder = 9
+    tpDownBtn.LayoutOrder = 7
     tpDownBtn.MouseButton1Click:Connect(function()
         MainModule.TeleportDown40()
     end)
     
     -- Noclip status
     local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status)
-    noclipLabel.LayoutOrder = 10
+    noclipLabel.LayoutOrder = 8
     noclipLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     noclipLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
 end
@@ -732,20 +883,43 @@ local function CreateCombatContent()
     comingSoon.Parent = ContentScrolling
 end
 
--- MISC TAB
+-- MISC TAB (исправленный)
 local function CreateMiscContent()
     ClearContent()
     
     -- ESP System Toggle
     local espToggle, updateEspToggle = CreateToggle("ESP System", MainModule.Misc.ESPEnabled, function(enabled)
-        MainModule.ToggleESP(enabled)
+        if MainModule.ToggleESP then
+            MainModule.ToggleESP(enabled)
+        else
+            -- Запасной вариант
+            MainModule.Misc.ESPEnabled = enabled
+            if enabled then
+                -- Простой ESP
+                for _, player in ipairs(Players:GetPlayers()) do
+                    if player ~= Players.LocalPlayer and player.Character then
+                        local highlight = Instance.new("Highlight")
+                        highlight.Adornee = player.Character
+                        highlight.FillColor = Color3.fromRGB(0, 255, 0)
+                        highlight.OutlineColor = Color3.fromRGB(0, 200, 0)
+                        highlight.FillTransparency = 0.3
+                        highlight.Parent = workspace
+                        
+                        -- Удаляем при смерти или выходе
+                        player.CharacterRemoving:Connect(function()
+                            highlight:Destroy()
+                        end)
+                    end
+                end
+            end
+        end
     end)
     espToggle.LayoutOrder = 1
     
     -- ESP Players
     local espPlayersToggle, updateEspPlayersToggle = CreateToggle("ESP Players", MainModule.Misc.ESPPlayers, function(enabled)
         MainModule.Misc.ESPPlayers = enabled
-        if MainModule.Misc.ESPEnabled then
+        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
             MainModule.ToggleESP(false)
             task.wait(0.1)
             MainModule.ToggleESP(true)
@@ -756,7 +930,7 @@ local function CreateMiscContent()
     -- ESP Hiders
     local espHidersToggle, updateEspHidersToggle = CreateToggle("ESP Hiders", MainModule.Misc.ESPHiders, function(enabled)
         MainModule.Misc.ESPHiders = enabled
-        if MainModule.Misc.ESPEnabled then
+        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
             MainModule.ToggleESP(false)
             task.wait(0.1)
             MainModule.ToggleESP(true)
@@ -767,7 +941,7 @@ local function CreateMiscContent()
     -- ESP Seekers
     local espSeekersToggle, updateEspSeekersToggle = CreateToggle("ESP Seekers", MainModule.Misc.ESPSeekers, function(enabled)
         MainModule.Misc.ESPSeekers = enabled
-        if MainModule.Misc.ESPEnabled then
+        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
             MainModule.ToggleESP(false)
             task.wait(0.1)
             MainModule.ToggleESP(true)
@@ -775,82 +949,49 @@ local function CreateMiscContent()
     end)
     espSeekersToggle.LayoutOrder = 4
     
-    -- ESP Candies
-    local espCandiesToggle, updateEspCandiesToggle = CreateToggle("ESP Candies", MainModule.Misc.ESPCandies, function(enabled)
-        MainModule.Misc.ESPCandies = enabled
-        if MainModule.Misc.ESPEnabled then
-            MainModule.ToggleESP(false)
-            task.wait(0.1)
-            MainModule.ToggleESP(true)
-        end
-    end)
-    espCandiesToggle.LayoutOrder = 5
-    
-    -- ESP Keys
-    local espKeysToggle, updateEspKeysToggle = CreateToggle("ESP Keys", MainModule.Misc.ESPKeys, function(enabled)
-        MainModule.Misc.ESPKeys = enabled
-        if MainModule.Misc.ESPEnabled then
-            MainModule.ToggleESP(false)
-            task.wait(0.1)
-            MainModule.ToggleESP(true)
-        end
-    end)
-    espKeysToggle.LayoutOrder = 6
-    
-    -- ESP Doors
-    local espDoorsToggle, updateEspDoorsToggle = CreateToggle("ESP Doors", MainModule.Misc.ESPDoors, function(enabled)
-        MainModule.Misc.ESPDoors = enabled
-        if MainModule.Misc.ESPEnabled then
-            MainModule.ToggleESP(false)
-            task.wait(0.1)
-            MainModule.ToggleESP(true)
-        end
-    end)
-    espDoorsToggle.LayoutOrder = 7
-    
     -- ESP Guards
     local espGuardsToggle, updateEspGuardsToggle = CreateToggle("ESP Guards", MainModule.Misc.ESPGuards, function(enabled)
         MainModule.Misc.ESPGuards = enabled
-        if MainModule.Misc.ESPEnabled then
+        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
             MainModule.ToggleESP(false)
             task.wait(0.1)
             MainModule.ToggleESP(true)
         end
     end)
-    espGuardsToggle.LayoutOrder = 8
+    espGuardsToggle.LayoutOrder = 5
     
     -- ESP Highlight
     local espHighlightToggle, updateEspHighlightToggle = CreateToggle("ESP Highlight", MainModule.Misc.ESPHighlight, function(enabled)
         MainModule.Misc.ESPHighlight = enabled
-        if MainModule.Misc.ESPEnabled then
+        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
             MainModule.ToggleESP(false)
             task.wait(0.1)
             MainModule.ToggleESP(true)
         end
     end)
-    espHighlightToggle.LayoutOrder = 9
+    espHighlightToggle.LayoutOrder = 6
     
     -- ESP Distance
     local espDistanceToggle, updateEspDistanceToggle = CreateToggle("ESP Distance", MainModule.Misc.ESPDistance, function(enabled)
         MainModule.Misc.ESPDistance = enabled
-        if MainModule.Misc.ESPEnabled then
+        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
             MainModule.ToggleESP(false)
             task.wait(0.1)
             MainModule.ToggleESP(true)
         end
     end)
-    espDistanceToggle.LayoutOrder = 10
+    espDistanceToggle.LayoutOrder = 7
     
     -- ESP Boxes
     local espBoxesToggle, updateEspBoxesToggle = CreateToggle("ESP Boxes", MainModule.Misc.ESPBoxes, function(enabled)
         MainModule.Misc.ESPBoxes = enabled
-        if MainModule.Misc.ESPEnabled then
+        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
             MainModule.ToggleESP(false)
             task.wait(0.1)
             MainModule.ToggleESP(true)
         end
     end)
-    espBoxesToggle.LayoutOrder = 11
+    espBoxesToggle.LayoutOrder = 8
 end
 
 -- REBEL TAB
@@ -891,15 +1032,12 @@ local function CreateRLGLContent()
     godModeToggle.LayoutOrder = 3
 end
 
--- GUARDS TAB (исправленный)
+-- GUARDS TAB (исправленный - без выпадающего списка)
 local function CreateGuardsContent()
     ClearContent()
     
-    -- Dropdown с высоким ZIndex
-    local options = {"Circle", "Triangle", "Square"}
-    local dropdown = CreateGuardsDropdown(options, MainModule.Guards.SelectedGuard, function(selected)
-        MainModule.SetGuardType(selected)
-    end)
+    -- Guard Type Selector (простая кнопка переключения)
+    local guardSelector = CreateGuardTypeSelector()
     
     -- Spawn as Guard кнопка
     local spawnBtn = CreateButton("Spawn as Guard")
@@ -908,22 +1046,25 @@ local function CreateGuardsContent()
         MainModule.SpawnAsGuard()
     end)
     
-    -- Остальные переключатели
+    -- Rapid Fire
     local rapidFireToggle, updateRapidFireToggle = CreateToggle("Rapid Fire", MainModule.Guards.RapidFire, function(enabled)
         MainModule.ToggleRapidFire(enabled)
     end)
     rapidFireToggle.LayoutOrder = 3
     
+    -- Infinite Ammo
     local infiniteAmmoToggle, updateInfiniteAmmoToggle = CreateToggle("Infinite Ammo", MainModule.Guards.InfiniteAmmo, function(enabled)
         MainModule.ToggleInfiniteAmmo(enabled)
     end)
     infiniteAmmoToggle.LayoutOrder = 4
     
+    -- Hitbox Expander (исправленный - без Z-Index)
     local hitboxToggle, updateHitboxToggle = CreateToggle("Hitbox Expander", MainModule.Guards.HitboxExpander, function(enabled)
         MainModule.ToggleHitboxExpander(enabled)
     end)
     hitboxToggle.LayoutOrder = 5
     
+    -- AutoFarm
     local autoFarmToggle, updateAutoFarmToggle = CreateToggle("AutoFarm", MainModule.Guards.AutoFarm, function(enabled)
         MainModule.ToggleAutoFarm(enabled)
     end)
@@ -986,7 +1127,7 @@ local function CreateHNSContent()
     end)
     
     -- Auto Dodge
-    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", MainModule.HNS.AutoDodgeEnabled, function(enabled)
+    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", MainModule.AutoDodge.Enabled, function(enabled)
         MainModule.ToggleAutoDodge(enabled)
     end)
     autoDodgeToggle.LayoutOrder = 5
@@ -1119,11 +1260,40 @@ for i, name in pairs(tabs) do
     buttonContainer.BackgroundTransparency = 1
     buttonContainer.Parent = TabButtons
     
-    local button = CreateButton(name)
+    local button = Instance.new("TextButton")
     button.Size = UDim2.new(1, 0, 1, 0)
-    button.Position = UDim2.new(0, 0, 0, 0)
-    button.Parent = buttonContainer
+    button.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+    button.BorderSizePixel = 0
+    button.Text = name
+    button.TextColor3 = Color3.fromRGB(240, 240, 255)
     button.TextSize = 12
+    button.Font = Enum.Font.Gotham
+    button.AutoButtonColor = false
+    button.Parent = buttonContainer
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = button
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(80, 80, 100)
+    stroke.Thickness = 1.2
+    stroke.Parent = button
+    
+    -- Анимация для кнопки вкладки
+    button.MouseEnter:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(65, 65, 85),
+            TextColor3 = Color3.fromRGB(255, 255, 255)
+        }):Play()
+    end)
+    
+    button.MouseLeave:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(50, 50, 65),
+            TextColor3 = Color3.fromRGB(240, 240, 255)
+        }):Play()
+    end)
     
     tabButtons[name] = button
     
