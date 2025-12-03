@@ -38,225 +38,6 @@ if not success then
     return
 end
 
--- Проверяем наличие необходимых функций ESP
-if not MainModule.ToggleESP then
-    -- Добавляем функцию ESP если ее нет
-    MainModule.ESP = {
-        Enabled = false,
-        Players = {},
-        Objects = {},
-        Connections = {}
-    }
-    
-    function MainModule.ToggleESP(enabled)
-        MainModule.Misc.ESPEnabled = enabled
-        
-        if MainModule.ESP.Connection then
-            MainModule.ESP.Connection:Disconnect()
-            MainModule.ESP.Connection = nil
-        end
-        
-        -- Очищаем все ESP объекты
-        MainModule.ClearESP()
-        
-        if enabled then
-            -- Основное соединение для обновления ESP
-            MainModule.ESP.Connection = RunService.RenderStepped:Connect(function()
-                if not MainModule.Misc.ESPEnabled then return end
-                MainModule.UpdateESP()
-            end)
-            
-            -- Создаем ESP для всех игроков
-            for _, player in ipairs(Players:GetPlayers()) do
-                if player ~= Players.LocalPlayer then
-                    MainModule.AddPlayerESP(player)
-                end
-            end
-            
-            -- Слушатель для новых игроков
-            MainModule.ESP.PlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
-                if MainModule.Misc.ESPEnabled then
-                    MainModule.AddPlayerESP(player)
-                end
-            end)
-            
-            -- Слушатель для ушедших игроков
-            MainModule.ESP.PlayerRemovingConnection = Players.PlayerRemoving:Connect(function(player)
-                if MainModule.ESP.Players[player] then
-                    local espData = MainModule.ESP.Players[player]
-                    if espData.Highlight then
-                        espData.Highlight:Destroy()
-                    end
-                    if espData.Billboard then
-                        espData.Billboard:Destroy()
-                    end
-                    MainModule.ESP.Players[player] = nil
-                end
-            end)
-        else
-            -- Очищаем все ESP объекты
-            MainModule.ClearESP()
-            
-            -- Отключаем соединения
-            if MainModule.ESP.PlayerAddedConnection then
-                MainModule.ESP.PlayerAddedConnection:Disconnect()
-                MainModule.ESP.PlayerAddedConnection = nil
-            end
-            
-            if MainModule.ESP.PlayerRemovingConnection then
-                MainModule.ESP.PlayerRemovingConnection:Disconnect()
-                MainModule.ESP.PlayerRemovingConnection = nil
-            end
-        end
-    end
-    
-    function MainModule.AddPlayerESP(player)
-        if MainModule.ESP.Players[player] then return end
-        
-        local espData = {
-            Player = player,
-            Highlight = nil,
-            Billboard = nil,
-            Label = nil
-        }
-        
-        -- Создаем ESP когда появляется персонаж
-        local function createESP()
-            local character = player.Character
-            if not character then return end
-            
-            local rootPart = character:FindFirstChild("HumanoidRootPart")
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            
-            if not rootPart or not humanoid or humanoid.Health <= 0 then return end
-            
-            -- Создаем Highlight
-            if not espData.Highlight then
-                espData.Highlight = Instance.new("Highlight")
-                espData.Highlight.Name = player.Name .. "_Highlight"
-                espData.Highlight.Adornee = character
-                espData.Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                espData.Highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
-                espData.Highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
-                espData.Highlight.Enabled = MainModule.Misc.ESPHighlight
-                espData.Highlight.Parent = workspace
-                
-                -- Цвет в зависимости от типа
-                if player:GetAttribute("IsHider") then
-                    espData.Highlight.FillColor = Color3.fromRGB(0, 255, 0)
-                    espData.Highlight.OutlineColor = Color3.fromRGB(0, 200, 0)
-                elseif player:GetAttribute("IsHunter") then
-                    espData.Highlight.FillColor = Color3.fromRGB(255, 0, 0)
-                    espData.Highlight.OutlineColor = Color3.fromRGB(200, 0, 0)
-                else
-                    espData.Highlight.FillColor = Color3.fromRGB(0, 120, 255)
-                    espData.Highlight.OutlineColor = Color3.fromRGB(0, 100, 200)
-                end
-            end
-            
-            -- Создаем Billboard
-            if not espData.Billboard then
-                espData.Billboard = Instance.new("BillboardGui")
-                espData.Billboard.Name = player.Name .. "_Billboard"
-                espData.Billboard.Adornee = rootPart
-                espData.Billboard.Size = UDim2.new(0, 200, 0, 50)
-                espData.Billboard.StudsOffset = Vector3.new(0, 3.5, 0)
-                espData.Billboard.AlwaysOnTop = true
-                espData.Billboard.Enabled = MainModule.Misc.ESPNames
-                espData.Billboard.Parent = workspace
-                
-                espData.Label = Instance.new("TextLabel")
-                espData.Label.Size = UDim2.new(1, 0, 1, 0)
-                espData.Label.BackgroundTransparency = 1
-                espData.Label.TextStrokeTransparency = 0.5
-                espData.Label.TextStrokeColor3 = Color3.new(0, 0, 0)
-                espData.Label.Font = Enum.Font.GothamBold
-                espData.Label.TextSize = MainModule.Misc.ESPTextSize
-                espData.Label.Parent = espData.Billboard
-                
-                -- Соединение для обновления здоровья
-                humanoid:GetPropertyChangedSignal("Health"):Connect(function()
-                    if espData.Label and MainModule.Misc.ESPEnabled then
-                        local distance = ""
-                        if MainModule.Misc.ESPDistance and Players.LocalPlayer.Character then
-                            local localRoot = Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                            if localRoot then
-                                distance = string.format("[%dm]", math.floor((rootPart.Position - localRoot.Position).Magnitude))
-                            end
-                        end
-                        
-                        local healthText = string.format("HP: %d/%d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
-                        local nameText = player.DisplayName or player.Name
-                        local roleText = ""
-                        
-                        if player:GetAttribute("IsHider") then
-                            roleText = " (Hider)"
-                        elseif player:GetAttribute("IsHunter") then
-                            roleText = " (Seeker)"
-                        end
-                        
-                        espData.Label.Text = string.format("%s%s\n%s %s", nameText, roleText, healthText, distance)
-                    end
-                end)
-            end
-        end
-        
-        -- Создаем ESP при появлении персонажа
-        if player.Character then
-            createESP()
-        end
-        
-        -- Слушатель для нового персонажа
-        player.CharacterAdded:Connect(function(character)
-            task.wait(0.5)
-            createESP()
-        end)
-        
-        MainModule.ESP.Players[player] = espData
-    end
-    
-    function MainModule.UpdateESP()
-        for player, espData in pairs(MainModule.ESP.Players) do
-            if player and player.Parent then
-                local character = player.Character
-                if character and espData.Highlight then
-                    espData.Highlight.Enabled = MainModule.Misc.ESPHighlight and MainModule.Misc.ESPEnabled
-                    espData.Highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
-                    espData.Highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
-                    
-                    if espData.Billboard then
-                        espData.Billboard.Enabled = MainModule.Misc.ESPNames and MainModule.Misc.ESPEnabled
-                        if espData.Label then
-                            espData.Label.TextSize = MainModule.Misc.ESPTextSize
-                        end
-                    end
-                end
-            else
-                -- Игрок вышел
-                if espData.Highlight then
-                    espData.Highlight:Destroy()
-                end
-                if espData.Billboard then
-                    espData.Billboard:Destroy()
-                end
-                MainModule.ESP.Players[player] = nil
-            end
-        end
-    end
-    
-    function MainModule.ClearESP()
-        for player, espData in pairs(MainModule.ESP.Players) do
-            if espData.Highlight then
-                espData.Highlight:Destroy()
-            end
-            if espData.Billboard then
-                espData.Billboard:Destroy()
-            end
-        end
-        MainModule.ESP.Players = {}
-    end
-end
-
 -- GUI Creon X v2.1
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
@@ -707,7 +488,7 @@ local function CreateSpeedSlider()
     return speedLabel
 end
 
--- Простая кнопка выбора Guard типа (без выпадающего списка)
+-- Простая кнопка выбора Guard типа
 local function CreateGuardTypeSelector()
     local selectorContainer = Instance.new("Frame")
     selectorContainer.Size = UDim2.new(1, -10, 0, 32)
@@ -795,7 +576,11 @@ local function CreateGuardTypeSelector()
         end
         
         local newGuardType = guardTypes[currentIndex]
-        MainModule.SetGuardType(newGuardType)
+        if MainModule.SetGuardType then
+            MainModule.SetGuardType(newGuardType)
+        else
+            MainModule.Guards.SelectedGuard = newGuardType
+        end
         label.Text = "Guard Type: " .. newGuardType
     end)
     
@@ -820,32 +605,51 @@ local function CreateMainContent()
     
     -- Speed Toggle
     local speedToggle, updateSpeedToggle = CreateToggle("SpeedHack", MainModule.SpeedHack.Enabled, function(enabled)
-        MainModule.ToggleSpeedHack(enabled)
+        if MainModule.ToggleSpeedHack then
+            MainModule.ToggleSpeedHack(enabled)
+        else
+            MainModule.SpeedHack.Enabled = enabled
+        end
     end)
     speedToggle.LayoutOrder = 1
     
     -- Anti Stun QTE
     local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun QTE", MainModule.AutoQTE.AntiStunEnabled, function(enabled)
-        MainModule.ToggleAntiStunQTE(enabled)
+        if MainModule.ToggleAntiStunQTE then
+            MainModule.ToggleAntiStunQTE(enabled)
+        else
+            MainModule.AutoQTE.AntiStunEnabled = enabled
+        end
     end)
     antiStunToggle.LayoutOrder = 2
     
     -- Anti Stun + Anti Ragdoll
-    local antiStunState = MainModule.Misc.BypassRagdollEnabled
-    local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun + Anti Ragdoll", antiStunState, function(enabled)
-        MainModule.ToggleBypassRagdoll(enabled)
+    local bypassRagdollToggle, updateBypassRagdollToggle = CreateToggle("Anti Stun + Anti Ragdoll", MainModule.Misc.BypassRagdollEnabled, function(enabled)
+        if MainModule.ToggleBypassRagdoll then
+            MainModule.ToggleBypassRagdoll(enabled)
+        else
+            MainModule.Misc.BypassRagdollEnabled = enabled
+        end
     end)
-    antiStunToggle.LayoutOrder = 3
+    bypassRagdollToggle.LayoutOrder = 3
     
     -- Instance Interact
     local instaInteractToggle, updateInstaInteractToggle = CreateToggle("Instance Interact", MainModule.Misc.InstaInteract, function(enabled)
-        MainModule.ToggleInstaInteract(enabled)
+        if MainModule.ToggleInstaInteract then
+            MainModule.ToggleInstaInteract(enabled)
+        else
+            MainModule.Misc.InstaInteract = enabled
+        end
     end)
     instaInteractToggle.LayoutOrder = 4
     
     -- No Cooldown Proximity
     local noCooldownToggle, updateNoCooldownToggle = CreateToggle("No Cooldown Proximity", MainModule.Misc.NoCooldownProximity, function(enabled)
-        MainModule.ToggleNoCooldownProximity(enabled)
+        if MainModule.ToggleNoCooldownProximity then
+            MainModule.ToggleNoCooldownProximity(enabled)
+        else
+            MainModule.Misc.NoCooldownProximity = enabled
+        end
     end)
     noCooldownToggle.LayoutOrder = 5
     
@@ -853,20 +657,31 @@ local function CreateMainContent()
     local tpUpBtn = CreateButton("TP 100 blocks up")
     tpUpBtn.LayoutOrder = 6
     tpUpBtn.MouseButton1Click:Connect(function()
-        MainModule.TeleportUp100()
+        if MainModule.TeleportUp100 then
+            MainModule.TeleportUp100()
+        end
     end)
     
     local tpDownBtn = CreateButton("TP 40 blocks down")
     tpDownBtn.LayoutOrder = 7
     tpDownBtn.MouseButton1Click:Connect(function()
-        MainModule.TeleportDown40()
+        if MainModule.TeleportDown40 then
+            MainModule.TeleportDown40()
+        end
     end)
     
-    -- Noclip status
-    local noclipLabel = CreateButton("Noclip: " .. MainModule.Noclip.Status)
-    noclipLabel.LayoutOrder = 8
-    noclipLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-    noclipLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    -- Position display
+    local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
+    positionLabel.LayoutOrder = 8
+    positionLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    positionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    
+    -- Update position
+    game:GetService("RunService").Heartbeat:Connect(function()
+        if positionLabel and positionLabel.Parent then
+            positionLabel.Text = "Position: " .. MainModule.GetPlayerPosition()
+        end
+    end)
 end
 
 -- COMBAT TAB
@@ -883,7 +698,7 @@ local function CreateCombatContent()
     comingSoon.Parent = ContentScrolling
 end
 
--- MISC TAB (исправленный)
+-- MISC TAB
 local function CreateMiscContent()
     ClearContent()
     
@@ -892,26 +707,7 @@ local function CreateMiscContent()
         if MainModule.ToggleESP then
             MainModule.ToggleESP(enabled)
         else
-            -- Запасной вариант
             MainModule.Misc.ESPEnabled = enabled
-            if enabled then
-                -- Простой ESP
-                for _, player in ipairs(Players:GetPlayers()) do
-                    if player ~= Players.LocalPlayer and player.Character then
-                        local highlight = Instance.new("Highlight")
-                        highlight.Adornee = player.Character
-                        highlight.FillColor = Color3.fromRGB(0, 255, 0)
-                        highlight.OutlineColor = Color3.fromRGB(0, 200, 0)
-                        highlight.FillTransparency = 0.3
-                        highlight.Parent = workspace
-                        
-                        -- Удаляем при смерти или выходе
-                        player.CharacterRemoving:Connect(function()
-                            highlight:Destroy()
-                        end)
-                    end
-                end
-            end
         end
     end)
     espToggle.LayoutOrder = 1
@@ -949,17 +745,6 @@ local function CreateMiscContent()
     end)
     espSeekersToggle.LayoutOrder = 4
     
-    -- ESP Guards
-    local espGuardsToggle, updateEspGuardsToggle = CreateToggle("ESP Guards", MainModule.Misc.ESPGuards, function(enabled)
-        MainModule.Misc.ESPGuards = enabled
-        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
-            MainModule.ToggleESP(false)
-            task.wait(0.1)
-            MainModule.ToggleESP(true)
-        end
-    end)
-    espGuardsToggle.LayoutOrder = 5
-    
     -- ESP Highlight
     local espHighlightToggle, updateEspHighlightToggle = CreateToggle("ESP Highlight", MainModule.Misc.ESPHighlight, function(enabled)
         MainModule.Misc.ESPHighlight = enabled
@@ -969,7 +754,7 @@ local function CreateMiscContent()
             MainModule.ToggleESP(true)
         end
     end)
-    espHighlightToggle.LayoutOrder = 6
+    espHighlightToggle.LayoutOrder = 5
     
     -- ESP Distance
     local espDistanceToggle, updateEspDistanceToggle = CreateToggle("ESP Distance", MainModule.Misc.ESPDistance, function(enabled)
@@ -980,18 +765,7 @@ local function CreateMiscContent()
             MainModule.ToggleESP(true)
         end
     end)
-    espDistanceToggle.LayoutOrder = 7
-    
-    -- ESP Boxes
-    local espBoxesToggle, updateEspBoxesToggle = CreateToggle("ESP Boxes", MainModule.Misc.ESPBoxes, function(enabled)
-        MainModule.Misc.ESPBoxes = enabled
-        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
-            MainModule.ToggleESP(false)
-            task.wait(0.1)
-            MainModule.ToggleESP(true)
-        end
-    end)
-    espBoxesToggle.LayoutOrder = 8
+    espDistanceToggle.LayoutOrder = 6
 end
 
 -- REBEL TAB
@@ -1005,7 +779,11 @@ local function CreateRebelContent()
     rebelTitle.LayoutOrder = 1
     
     local rebelToggle, updateRebelToggle = CreateToggle("Instant Rebel", MainModule.Rebel.Enabled, function(enabled)
-        MainModule.ToggleRebel(enabled)
+        if MainModule.ToggleRebel then
+            MainModule.ToggleRebel(enabled)
+        else
+            MainModule.Rebel.Enabled = enabled
+        end
     end)
     rebelToggle.LayoutOrder = 2
 end
@@ -1017,56 +795,82 @@ local function CreateRLGLContent()
     local tpEndBtn = CreateButton("TP TO END")
     tpEndBtn.LayoutOrder = 1
     tpEndBtn.MouseButton1Click:Connect(function()
-        MainModule.TeleportToEnd()
+        if MainModule.TeleportToEnd then
+            MainModule.TeleportToEnd()
+        end
     end)
     
     local tpStartBtn = CreateButton("TP TO START")
     tpStartBtn.LayoutOrder = 2
     tpStartBtn.MouseButton1Click:Connect(function()
-        MainModule.TeleportToStart()
+        if MainModule.TeleportToStart then
+            MainModule.TeleportToStart()
+        end
     end)
     
     local godModeToggle, updateGodModeToggle = CreateToggle("GodMode", MainModule.RLGL.GodMode, function(enabled)
-        MainModule.ToggleGodMode(enabled)
+        if MainModule.ToggleGodMode then
+            MainModule.ToggleGodMode(enabled)
+        else
+            MainModule.RLGL.GodMode = enabled
+        end
     end)
     godModeToggle.LayoutOrder = 3
 end
 
--- GUARDS TAB (исправленный - без выпадающего списка)
+-- GUARDS TAB
 local function CreateGuardsContent()
     ClearContent()
     
-    -- Guard Type Selector (простая кнопка переключения)
+    -- Guard Type Selector
     local guardSelector = CreateGuardTypeSelector()
     
     -- Spawn as Guard кнопка
     local spawnBtn = CreateButton("Spawn as Guard")
     spawnBtn.LayoutOrder = 2
     spawnBtn.MouseButton1Click:Connect(function()
-        MainModule.SpawnAsGuard()
+        if MainModule.SpawnAsGuard then
+            MainModule.SpawnAsGuard()
+        end
     end)
     
     -- Rapid Fire
     local rapidFireToggle, updateRapidFireToggle = CreateToggle("Rapid Fire", MainModule.Guards.RapidFire, function(enabled)
-        MainModule.ToggleRapidFire(enabled)
+        if MainModule.ToggleRapidFire then
+            MainModule.ToggleRapidFire(enabled)
+        else
+            MainModule.Guards.RapidFire = enabled
+        end
     end)
     rapidFireToggle.LayoutOrder = 3
     
     -- Infinite Ammo
     local infiniteAmmoToggle, updateInfiniteAmmoToggle = CreateToggle("Infinite Ammo", MainModule.Guards.InfiniteAmmo, function(enabled)
-        MainModule.ToggleInfiniteAmmo(enabled)
+        if MainModule.ToggleInfiniteAmmo then
+            MainModule.ToggleInfiniteAmmo(enabled)
+        else
+            MainModule.Guards.InfiniteAmmo = enabled
+        end
     end)
     infiniteAmmoToggle.LayoutOrder = 4
     
-    -- Hitbox Expander (исправленный - без Z-Index)
+    -- Hitbox Expander
     local hitboxToggle, updateHitboxToggle = CreateToggle("Hitbox Expander", MainModule.Guards.HitboxExpander, function(enabled)
-        MainModule.ToggleHitboxExpander(enabled)
+        if MainModule.ToggleHitboxExpander then
+            MainModule.ToggleHitboxExpander(enabled)
+        else
+            MainModule.Guards.HitboxExpander = enabled
+        end
     end)
     hitboxToggle.LayoutOrder = 5
     
     -- AutoFarm
     local autoFarmToggle, updateAutoFarmToggle = CreateToggle("AutoFarm", MainModule.Guards.AutoFarm, function(enabled)
-        MainModule.ToggleAutoFarm(enabled)
+        if MainModule.ToggleAutoFarm then
+            MainModule.ToggleAutoFarm(enabled)
+        else
+            MainModule.Guards.AutoFarm = enabled
+        end
     end)
     autoFarmToggle.LayoutOrder = 6
 end
@@ -1078,41 +882,40 @@ local function CreateDalgonaContent()
     local completeBtn = CreateButton("Complete Dalgona")
     completeBtn.LayoutOrder = 1
     completeBtn.MouseButton1Click:Connect(function()
-        MainModule.CompleteDalgona()
+        if MainModule.CompleteDalgona then
+            MainModule.CompleteDalgona()
+        end
     end)
     
     local lighterBtn = CreateButton("Free Lighter")
     lighterBtn.LayoutOrder = 2
     lighterBtn.MouseButton1Click:Connect(function()
-        MainModule.FreeLighter()
+        if MainModule.FreeLighter then
+            MainModule.FreeLighter()
+        end
     end)
 end
 
--- HNS TAB (упрощенный)
+-- HNS TAB
 local function CreateHNSContent()
     ClearContent()
 
-     -- Teleport to Hider (кнопка)
-    local tpToHiderBtn = CreateButton("Teleport to Hider")
-    tpToHiderBtn.LayoutOrder = 4
-    tpToHiderBtn.MouseButton1Click:Connect(function()
-        if MainModule.TeleportToHider then
-            MainModule.TeleportToHider()
-        end
-    end)
-    
     -- Kill Hiders
     local killHidersToggle, updateKillHidersToggle = CreateToggle("Kill Hiders", MainModule.HNS.KillAuraEnabled, function(enabled)
         if MainModule.ToggleKillHiders then
             MainModule.ToggleKillHiders(enabled)
+        else
+            MainModule.HNS.KillAuraEnabled = enabled
         end
     end)
     killHidersToggle.LayoutOrder = 1
     
-    -- Auto Dodge (исправленный)
+    -- Auto Dodge
     local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", MainModule.HNS.AutoDodgeEnabled, function(enabled)
         if MainModule.ToggleAutoDodge then
             MainModule.ToggleAutoDodge(enabled)
+        else
+            MainModule.HNS.AutoDodgeEnabled = enabled
         end
     end)
     autoDodgeToggle.LayoutOrder = 2
@@ -1121,8 +924,8 @@ local function CreateHNSContent()
     local disableSpikesBtn = CreateButton("Disable Spikes")
     disableSpikesBtn.LayoutOrder = 3
     disableSpikesBtn.MouseButton1Click:Connect(function()
-        local newState = not MainModule.HNS.DisableSpikesEnabled
         if MainModule.ToggleDisableSpikes then
+            local newState = not MainModule.HNS.DisableSpikesEnabled
             MainModule.ToggleDisableSpikes(newState)
             if newState then
                 disableSpikesBtn.Text = "Disable Spikes (ON)"
@@ -1139,30 +942,14 @@ end
 local function CreateGlassBridgeContent()
     ClearContent()
     
-    -- Glass Vision
-    local glassVisionToggle, updateGlassVisionToggle = CreateToggle("Glass Vision", MainModule.GlassBridge.GlassVisionEnabled, function(enabled)
-        MainModule.ToggleGlassVision(enabled)
-    end)
-    glassVisionToggle.LayoutOrder = 1
-    
-    -- Anti Break
-    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("Anti Break", MainModule.GlassBridge.AntiBreakEnabled, function(enabled)
-        MainModule.ToggleAntiBreak(enabled)
-    end)
-    antiBreakToggle.LayoutOrder = 2
-    
-    -- Anti Fall
-    local antiFallToggle, updateAntiFallToggle = CreateToggle("Anti Fall", MainModule.GlassBridge.AntiFallEnabled, function(enabled)
-        MainModule.ToggleAntiFall(enabled)
-    end)
-    antiFallToggle.LayoutOrder = 3
-    
-    -- Teleport to End (кнопка)
-    local tpEndBtn = CreateButton("Teleport to End")
-    tpEndBtn.LayoutOrder = 4
-    tpEndBtn.MouseButton1Click:Connect(function()
-        MainModule.TeleportToGlassBridgeEnd()
-    end)
+    local comingSoon = Instance.new("TextLabel")
+    comingSoon.Size = UDim2.new(1, 0, 0, 40)
+    comingSoon.BackgroundTransparency = 1
+    comingSoon.Text = "Glass Bridge Features Coming Soon"
+    comingSoon.TextColor3 = Color3.fromRGB(200, 200, 200)
+    comingSoon.TextSize = 16
+    comingSoon.Font = Enum.Font.Gotham
+    comingSoon.Parent = ContentScrolling
 end
 
 -- TUG OF WAR TAB
@@ -1170,7 +957,11 @@ local function CreateTugOfWarContent()
     ClearContent()
     
     local autoPullToggle, updateAutoPullToggle = CreateToggle("Auto Pull", MainModule.TugOfWar.AutoPull, function(enabled)
-        MainModule.ToggleAutoPull(enabled)
+        if MainModule.ToggleAutoPull then
+            MainModule.ToggleAutoPull(enabled)
+        else
+            MainModule.TugOfWar.AutoPull = enabled
+        end
     end)
     autoPullToggle.LayoutOrder = 1
 end
@@ -1182,21 +973,19 @@ local function CreateJumpRopeContent()
     local tpEndBtn = CreateButton("Teleport to End")
     tpEndBtn.LayoutOrder = 1
     tpEndBtn.MouseButton1Click:Connect(function()
-        MainModule.TeleportToJumpRopeEnd()
+        if MainModule.TeleportToJumpRopeEnd then
+            MainModule.TeleportToJumpRopeEnd()
+        end
     end)
     
     local deleteRopeBtn = CreateButton("Delete The Rope")
     deleteRopeBtn.LayoutOrder = 2
     deleteRopeBtn.MouseButton1Click:Connect(function()
-        MainModule.DeleteJumpRope()
-    end)
-    
-    local antiFallBtn = CreateButton("Anti Fall")
-    antiFallBtn.LayoutOrder = 3
-    antiFallBtn.MouseButton1Click:Connect(function()
-        MainModule.ToggleJumpRopeAntiFall(true)
-        antiFallBtn.Text = "Anti Fall (ON)"
-        antiFallBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+        if MainModule.ToggleDeleteRope then
+            MainModule.ToggleDeleteRope(true)
+            deleteRopeBtn.Text = "Delete Rope (ON)"
+            deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+        end
     end)
 end
 
@@ -1241,13 +1030,17 @@ local function CreateSettingsContent()
     local cleanupBtn = CreateButton("Cleanup Script")
     cleanupBtn.LayoutOrder = 6
     cleanupBtn.MouseButton1Click:Connect(function()
-        MainModule.Cleanup()
+        if MainModule.Cleanup then
+            MainModule.Cleanup()
+        end
         ScreenGui:Destroy()
     end)
     
     -- Обновление позиции
     game:GetService("RunService").Heartbeat:Connect(function()
-        positionLabel.Text = "Position: " .. MainModule.GetPlayerPosition()
+        if positionLabel and positionLabel.Parent then
+            positionLabel.Text = "Position: " .. MainModule.GetPlayerPosition()
+        end
     end)
 end
 
@@ -1389,5 +1182,3 @@ if not isSupported then
 else
     print("Executor " .. executorName .. " is supported")
 end
-
-
