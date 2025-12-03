@@ -204,152 +204,114 @@ local function playerHasKnife(player)
     return false
 end
 
--- Bypass Ragdoll функция с улучшенной защитой
+-- Anti Ragdoll функция (исправлено - добавлен цикл)
 function MainModule.ToggleBypassRagdoll(enabled)
     MainModule.Misc.BypassRagdollEnabled = enabled
     
-    if bypassRagdollConnection then
-        bypassRagdollConnection:Disconnect()
-        bypassRagdollConnection = nil
+    -- Хранилище для таймеров и соединений
+    if not MainModule.Misc.RagdollData then
+        MainModule.Misc.RagdollData = {
+            AntiRagdollLoop = nil,
+            RagdollBlockConn = nil
+        }
     end
     
-    -- Хранилище для наших защитников
-    local defenders = {}
-    local defenderConnections = {}
+    local function bypassRagdollFunction()
+        local Character = LocalPlayer.Character
+        if not Character then return end
+        
+        local Humanoid = Character:FindFirstChild("Humanoid")
+        local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+        local Torso = Character:FindFirstChild("UpperTorso") or Character:FindFirstChild("Torso")
+        
+        if not (Humanoid and HumanoidRootPart and Torso) then return end
+
+        -- Мягкое удаление Ragdoll объектов
+        for _, child in ipairs(Character:GetChildren()) do
+            if child.Name == "Ragdoll" then
+                task.spawn(function()
+                    for i = 1, 10 do
+                        if child and child.Parent then
+                            for _, part in pairs(child:GetChildren()) do
+                                if part:IsA("BasePart") then
+                                    part.Transparency = part.Transparency + 0.1
+                                end
+                            end
+                            task.wait(0.05)
+                        end
+                    end
+                    pcall(function() child:Destroy() end)
+                end)
+                
+                Humanoid.PlatformStand = false
+                Humanoid:ChangeState(Enum.HumanoidStateType.Running)
+            end
+        end
+
+        -- Удаляем только вредоносные папки
+        local harmfulFolders = {"RotateDisabled", "RagdollWakeupImmunity"}
+        for _, folderName in pairs(harmfulFolders) do
+            local folder = Character:FindFirstChild(folderName)
+            if folder then
+                folder:Destroy()
+            end
+        end
+
+        -- Основная защита от толчков
+        for _, part in pairs(Character:GetChildren()) do
+            if part:IsA("BasePart") then
+                local currentVelocity = part.Velocity
+                local horizontalSpeed = Vector3.new(currentVelocity.X, 0, currentVelocity.Z).Magnitude
+                
+                if horizontalSpeed > 50 and part ~= HumanoidRootPart then
+                    local newVelocity = Vector3.new(
+                        currentVelocity.X * 0.8,
+                        currentVelocity.Y,
+                        currentVelocity.Z * 0.8
+                    )
+                    part.Velocity = newVelocity
+                end
+                
+                for _, force in pairs(part:GetChildren()) do
+                    if force:IsA("BodyForce") then
+                        local forceMagnitude = force.Force.Magnitude
+                        if forceMagnitude > 1000 then
+                            force:Destroy()
+                        end
+                    elseif force:IsA("BodyVelocity") then
+                        if force.Velocity.Magnitude > 30 then
+                            force:Destroy()
+                        end
+                    end
+                end
+            end
+        end
+    end
     
     if enabled then
-        bypassRagdollConnection = RunService.Stepped:Connect(function()
-            if not MainModule.Misc.BypassRagdollEnabled then return end
-            
-            pcall(function()
-                local Character = LocalPlayer.Character
-                if not Character then return end
-                
-                local Humanoid = Character:FindFirstChild("Humanoid")
-                local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-                local Torso = Character:FindFirstChild("UpperTorso") or Character:FindFirstChild("Torso")
-                
-                if not (Humanoid and HumanoidRootPart and Torso) then return end
-
-                -- 1. Ищем защитников (NPC или других игроков, которые нас защищают)
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player ~= LocalPlayer then
-                        local defenderChar = player.Character
-                        if defenderChar and defenderChar:FindFirstChild("Humanoid") then
-                            local humanoid = defenderChar.Humanoid
-                            
-                            -- Проверяем, защищает ли нас этот NPC/игрок
-                            if humanoid:GetAttribute("IsProtecting") == LocalPlayer.Name then
-                                defenders[player] = defenderChar
-                                
-                                -- Настраиваем защитника для бесстолкновительной защиты
-                                setupDefender(defenderChar, player)
-                            end
-                        end
-                    end
-                end
-
-                -- 2. Мягкое удаление Ragdoll объектов
-                for _, child in ipairs(Character:GetChildren()) do
-                    if child.Name == "Ragdoll" then
-                        task.spawn(function()
-                            for i = 1, 10 do
-                                if child and child.Parent then
-                                    for _, part in pairs(child:GetChildren()) do
-                                        if part:IsA("BasePart") then
-                                            part.Transparency = part.Transparency + 0.1
-                                        end
-                                    end
-                                    task.wait(0.05)
-                                end
-                            end
-                            pcall(function() child:Destroy() end)
-                        end)
-                        
-                        Humanoid.PlatformStand = false
-                        Humanoid:ChangeState(Enum.HumanoidStateType.Running)
-                    end
-                end
-
-                -- 3. Удаляем только вредоносные папки
-                local harmfulFolders = {"RotateDisabled", "RagdollWakeupImmunity"}
-                for _, folderName in pairs(harmfulFolders) do
-                    local folder = Character:FindFirstChild(folderName)
-                    if folder then
-                        folder:Destroy()
-                    end
-                end
-
-                -- 4. Основная защита от толчков
-                for _, part in pairs(Character:GetChildren()) do
-                    if part:IsA("BasePart") then
-                        local currentVelocity = part.Velocity
-                        local horizontalSpeed = Vector3.new(currentVelocity.X, 0, currentVelocity.Z).Magnitude
-                        
-                        if horizontalSpeed > 50 and part ~= HumanoidRootPart then
-                            local newVelocity = Vector3.new(
-                                currentVelocity.X * 0.8,
-                                currentVelocity.Y,
-                                currentVelocity.Z * 0.8
-                            )
-                            part.Velocity = newVelocity
-                        end
-                        
-                        for _, force in pairs(part:GetChildren()) do
-                            if force:IsA("BodyForce") then
-                                local forceMagnitude = force.Force.Magnitude
-                                if forceMagnitude > 1000 then
-                                    force:Destroy()
-                                end
-                            elseif force:IsA("BodyVelocity") then
-                                if force.Velocity.Magnitude > 30 then
-                                    force:Destroy()
-                                end
-                            end
-                        end
-                    end
-                end
-                
-                -- 5. Защита корневого объекта
-                local playerInputVelocity = HumanoidRootPart.Velocity
-                local externalForces = {}
-                
-                for _, force in pairs(HumanoidRootPart:GetChildren()) do
-                    if force:IsA("BodyForce") or force:IsA("BodyVelocity") then
-                        table.insert(externalForces, force)
-                    end
-                end
-                
-                if #externalForces > 0 then
-                    local filteredVelocity = Vector3.new(
-                        playerInputVelocity.X,
-                        HumanoidRootPart.Velocity.Y,
-                        playerInputVelocity.Z
-                    )
-                    
-                    HumanoidRootPart.Velocity = filteredVelocity
-                    
-                    for _, force in pairs(externalForces) do
-                        task.spawn(function()
-                            if force:IsA("BodyVelocity") then
-                                for i = 1, 5 do
-                                    if force and force.Parent then
-                                        force.Velocity = force.Velocity * 0.5
-                                        task.wait(0.02)
-                                    end
-                                end
-                            end
-                            pcall(function() force:Destroy() end)
-                        end)
-                    end
-                end
-            end)
+        -- Выполняем сразу один раз
+        bypassRagdollFunction()
+        
+        -- Запускаем цикл проверки
+        if MainModule.Misc.RagdollData.AntiRagdollLoop then
+            task.cancel(MainModule.Misc.RagdollData.AntiRagdollLoop)
+        end
+        
+        MainModule.Misc.RagdollData.AntiRagdollLoop = task.spawn(function()
+            while MainModule.Misc.BypassRagdollEnabled do
+                bypassRagdollFunction()
+                task.wait(0.1)
+            end
         end)
         
-        -- Слушатель для мгновенного удаления новых Ragdoll объектов
+        -- Создаем соединение для мгновенного удаления новых Ragdoll объектов
         local char = LocalPlayer.Character
         if char then
-            char.ChildAdded:Connect(function(child)
+            if MainModule.Misc.RagdollData.RagdollBlockConn then
+                MainModule.Misc.RagdollData.RagdollBlockConn:Disconnect()
+            end
+            
+            MainModule.Misc.RagdollData.RagdollBlockConn = char.ChildAdded:Connect(function(child)
                 if child.Name == "Ragdoll" and MainModule.Misc.BypassRagdollEnabled then
                     task.wait(0.1)
                     pcall(function() child:Destroy() end)
@@ -363,23 +325,15 @@ function MainModule.ToggleBypassRagdoll(enabled)
             end)
         end
     else
-        -- При выключении очищаем слушатели и настройки защитников
-        for player, connections in pairs(defenderConnections) do
-            for _, conn in ipairs(connections) do
-                conn:Disconnect()
-            end
+        -- Отключаем все
+        if MainModule.Misc.RagdollData.AntiRagdollLoop then
+            task.cancel(MainModule.Misc.RagdollData.AntiRagdollLoop)
+            MainModule.Misc.RagdollData.AntiRagdollLoop = nil
         end
-        defenderConnections = {}
-        defenders = {}
         
-        local character = LocalPlayer.Character
-        if character then
-            local rootPart = character:FindFirstChild("HumanoidRootPart")
-            if rootPart then
-                for _, conn in pairs(getconnections(rootPart.ChildAdded)) do
-                    conn:Disconnect()
-                end
-            end
+        if MainModule.Misc.RagdollData.RagdollBlockConn then
+            MainModule.Misc.RagdollData.RagdollBlockConn:Disconnect()
+            MainModule.Misc.RagdollData.RagdollBlockConn = nil
         end
     end
 end
@@ -522,64 +476,160 @@ function MainModule.AssignDefender(player)
 end
 -- HNS System функции (исправлено)
 
--- Kill Aura (автоматическое убийство хайдеров)
+-- HNS Kill Aura функция (полностью исправлено)
 function MainModule.ToggleKillAura(enabled)
     MainModule.HNS.KillAuraEnabled = enabled
+    
+    -- Автоматически отключаем шипы при включении Kill Hiders
+    if enabled and MainModule.HNS.DisableSpikesEnabled then
+        MainModule.ToggleDisableSpikes(true)
+    end
     
     if hnsKillAuraConnection then
         hnsKillAuraConnection:Disconnect()
         hnsKillAuraConnection = nil
+        MainModule.HNS.CurrentTarget = nil
+        MainModule.HNS.TargetAttached = false
     end
     
     if enabled then
-        hnsKillAuraConnection = RunService.RenderStepped:Connect(function()
+        hnsKillAuraConnection = RunService.Heartbeat:Connect(function()
             if not MainModule.HNS.KillAuraEnabled then return end
             
-            pcall(function()
-                local character = LocalPlayer.Character
-                if not character or not character:FindFirstChild("HumanoidRootPart") then return end
-                
-                local HRP = character.HumanoidRootPart
-                local humanoid = character:FindFirstChildOfClass("Humanoid")
-                if not humanoid or humanoid.Health <= 0 then return end
-                
-                local targetPlayer = nil
-                local closestDistance = math.huge
-                
-                for _, player in ipairs(Players:GetPlayers()) do
-                    if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") 
-                       and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 
-                       and player:GetAttribute("IsHider") then
-                        
-                        local distance = (HRP.Position - player.Character.HumanoidRootPart.Position).Magnitude
-                        if distance < closestDistance then
-                            closestDistance = distance
-                            targetPlayer = player
-                        end
-                    end
+            local character = GetCharacter(LocalPlayer)
+            if not character or not GetRootPart(LocalPlayer) then return end
+            
+            local HRP = GetRootPart(LocalPlayer)
+            local humanoid = GetHumanoid(LocalPlayer)
+            if not humanoid or humanoid.Health <= 0 then return end
+            
+            -- Проверяем, есть ли у нас нож
+            if not playerHasKnife(LocalPlayer) then
+                if MainModule.HNS.CurrentTarget then
+                    MainModule.HNS.CurrentTarget = nil
+                    MainModule.HNS.TargetAttached = false
                 end
-                
-                if targetPlayer and targetPlayer.Character then
-                    local targetTorso = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-                        or targetPlayer.Character:FindFirstChild("UpperTorso")
-                        or targetPlayer.Character:FindFirstChild("Torso")
+                return
+            end
+            
+            -- Если у нас уже есть цель
+            if MainModule.HNS.CurrentTarget and MainModule.HNS.TargetAttached then
+                local targetChar = GetCharacter(MainModule.HNS.CurrentTarget)
+                if targetChar then
+                    local targetRoot = GetRootPart(MainModule.HNS.CurrentTarget)
+                    local targetHumanoid = GetHumanoid(MainModule.HNS.CurrentTarget)
                     
-                    if targetTorso then
-                        -- Телепортируемся перед целью
-                        local frontPos = targetTorso.CFrame * CFrame.new(0, 0, -2)
-                        HRP.CFrame = frontPos
+                    -- Проверяем, жива ли цель и является ли хайдером
+                    if targetRoot and targetHumanoid and targetHumanoid.Health > 0 and MainModule.HNS.CurrentTarget:GetAttribute("IsHider") then
+                        -- Статично прикрепляемся спереди от цели
+                        local attachCFrame = targetRoot.CFrame * MainModule.HNS.AttachOffset
+                        HRP.CFrame = attachCFrame
+                        HRP.Anchored = false -- Важно: не закрепляем, чтобы двигаться с целью
                         
-                        -- Поворачиваемся к цели
-                        local direction = (targetTorso.Position - HRP.Position).Unit
+                        -- Поворачиваемся лицом к цели
+                        local direction = (targetRoot.Position - HRP.Position).Unit
                         local lookVector = Vector3.new(direction.X, 0, direction.Z)
                         if lookVector.Magnitude > 0 then
                             HRP.CFrame = CFrame.new(HRP.Position, HRP.Position + lookVector)
                         end
+                        return
+                    else
+                        -- Цель умерла или больше не хайдер
+                        MainModule.HNS.CurrentTarget = nil
+                        MainModule.HNS.TargetAttached = false
+                    end
+                else
+                    MainModule.HNS.CurrentTarget = nil
+                    MainModule.HNS.TargetAttached = false
+                end
+            end
+            
+            -- Ищем новую цель в радиусе 300
+            local targetPlayer = nil
+            local closestDistance = math.huge
+            
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player:GetAttribute("IsHider") then
+                    local char = GetCharacter(player)
+                    if char then
+                        local root = GetRootPart(player)
+                        local hum = GetHumanoid(player)
+                        
+                        if root and hum and hum.Health > 0 then
+                            local distance = (HRP.Position - root.Position).Magnitude
+                            
+                            if distance <= 300 and distance < closestDistance then
+                                closestDistance = distance
+                                targetPlayer = player
+                            end
+                        end
                     end
                 end
-            end)
+            end
+            
+            -- Если нашли цель
+            if targetPlayer then
+                MainModule.HNS.CurrentTarget = targetPlayer
+                MainModule.HNS.TargetAttached = true
+                
+                -- Телепортируемся к цели
+                local targetRoot = GetRootPart(targetPlayer)
+                if targetRoot then
+                    local attachCFrame = targetRoot.CFrame * MainModule.HNS.AttachOffset
+                    HRP.CFrame = attachCFrame
+                    HRP.Anchored = false
+                    
+                    -- Поворачиваемся к цели
+                    local direction = (targetRoot.Position - HRP.Position).Unit
+                    local lookVector = Vector3.new(direction.X, 0, direction.Z)
+                    if lookVector.Magnitude > 0 then
+                        HRP.CFrame = CFrame.new(HRP.Position, HRP.Position + lookVector)
+                    end
+                end
+            end
         end)
+    else
+        MainModule.HNS.CurrentTarget = nil
+        MainModule.HNS.TargetAttached = false
+        
+        -- При отключении Kill Hiders возвращаем шипы если они были
+        if MainModule.HNS.DisableSpikesEnabled then
+            MainModule.ToggleDisableSpikes(false)
+        end
     end
+end
+
+-- Функция для проверки, есть ли у игрока нож (оптимизированная)
+local function playerHasKnife(player)
+    if not player then return false end
+    
+    -- Сначала проверяем в инвентаре (более вероятно)
+    local backpack = player:FindFirstChild("Backpack")
+    if backpack then
+        for _, tool in pairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") then
+                local toolName = tool.Name:lower()
+                if toolName:find("knife") or toolName:find("fork") or toolName:find("dagger") then
+                    return true
+                end
+            end
+        end
+    end
+    
+    -- Затем проверяем в руках
+    local char = GetCharacter(player)
+    if char then
+        for _, tool in pairs(char:GetChildren()) do
+            if tool:IsA("Tool") then
+                local toolName = tool.Name:lower()
+                if toolName:find("knife") or toolName:find("fork") or toolName:find("dagger") then
+                    return true
+                end
+            end
+        end
+    end
+    
+    return false
 end
 
 -- Kill Spikes (телепортация хайдеров к шипам)
@@ -699,6 +749,280 @@ function MainModule.ToggleKillSpikes(enabled)
     end
 end
 
+-- ESP System (полностью оптимизированный)
+MainModule.ESP = {
+    Enabled = false,
+    Players = {},
+    Objects = {},
+    Highlights = {},
+    Billboards = {},
+    Connections = {},
+    UpdateRate = 0.2, -- Увеличена частота обновления для плавности
+    LastUpdate = 0
+}
+
+-- Основная функция ESP
+function MainModule.ToggleESP(enabled)
+    MainModule.ESP.Enabled = enabled
+    
+    if MainModule.ESP.Connection then
+        MainModule.ESP.Connection:Disconnect()
+        MainModule.ESP.Connection = nil
+    end
+    
+    -- Очищаем все ESP объекты
+    MainModule.ClearESP()
+    
+    if enabled then
+        -- Создаем папку для ESP
+        if not MainModule.ESPFolder then
+            MainModule.ESPFolder = Instance.new("Folder")
+            MainModule.ESPFolder.Name = "CreonX_ESP"
+            MainModule.ESPFolder.Parent = CoreGui
+        end
+        
+        -- Основное соединение для обновления ESP
+        MainModule.ESP.Connection = RunService.RenderStepped:Connect(function(deltaTime)
+            if not MainModule.ESP.Enabled then return end
+            
+            MainModule.ESP.LastUpdate = MainModule.ESP.LastUpdate + deltaTime
+            if MainModule.ESP.LastUpdate < MainModule.ESP.UpdateRate then return end
+            MainModule.ESP.LastUpdate = 0
+            
+            MainModule.UpdateESP()
+        end)
+        
+        -- Инициализируем ESP для всех игроков
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                MainModule.AddPlayerESP(player)
+            end
+        end
+        
+        -- Слушатель для новых игроков
+        Players.PlayerAdded:Connect(function(player)
+            if MainModule.ESP.Enabled then
+                MainModule.AddPlayerESP(player)
+            end
+        end)
+        
+        -- Слушатель для ушедших игроков
+        Players.PlayerRemoving:Connect(function(player)
+            MainModule.RemovePlayerESP(player)
+        end)
+    else
+        -- Очищаем все ESP объекты
+        MainModule.ClearESP()
+    end
+end
+
+-- Функция добавления ESP для игрока
+function MainModule.AddPlayerESP(player)
+    if MainModule.ESP.Players[player] then return end
+    
+    local espData = {
+        Player = player,
+        Highlight = nil,
+        Billboard = nil,
+        Label = nil,
+        Connections = {}
+    }
+    
+    -- Функция создания ESP
+    local function createESP()
+        local character = GetCharacter(player)
+        if not character then return end
+        
+        local rootPart = GetRootPart(player)
+        if not rootPart then return end
+        
+        local humanoid = GetHumanoid(player)
+        if not humanoid or humanoid.Health <= 0 then return end
+        
+        -- Создаем Highlight
+        if not espData.Highlight then
+            espData.Highlight = Instance.new("Highlight")
+            espData.Highlight.Name = player.Name .. "_Highlight"
+            espData.Highlight.Adornee = character
+            espData.Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            espData.Highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+            espData.Highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+            espData.Highlight.Parent = MainModule.ESPFolder
+            
+            -- Устанавливаем цвет в зависимости от типа игрока
+            if player:GetAttribute("IsHider") then
+                espData.Highlight.FillColor = Color3.fromRGB(0, 255, 0) -- Зеленый для хайдеров
+                espData.Highlight.OutlineColor = Color3.fromRGB(0, 200, 0)
+            elseif player:GetAttribute("IsHunter") then
+                espData.Highlight.FillColor = Color3.fromRGB(255, 0, 0) -- Красный для сикеров
+                espData.Highlight.OutlineColor = Color3.fromRGB(200, 0, 0)
+            else
+                espData.Highlight.FillColor = Color3.fromRGB(0, 120, 255) -- Синий для остальных
+                espData.Highlight.OutlineColor = Color3.fromRGB(0, 100, 200)
+            end
+        end
+        
+        -- Создаем BillboardGui
+        if not espData.Billboard then
+            espData.Billboard = Instance.new("BillboardGui")
+            espData.Billboard.Name = player.Name .. "_Billboard"
+            espData.Billboard.Adornee = rootPart
+            espData.Billboard.Size = UDim2.new(0, 200, 0, 50)
+            espData.Billboard.StudsOffset = Vector3.new(0, 3.5, 0)
+            espData.Billboard.AlwaysOnTop = true
+            espData.Billboard.MaxDistance = 1000
+            espData.Billboard.Parent = MainModule.ESPFolder
+            
+            espData.Label = Instance.new("TextLabel")
+            espData.Label.Name = "TextLabel"
+            espData.Label.Size = UDim2.new(1, 0, 1, 0)
+            espData.Label.BackgroundTransparency = 1
+            espData.Label.TextStrokeTransparency = 0.5
+            espData.Label.TextStrokeColor3 = Color3.new(0, 0, 0)
+            espData.Label.Font = Enum.Font.GothamBold
+            espData.Label.TextSize = MainModule.Misc.ESPTextSize
+            espData.Label.Parent = espData.Billboard
+        end
+        
+        -- Обновляем текст
+        if espData.Label then
+            local distance = ""
+            if MainModule.Misc.ESPDistance then
+                local localRoot = GetRootPart(LocalPlayer)
+                if localRoot then
+                    distance = string.format("[%dm]", math.floor((rootPart.Position - localRoot.Position).Magnitude))
+                end
+            end
+            
+            local healthText = string.format("HP: %d/%d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
+            local nameText = player.DisplayName or player.Name
+            local roleText = ""
+            
+            if player:GetAttribute("IsHider") then
+                roleText = " (Hider)"
+            elseif player:GetAttribute("IsHunter") then
+                roleText = " (Seeker)"
+            end
+            
+            espData.Label.Text = string.format("%s%s\n%s %s", nameText, roleText, healthText, distance)
+            
+            -- Устанавливаем цвет текста в зависимости от здоровья
+            local healthPercent = humanoid.Health / humanoid.MaxHealth
+            if healthPercent > 0.7 then
+                espData.Label.TextColor3 = Color3.fromRGB(0, 255, 0)
+            elseif healthPercent > 0.3 then
+                espData.Label.TextColor3 = Color3.fromRGB(255, 255, 0)
+            else
+                espData.Label.TextColor3 = Color3.fromRGB(255, 0, 0)
+            end
+        end
+    end
+    
+    -- Соединение для отслеживания появления персонажа
+    espData.Connections.CharacterAdded = player.CharacterAdded:Connect(function(character)
+        task.wait(0.5) -- Даем время на загрузку персонажа
+        createESP()
+    end)
+    
+    -- Соединение для отслеживания здоровья
+    local character = GetCharacter(player)
+    if character then
+        local humanoid = GetHumanoid(player)
+        if humanoid then
+            espData.Connections.HealthChanged = humanoid.HealthChanged:Connect(function()
+                if espData.Label then
+                    createESP() -- Обновляем ESP
+                end
+            end)
+        end
+    end
+    
+    -- Создаем ESP если персонаж уже есть
+    if GetCharacter(player) then
+        createESP()
+    end
+    
+    MainModule.ESP.Players[player] = espData
+end
+
+-- Функция удаления ESP игрока
+function MainModule.RemovePlayerESP(player)
+    local espData = MainModule.ESP.Players[player]
+    if not espData then return end
+    
+    -- Отключаем все соединения
+    for _, conn in pairs(espData.Connections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    
+    -- Удаляем визуальные элементы
+    if espData.Highlight then
+        espData.Highlight:Destroy()
+    end
+    if espData.Billboard then
+        espData.Billboard:Destroy()
+    end
+    
+    MainModule.ESP.Players[player] = nil
+end
+
+-- Функция обновления ESP
+function MainModule.UpdateESP()
+    if not MainModule.ESP.Enabled then return end
+    
+    for player, espData in pairs(MainModule.ESP.Players) do
+        if player and player.Parent then
+            local character = GetCharacter(player)
+            local humanoid = GetHumanoid(player)
+            
+            if character and humanoid and humanoid.Health > 0 then
+                local rootPart = GetRootPart(player)
+                
+                if espData.Highlight then
+                    espData.Highlight.Adornee = character
+                    espData.Highlight.Enabled = MainModule.Misc.ESPHighlight
+                    espData.Highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+                    espData.Highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+                end
+                
+                if espData.Billboard and rootPart then
+                    espData.Billboard.Adornee = rootPart
+                    espData.Billboard.Enabled = MainModule.Misc.ESPNames
+                    
+                    if espData.Label then
+                        espData.Label.TextSize = MainModule.Misc.ESPTextSize
+                    end
+                end
+            else
+                -- Игрок умер или нет персонажа
+                if espData.Highlight then
+                    espData.Highlight.Enabled = false
+                end
+                if espData.Billboard then
+                    espData.Billboard.Enabled = false
+                end
+            end
+        else
+            -- Игрок вышел из игры
+            MainModule.RemovePlayerESP(player)
+        end
+    end
+end
+
+-- Функция очистки всего ESP
+function MainModule.ClearESP()
+    for player, espData in pairs(MainModule.ESP.Players) do
+        MainModule.RemovePlayerESP(player)
+    end
+    
+    MainModule.ESP.Players = {}
+    
+    if MainModule.ESPFolder then
+        MainModule.ESPFolder:Destroy()
+        MainModule.ESPFolder = nil
+    end
+end
+
 -- Disable/Remove Spikes
 function MainModule.ToggleDisableSpikes(enabled)
     MainModule.HNS.DisableSpikesEnabled = enabled
@@ -756,129 +1080,118 @@ function MainModule.TeleportToHider()
     end)
 end
 
--- Auto Dodge функция (исправлено)
+-- Новый AutoDodge System (на основе кода Anti Ragdoll)
 function MainModule.ToggleAutoDodge(enabled)
-    MainModule.HNS.AutoDodgeEnabled = enabled
+    MainModule.AutoDodge.Enabled = enabled
     
-    if hnsAutoDodgeConnection then
-        hnsAutoDodgeConnection:Disconnect()
-        hnsAutoDodgeConnection = nil
+    if MainModule.AutoDodge.Connection then
+        MainModule.AutoDodge.Connection:Disconnect()
+        MainModule.AutoDodge.Connection = nil
     end
     
     if enabled then
-        -- Создаем хитбокс для детекции
-        local dodgeHitbox = Instance.new("Part")
-        dodgeHitbox.Name = "AutoDodgeHitbox"
-        dodgeHitbox.Size = Vector3.new(MainModule.HNS.DodgeRange * 2, 10, MainModule.HNS.DodgeRange * 2)
-        dodgeHitbox.CFrame = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and 
-                             LocalPlayer.Character.HumanoidRootPart.CFrame or CFrame.new(0, 0, 0)
-        dodgeHitbox.Anchored = true
-        dodgeHitbox.CanCollide = false
-        dodgeHitbox.Transparency = 1
-        dodgeHitbox.Parent = Workspace
-        
-        hnsAutoDodgeConnection = RunService.Heartbeat:Connect(function()
-            if not MainModule.HNS.AutoDodgeEnabled then return end
+        MainModule.AutoDodge.Connection = RunService.Heartbeat:Connect(function()
+            if not MainModule.AutoDodge.Enabled then return end
             
             local currentTime = tick()
-            if currentTime - MainModule.HNS.LastDodgeTime < MainModule.HNS.DodgeCooldown then return end
+            if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then return end
             
-            pcall(function()
-                local character = LocalPlayer.Character
-                if not character then return end
-                
-                local rootPart = character:FindFirstChild("HumanoidRootPart")
-                local humanoid = character:FindFirstChildOfClass("Humanoid")
-                
-                if not rootPart or not humanoid or humanoid.Health <= 0 then return end
-                
-                -- Обновляем позицию хитбокса
-                dodgeHitbox.CFrame = rootPart.CFrame
-                
-                -- Проверяем, вошел ли в хитбокс игрок с ножом
-                local shouldDodge = false
-                local knifePlayer = nil
-                
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player ~= LocalPlayer and player.Character then
-                        local targetCharacter = player.Character
-                        local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
-                        
-                        if targetRoot and playerHasKnife(player) then
-                            -- Проверяем, находится ли игрок в хитбоксе
-                            local distance = (rootPart.Position - targetRoot.Position).Magnitude
-                            if distance <= MainModule.HNS.DodgeRange then
+            local character = GetCharacter(LocalPlayer)
+            if not character then return end
+            
+            local rootPart = GetRootPart(LocalPlayer)
+            local humanoid = GetHumanoid(LocalPlayer)
+            
+            if not rootPart or not humanoid or humanoid.Health <= 0 then return end
+            
+            -- Проверяем, есть ли у нас нож
+            if not playerHasKnife(LocalPlayer) then return end
+            
+            -- Проверяем, есть ли физическое воздействие рядом
+            local shouldDodge = false
+            
+            -- Проверка других игроков с оружием
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    local otherChar = GetCharacter(player)
+                    if otherChar then
+                        local otherRoot = GetRootPart(player)
+                        if otherRoot then
+                            local distance = (rootPart.Position - otherRoot.Position).Magnitude
+                            
+                            -- Если игрок близко и у него есть нож
+                            if distance <= MainModule.AutoDodge.DetectionRange and playerHasKnife(player) then
+                                -- Проверяем, направлен ли он к нам
+                                local directionToUs = (rootPart.Position - otherRoot.Position).Unit
+                                local otherLook = otherRoot.CFrame.LookVector
+                                
+                                local dotProduct = directionToUs:Dot(otherLook)
+                                if dotProduct > 0.7 then -- Смотрит в нашу сторону
+                                    shouldDodge = true
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            
+            -- Проверка физических сил на нашем персонаже
+            if not shouldDodge then
+                for _, part in pairs(character:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        for _, force in pairs(part:GetChildren()) do
+                            if (force:IsA("BodyVelocity") and force.Velocity.Magnitude > 25) or
+                               (force:IsA("BodyForce") and force.Force.Magnitude > 500) then
                                 shouldDodge = true
-                                knifePlayer = player
                                 break
                             end
                         end
+                        if shouldDodge then break end
                     end
                 end
-                
-                -- Дополнительно проверяем создание нового хитбокса
-                for _, part in pairs(Workspace:GetDescendants()) do
-                    if part:IsA("BasePart") and part.Name ~= "AutoDodgeHitbox" then
-                        local distance = (rootPart.Position - part.Position).Magnitude
-                        if distance <= MainModule.HNS.DodgeRange then
-                            shouldDodge = true
-                            break
-                        end
-                    end
-                end
-                
-                if shouldDodge then
-                    -- Используем слот 1 для доджа
+            end
+            
+            -- Если нужно доджить
+            if shouldDodge then
+                -- Используем додж (кнопка 1)
+                pcall(function()
                     if UserInputService.TouchEnabled then
-                        -- Для мобильных: симулируем нажатие на слот 1
-                        pcall(function()
-                            local backpack = LocalPlayer:FindFirstChild("Backpack")
-                            if backpack then
-                                local tool = backpack:FindFirstChildOfClass("Tool")
-                                if tool then
-                                    tool.Parent = character
-                                    task.wait(0.1)
-                                    tool.Parent = backpack
-                                end
+                        -- Мобильная версия: симулируем использование слота 1
+                        local backpack = LocalPlayer:FindFirstChild("Backpack")
+                        if backpack then
+                            local tool = backpack:FindFirstChildOfClass("Tool")
+                            if tool then
+                                tool.Parent = character
+                                task.wait(0.05)
+                                tool.Parent = backpack
                             end
-                        end)
+                        end
                     else
-                        -- Для ПК: нажимаем клавишу 1
-                        pcall(function()
-                            game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.One, false, game)
-                            task.wait(0.05)
-                            game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.One, false, game)
-                        end)
+                        -- ПК версия: симулируем нажатие клавиши 1
+                        local virtualInputManager = game:GetService("VirtualInputManager")
+                        virtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+                        task.wait(0.05)
+                        virtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game)
                     end
-                    
-                    MainModule.HNS.LastDodgeTime = tick()
-                    
-                    -- Визуальная обратная связь
-                    local feedback = Instance.new("Part")
-                    feedback.Size = Vector3.new(5, 0.2, 5)
-                    feedback.Position = rootPart.Position - Vector3.new(0, 3, 0)
-                    feedback.Color = Color3.fromRGB(255, 255, 0)
-                    feedback.Material = Enum.Material.Neon
-                    feedback.Anchored = true
-                    feedback.CanCollide = false
-                    feedback.Transparency = 0.7
-                    feedback.Parent = Workspace
-                    
-                    game:GetService("Debris"):AddItem(feedback, 0.3)
-                end
-            end)
+                end)
+                
+                MainModule.AutoDodge.LastDodgeTime = tick()
+                
+                -- Визуальная обратная связь
+                local effect = Instance.new("Part")
+                effect.Size = Vector3.new(5, 0.1, 5)
+                effect.Position = rootPart.Position - Vector3.new(0, 3, 0)
+                effect.Color = Color3.fromRGB(255, 255, 0)
+                effect.Material = Enum.Material.Neon
+                effect.Anchored = true
+                effect.CanCollide = false
+                effect.Transparency = 0.7
+                effect.Parent = Workspace
+                
+                game:GetService("Debris"):AddItem(effect, 0.3)
+            end
         end)
-        
-        -- Очистка хитбокса при выключении
-        game:GetService("Players").LocalPlayer.CharacterRemoving:Connect(function()
-            SafeDestroy(dodgeHitbox)
-        end)
-    else
-        -- Удаляем хитбокс
-        local hitbox = Workspace:FindFirstChild("AutoDodgeHitbox")
-        if hitbox then
-            SafeDestroy(hitbox)
-        end
     end
 end
 
@@ -1257,81 +1570,98 @@ function MainModule.TeleportToStart()
     end
 end
 
+-- RLGL функции (исправлено)
 function MainModule.ToggleGodMode(enabled)
     MainModule.RLGL.GodMode = enabled
-    MainModule.RLGL.TeleportOnDamage = false
     
-    if godModeConnection then
-        godModeConnection:Disconnect()
-        godModeConnection = nil
-        if MainModule.RLGL.GodModeTimeout then
-            MainModule.RLGL.GodModeTimeout:Disconnect()
-            MainModule.RLGL.GodModeTimeout = nil
-        end
+    if MainModule.RLGL.GodModeTimeout then
+        MainModule.RLGL.GodModeTimeout:Disconnect()
+        MainModule.RLGL.GodModeTimeout = nil
     end
     
     if enabled then
-        local character = LocalPlayer.Character
-        if character and character:FindFirstChild("HumanoidRootPart") then
-            MainModule.RLGL.OriginalHeight = character.HumanoidRootPart.Position.Y
-            -- Поднимаемся на высоту GodMode
-            local currentPos = character.HumanoidRootPart.Position
-            character.HumanoidRootPart.CFrame = CFrame.new(currentPos.X, 1184.9, currentPos.Z)
+        -- Сохраняем текущее здоровье при включении
+        local char = GetCharacter(LocalPlayer)
+        if char then
+            local humanoid = GetHumanoid(LocalPlayer)
+            if humanoid then
+                MainModule.RLGL.LastHealth = humanoid.Health
+            end
         end
         
-        godModeConnection = RunService.Heartbeat:Connect(function()
+        -- Поднимаемся на высоту GodMode
+        local char = GetCharacter(LocalPlayer)
+        if char and GetRootPart(LocalPlayer) then
+            local rootPart = GetRootPart(LocalPlayer)
+            local currentPos = rootPart.Position
+            rootPart.CFrame = CFrame.new(currentPos.X, 1184.9, currentPos.Z)
+        end
+        
+        -- Создаем соединение для проверки урона ТОЛЬКО в режиме GodMode
+        MainModule.RLGL.GodModeTimeout = RunService.Heartbeat:Connect(function()
             if not MainModule.RLGL.GodMode then return end
             
-            local currentTime = tick()
-            if currentTime - MainModule.RLGL.LastDamageCheck < MainModule.RLGL.DamageCheckRate then return end
-            MainModule.RLGL.LastDamageCheck = currentTime
+            local char = GetCharacter(LocalPlayer)
+            if not char then return end
             
-            local character = LocalPlayer.Character
-            if not character then return end
+            local humanoid = GetHumanoid(LocalPlayer)
+            local rootPart = GetRootPart(LocalPlayer)
             
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            if not humanoid then return end
+            if not humanoid or not rootPart then return end
             
-            -- Проверяем, получили ли мы урон
-            if humanoid.Health < humanoid.MaxHealth then
-                -- Запоминаем, что нужно отключить GodMode
-                MainModule.RLGL.TeleportOnDamage = true
+            -- Проверяем, получили ли мы урон (сравниваем с сохраненным здоровьем)
+            local currentHealth = humanoid.Health
+            
+            if currentHealth < MainModule.RLGL.LastHealth then
+                -- Получили урон В РЕЖИМЕ GodMode - телепортируем на указанные координаты
+                rootPart.CFrame = CFrame.new(186.7, 54.3, -100.6)
                 
-                -- Телепортируем на указанные координаты
-                character.HumanoidRootPart.CFrame = CFrame.new(-856, 1184, -550)
+                -- Восстанавливаем здоровье
                 humanoid.Health = humanoid.MaxHealth
                 
-                -- Отключаем GodMode
-                task.wait(0.5)
+                -- Отключаем GodMode после телепортации
+                task.wait(0.1)
                 MainModule.ToggleGodMode(false)
-            else
-                -- Поддерживаем высоту GodMode
-                local rootPart = character:FindFirstChild("HumanoidRootPart")
-                if rootPart and rootPart.Position.Y < 1100 then
-                    local currentPos = rootPart.Position
-                    rootPart.CFrame = CFrame.new(currentPos.X, 1184.9, currentPos.Z)
-                end
+                return
+            end
+            
+            -- Обновляем последнее известное здоровье
+            MainModule.RLGL.LastHealth = currentHealth
+            
+            -- Поддерживаем высоту GodMode
+            if rootPart.Position.Y < 1100 then
+                local currentPos = rootPart.Position
+                rootPart.CFrame = CFrame.new(currentPos.X, 1184.9, currentPos.Z)
             end
         end)
     else
-        -- Только если это не выключение из-за урона
-        if not MainModule.RLGL.TeleportOnDamage then
-            local character = LocalPlayer.Character
-            if character and character:FindFirstChild("HumanoidRootPart") and MainModule.RLGL.OriginalHeight then
-                local currentPos = character.HumanoidRootPart.Position
-                character.HumanoidRootPart.CFrame = CFrame.new(currentPos.X, MainModule.RLGL.OriginalHeight, currentPos.Z)
-            end
+        -- Возвращаем на нормальную высоту
+        local char = GetCharacter(LocalPlayer)
+        if char and GetRootPart(LocalPlayer) then
+            local rootPart = GetRootPart(LocalPlayer)
+            local currentPos = rootPart.Position
+            rootPart.CFrame = CFrame.new(currentPos.X, 100, currentPos.Z)
         end
-        MainModule.RLGL.TeleportOnDamage = false
     end
 end
 
--- Guards функции
+-- Guards функции (исправлено - убран Z-Index)
 function MainModule.SetGuardType(guardType)
+    -- Очищаем предыдущие значения и устанавливаем новый
     MainModule.Guards.SelectedGuard = guardType
+    
+    -- Проверяем, что тип корректный
+    local validTypes = {"Circle", "Triangle", "Square"}
+    if not table.find(validTypes, guardType) then
+        MainModule.Guards.SelectedGuard = "Circle"
+    end
 end
 
 function MainModule.SpawnAsGuard()
+    if not MainModule.Guards.SelectedGuard then
+        MainModule.Guards.SelectedGuard = "Circle"
+    end
+    
     local args = {
         {
             AttemptToSpawnAsGuard = MainModule.Guards.SelectedGuard
@@ -1796,3 +2126,4 @@ game:GetService("Players").LocalPlayer:GetPropertyChangedSignal("Parent"):Connec
 end)
 
 return MainModule
+
