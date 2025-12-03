@@ -11,6 +11,7 @@ local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 local Debris = game:GetService("Debris")
+local TeleportService = game:GetService("TeleportService")
 
 -- Локальный игрок
 local LocalPlayer = Players.LocalPlayer
@@ -34,7 +35,12 @@ MainModule.AutoQTE = {
 }
 
 MainModule.Rebel = {
-    Enabled = false
+    Enabled = false,
+    Connection = nil,
+    LastKillTime = 0,
+    KillCooldown = 0.1,
+    LastCheckTime = 0,
+    CheckCooldown = 0.5
 }
 
 -- RLGL System
@@ -315,6 +321,148 @@ local function GetSafePositionAbove(currentPosition, height)
     end
 end
 
+-- Функция для получения оружия игрока
+local function GetPlayerGun()
+    local character = GetCharacter()
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    
+    if character then
+        for _, tool in pairs(character:GetChildren()) do
+            if tool:IsA("Tool") and tool:GetAttribute("Gun") then
+                return tool
+            end
+        end
+    end
+    
+    if backpack then
+        for _, tool in pairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") and tool:GetAttribute("Gun") then
+                return tool
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- Функция для получения врагов (NPC с тегом "Enemy")
+local function GetEnemies()
+    local enemies = {}
+    local liveFolder = Workspace:FindFirstChild("Live")
+    
+    if not liveFolder then return enemies end
+    
+    for _, model in pairs(liveFolder:GetChildren()) do
+        if model:IsA("Model") then
+            local enemyTag = model:FindFirstChild("Enemy")
+            local deadTag = model:FindFirstChild("Dead")
+            
+            if enemyTag and not deadTag then
+                -- Проверяем, что это не игрок
+                local isPlayer = false
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player.Name == model.Name then
+                        isPlayer = true
+                        break
+                    end
+                end
+                
+                if not isPlayer then
+                    table.insert(enemies, model.Name)
+                    if #enemies >= 5 then
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    return enemies
+end
+
+-- Функция для мгновенного убийства врага
+local function KillEnemy(enemyName)
+    pcall(function()
+        local liveFolder = Workspace:FindFirstChild("Live")
+        if not liveFolder then return end
+        
+        local enemy = liveFolder:FindFirstChild(enemyName)
+        if not enemy then return end
+        
+        local enemyTag = enemy:FindFirstChild("Enemy")
+        local deadTag = enemy:FindFirstChild("Dead")
+        
+        if not enemyTag or deadTag then return end
+        
+        local gun = GetPlayerGun()
+        if not gun then return end
+        
+        local args = {
+            gun,
+            {
+                ["ClientRayNormal"] = Vector3.new(-1.1920928955078125e-7, 1.0000001192092896, 0),
+                ["FiredGun"] = true,
+                ["SecondaryHitTargets"] = {},
+                ["ClientRayInstance"] = Workspace:WaitForChild("StairWalkWay"):WaitForChild("Part"),
+                ["ClientRayPosition"] = Vector3.new(-220.17489624023438, 183.2957763671875, 301.07257080078125),
+                ["bulletCF"] = CFrame.new(-220.5039825439453, 185.22506713867188, 302.133544921875, 0.9551116228103638, 0.2567310333251953, -0.14782091975212097, 7.450581485102248e-9, 0.4989798665046692, 0.8666135668754578, 0.2962462604045868, -0.8277127146720886, 0.4765814542770386),
+                ["HitTargets"] = {
+                    [enemyName] = "Head"
+                },
+                ["bulletSizeC"] = Vector3.new(0.009999999776482582, 0.009999999776482582, 4.452499866485596),
+                ["NoMuzzleFX"] = false,
+                ["FirePosition"] = Vector3.new(-72.88850402832031, -679.4803466796875, -173.31005859375)
+            }
+        }
+        
+        local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("FiredGunClient")
+        remote:FireServer(unpack(args))
+    end)
+end
+
+-- Instant REBEL функция (исправленная и безопасная)
+function MainModule.ToggleRebel(enabled)
+    MainModule.Rebel.Enabled = enabled
+    
+    if MainModule.Rebel.Connection then
+        MainModule.Rebel.Connection:Disconnect()
+        MainModule.Rebel.Connection = nil
+    end
+    
+    if enabled then
+        MainModule.Rebel.Connection = RunService.Heartbeat:Connect(function()
+            if not MainModule.Rebel.Enabled then return end
+            
+            local currentTime = tick()
+            
+            -- Проверяем кулдаун проверки врагов
+            if currentTime - MainModule.Rebel.LastCheckTime < MainModule.Rebel.CheckCooldown then return end
+            MainModule.Rebel.LastCheckTime = currentTime
+            
+            -- Получаем список врагов
+            local enemies = GetEnemies()
+            if #enemies == 0 then return end
+            
+            -- Убиваем каждого врага с кулдауном
+            for _, enemyName in pairs(enemies) do
+                if currentTime - MainModule.Rebel.LastKillTime < MainModule.Rebel.KillCooldown then
+                    task.wait(MainModule.Rebel.KillCooldown)
+                end
+                
+                KillEnemy(enemyName)
+                MainModule.Rebel.LastKillTime = tick()
+                
+                -- Небольшая задержка между убийствами
+                task.wait(0.05)
+            end
+        end)
+    else
+        -- Сбрасываем время
+        MainModule.Rebel.LastKillTime = 0
+        MainModule.Rebel.LastCheckTime = 0
+    end
+end
+
 -- Исправленный GodMode для RLGL с моментальной телепортацией
 function MainModule.ToggleGodMode(enabled)
     MainModule.RLGL.GodMode = enabled
@@ -415,7 +563,7 @@ function MainModule.TeleportToStart()
     SafeTeleport(MainModule.RLGL.StartPosition)
 end
 
--- Новый AutoDodge (только при физическом контакте с игроком, у которого есть нож)
+-- Исправленный AutoDodge с кулдауном 1 секунда и защитой от крашей
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.HNS.AutoDodgeEnabled = enabled
     
@@ -428,6 +576,10 @@ function MainModule.ToggleAutoDodge(enabled)
         MainModule.HNS.Connections.AutoDodge = RunService.Heartbeat:Connect(function()
             if not MainModule.HNS.AutoDodgeEnabled then return end
             
+            -- Проверяем кулдаун
+            local currentTime = tick()
+            if currentTime - MainModule.HNS.LastDodgeTime < MainModule.HNS.DodgeCooldown then return end
+            
             pcall(function()
                 local character = GetCharacter()
                 if not character then return end
@@ -437,12 +589,9 @@ function MainModule.ToggleAutoDodge(enabled)
                 
                 if not (humanoid and rootPart) then return end
                 
-                -- Проверяем кулдаун
-                local currentTime = tick()
-                if currentTime - MainModule.HNS.LastDodgeTime < MainModule.HNS.DodgeCooldown then return end
-                
                 -- Проверяем наличие игроков с ножами вблизи
                 local shouldDodge = false
+                local dangerousPlayer = nil
                 
                 for _, player in pairs(Players:GetPlayers()) do
                     if player ~= LocalPlayer then
@@ -459,93 +608,70 @@ function MainModule.ToggleAutoDodge(enabled)
                                     
                                     -- Проверяем физический контакт (близкое расстояние)
                                     if distance < MainModule.HNS.PhysicalCheckRange then
-                                        -- Проверяем, пытается ли игрок атаковать нас
-                                        local raycastParams = RaycastParams.new()
-                                        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-                                        raycastParams.FilterDescendantsInstances = {character}
-                                        
-                                        local direction = (targetRoot.Position - rootPart.Position).Unit
-                                        local raycastResult = workspace:Raycast(
-                                            targetRoot.Position,
-                                            -direction * MainModule.HNS.PhysicalCheckRange,
-                                            raycastParams
-                                        )
-                                        
-                                        -- Если луч попал в нас - это физический контакт
-                                        if raycastResult and raycastResult.Instance:IsDescendantOf(character) then
-                                            shouldDodge = true
-                                            break
-                                        end
-                                        
-                                        -- Дополнительная проверка через области
-                                        for _, part in pairs(character:GetChildren()) do
-                                            if part:IsA("BasePart") then
-                                                for _, targetPart in pairs(targetChar:GetChildren()) do
-                                                    if targetPart:IsA("BasePart") then
-                                                        local partDistance = GetDistance(part.Position, targetPart.Position)
-                                                        if partDistance < 2 then
-                                                            shouldDodge = true
-                                                            break
-                                                        end
-                                                    end
-                                                end
-                                                if shouldDodge then break end
-                                            end
-                                        end
+                                        -- Простая проверка без сложных вычислений
+                                        shouldDodge = true
+                                        dangerousPlayer = player
+                                        break
                                     end
                                 end
                             end
                         end
-                        if shouldDodge then break end
                     end
+                    if shouldDodge then break end
                 end
                 
                 if shouldDodge then
                     MainModule.HNS.LastDodgeTime = currentTime
                     
-                    -- Активируем додж
-                    if UserInputService.TouchEnabled then
-                        -- Для мобильных устройств (используем слот 1)
+                    -- Защита от повторных срабатываний
+                    task.spawn(function()
+                        -- Активируем додж с защитой от ошибок
                         pcall(function()
-                            local backpack = LocalPlayer:FindFirstChild("Backpack")
-                            if backpack then
-                                -- Находим первый доступный тул
-                                for i = 1, 9 do
-                                    local toolName = tostring(i)
-                                    local tool = backpack:FindFirstChild(toolName) or backpack:FindFirstChildOfClass("Tool")
-                                    if tool then
-                                        tool.Parent = character
-                                        task.wait(0.1)
-                                        tool.Parent = backpack
-                                        break
+                            if UserInputService.TouchEnabled then
+                                -- Для мобильных устройств (используем слот 1)
+                                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                                if backpack then
+                                    -- Находим первый доступный тул
+                                    for i = 1, 9 do
+                                        local toolName = tostring(i)
+                                        local tool = backpack:FindFirstChild(toolName) or backpack:FindFirstChildOfClass("Tool")
+                                        if tool then
+                                            tool.Parent = character
+                                            task.wait(0.05)
+                                            tool.Parent = backpack
+                                            break
+                                        end
                                     end
                                 end
+                            else
+                                -- Для ПК (нажимаем клавишу 1)
+                                game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.One, false, game)
+                                task.wait(0.05)
+                                game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.One, false, game)
                             end
                         end)
-                    else
-                        -- Для ПК (нажимаем клавишу 1)
+                        
+                        -- Визуальная обратная связь
                         pcall(function()
-                            game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.One, false, game)
-                            task.wait(0.05)
-                            game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.One, false, game)
+                            local effect = Instance.new("Part")
+                            effect.Size = Vector3.new(5, 0.2, 5)
+                            effect.Position = rootPart.Position - Vector3.new(0, 3, 0)
+                            effect.Color = Color3.fromRGB(255, 255, 0)
+                            effect.Material = Enum.Material.Neon
+                            effect.Anchored = true
+                            effect.CanCollide = false
+                            effect.Transparency = 0.7
+                            effect.Parent = Workspace
+                            
+                            Debris:AddItem(effect, 0.3)
+                            
+                            -- Небольшой отскок
+                            rootPart.Velocity = rootPart.Velocity + Vector3.new(0, 20, 0)
                         end)
-                    end
+                    end)
                     
-                    -- Визуальная обратная связь
-                    local effect = Instance.new("Part")
-                    effect.Size = Vector3.new(5, 0.2, 5)
-                    effect.Position = rootPart.Position - Vector3.new(0, 3, 0)
-                    effect.Color = Color3.fromRGB(255, 255, 0)
-                    effect.Material = Enum.Material.Neon
-                    effect.Anchored = true
-                    effect.CanCollide = false
-                    effect.Transparency = 0.7
-                    effect.Parent = Workspace
-                    
-                    Debris:AddItem(effect, 0.3)
-                    
-                    -- Небольшой отскок
-                    rootPart.Velocity = rootPart.Velocity + Vector3.new(0, 20, 0)
+                    -- Добавляем дополнительную задержку для предотвращения спама
+                    task.wait(0.1)
                 end
             end)
         end)
@@ -1410,28 +1536,6 @@ function MainModule.ToggleAntiStunQTE(enabled)
     end
 end
 
--- Instant Rebel функция
-function MainModule.ToggleRebel(enabled)
-    MainModule.Rebel.Enabled = enabled
-    
-    if enabled then
-        task.spawn(function()
-            while MainModule.Rebel.Enabled do
-                pcall(function()
-                    local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PlayableGuardRemote")
-                    local args = {
-                        {
-                            AttemptToSpawnAsGuard = "Rebel"
-                        }
-                    }
-                    remote:FireServer(unpack(args))
-                end)
-                task.wait(0.1)
-            end
-        end)
-    end
-end
-
 -- Функция для установки типа Guard
 function MainModule.SetGuardType(guardType)
     if guardType == "Circle" then
@@ -1851,6 +1955,12 @@ function MainModule.Cleanup()
     if MainModule.RLGL.Connection then
         MainModule.RLGL.Connection:Disconnect()
         MainModule.RLGL.Connection = nil
+    end
+    
+    -- Отключаем REBEL
+    if MainModule.Rebel.Connection then
+        MainModule.Rebel.Connection:Disconnect()
+        MainModule.Rebel.Connection = nil
     end
     
     -- Отключаем HNS соединения
