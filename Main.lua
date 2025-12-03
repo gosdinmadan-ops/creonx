@@ -204,6 +204,7 @@ local function playerHasKnife(player)
     return false
 end
 
+-- Bypass Ragdoll функция (оптимизированная версия без лагов)
 function MainModule.ToggleBypassRagdoll(enabled)
     MainModule.Misc.BypassRagdollEnabled = enabled
     
@@ -213,236 +214,97 @@ function MainModule.ToggleBypassRagdoll(enabled)
     end
     
     if enabled then
-        -- ОПТИМИЗАЦИЯ: Переменные для управления частотой
-        local lastSteppedTime = 0
-        local checkInterval = 0.1  -- Проверка каждые 0.1 секунды вместо каждого кадра
-        local lastFullCheck = 0
-        local fullCheckInterval = 0.5
-        local cachedObjects = {}
+        local lastCheckTime = 0
+        local checkInterval = 0.1 -- 10 FPS
         
-        bypassRagdollConnection = RunService.Stepped:Connect(function(time)
-            -- ОПТИМИЗАЦИЯ: Пропускаем кадры для уменьшения нагрузки
-            if time - lastSteppedTime < checkInterval then return end
-            lastSteppedTime = time
-            
+        bypassRagdollConnection = RunService.Heartbeat:Connect(function(currentTime)
             if not MainModule.Misc.BypassRagdollEnabled then return end
+            if currentTime - lastCheckTime < checkInterval then return end
+            lastCheckTime = currentTime
             
             pcall(function()
                 local Character = LocalPlayer.Character
                 if not Character then return end
                 
-                -- ОПТИМИЗАЦИЯ: Кеширование объектов (ищем реже)
-                local shouldUpdateCache = (time - (cachedObjects.lastUpdate or 0)) > 0.3
-                if shouldUpdateCache then
-                    cachedObjects.Humanoid = Character:FindFirstChild("Humanoid")
-                    cachedObjects.HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-                    cachedObjects.Torso = Character:FindFirstChild("UpperTorso") or Character:FindFirstChild("Torso")
-                    cachedObjects.lastUpdate = time
-                end
-                
-                local Humanoid = cachedObjects.Humanoid
-                local HumanoidRootPart = cachedObjects.HumanoidRootPart
-                local Torso = cachedObjects.Torso
+                local Humanoid = Character:FindFirstChild("Humanoid")
+                local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+                local Torso = Character:FindFirstChild("UpperTorso") or Character:FindFirstChild("Torso")
                 
                 if not (Humanoid and HumanoidRootPart and Torso) then return end
 
-                -- 1. Мягкое удаление Ragdoll объектов
-                -- ОПТИМИЗАЦИЯ: Проверяем только если прошло время с последней проверки
-                if time - (cachedObjects.lastRagdollCheck or 0) > 0.2 then
-                    cachedObjects.lastRagdollCheck = time
-                    
-                    for _, child in ipairs(Character:GetChildren()) do
-                        if child.Name == "Ragdoll" then
-                            task.spawn(function()
-                                for i = 1, 10 do
-                                    if child and child.Parent then
-                                        for _, part in pairs(child:GetChildren()) do
-                                            if part:IsA("BasePart") then
-                                                part.Transparency = part.Transparency + 0.1
-                                            end
-                                        end
-                                        task.wait(0.05)
-                                    end
-                                end
-                                pcall(function() child:Destroy() end)
-                            end)
-                            
-                            Humanoid.PlatformStand = false
-                            Humanoid:ChangeState(Enum.HumanoidStateType.Running)
-                        end
+                -- 1. Быстрая проверка на Ragdoll
+                local ragdoll = Character:FindFirstChild("Ragdoll")
+                if ragdoll then
+                    -- Быстро уничтожаем Ragdoll без анимации
+                    ragdoll:Destroy()
+                    Humanoid.PlatformStand = false
+                    Humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                end
+
+                -- 2. Быстрое удаление вредоносных папок
+                local harmfulFolders = {"RotateDisabled", "RagdollWakeupImmunity"}
+                for _, folderName in pairs(harmfulFolders) do
+                    local folder = Character:FindFirstChild(folderName)
+                    if folder then
+                        folder:Destroy()
                     end
                 end
 
-                -- 2. Удаляем только вредоносные папки
-                -- ОПТИМИЗАЦИЯ: Проверяем реже
-                if math.random(1, 5) == 1 or time - (cachedObjects.lastFolderCheck or 0) > 1 then
-                    cachedObjects.lastFolderCheck = time
-                    local harmfulFolders = {"RotateDisabled", "RagdollWakeupImmunity"}
-                    for _, folderName in pairs(harmfulFolders) do
-                        local folder = Character:FindFirstChild(folderName)
-                        if folder then
-                            folder:Destroy()
-                        end
-                    end
-                end
-
-                -- 3. Сохраняем суставы
-                -- ОПТИМИЗАЦИЯ: Проверяем суставы только раз в секунду
-                if time - (cachedObjects.lastJointsCheck or 0) > 1 then
-                    cachedObjects.lastJointsCheck = time
-                    local joints = {"Left Hip", "Left Shoulder", "Neck", "Right Hip", "Right Shoulder"}
-                    for _, jointName in pairs(joints) do
-                        local motor = Torso:FindFirstChild(jointName)
-                        if motor and motor:IsA("Motor6D") then
-                            if not motor.Part0 then
-                                motor.Part0 = Torso
-                            end
-                            if motor.Part1 and motor.Part1:IsA("BasePart") then
-                                motor.Part1.CanCollide = true
+                -- 3. Нейтрализация толчков - упрощенная версия
+                for _, part in pairs(Character:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        -- Проверяем только BodyVelocity и BodyForce
+                        for _, force in pairs(part:GetChildren()) do
+                            if force:IsA("BodyForce") and force.Force.Magnitude > 500 then
+                                force:Destroy()
+                            elseif force:IsA("BodyVelocity") and force.Velocity.Magnitude > 20 then
+                                force:Destroy()
                             end
                         end
                     end
                 end
                 
-                -- 4. Нейтрализуем толчки в реальном времени
-                -- ОПТИМИЗАЦИЯ: Проверяем все части только при необходимости
-                local shouldCheckParts = false
-                if cachedObjects.lastVelocityCheck then
-                    local velocityChange = (HumanoidRootPart.Velocity - (cachedObjects.lastVelocity or Vector3.zero)).Magnitude
-                    shouldCheckParts = velocityChange > 5 or time - cachedObjects.lastVelocityCheck > 0.3
-                else
-                    shouldCheckParts = true
-                end
-                
-                if shouldCheckParts then
-                    cachedObjects.lastVelocity = HumanoidRootPart.Velocity
-                    cachedObjects.lastVelocityCheck = time
-                    
-                    for _, part in pairs(Character:GetChildren()) do
-                        if part:IsA("BasePart") then
-                            local currentVelocity = part.Velocity
-                            local horizontalSpeed = Vector3.new(currentVelocity.X, 0, currentVelocity.Z).Magnitude
-                            
-                            if horizontalSpeed > 50 and part ~= HumanoidRootPart then
-                                local newVelocity = Vector3.new(
-                                    currentVelocity.X * 0.8,
-                                    currentVelocity.Y,
-                                    currentVelocity.Z * 0.8
-                                )
-                                part.Velocity = newVelocity
-                            end
-                            
-                            -- ОПТИМИЗАЦИЯ: Проверяем силы только в 30% случаев
-                            if math.random(1, 3) == 1 then
-                                for _, force in pairs(part:GetChildren()) do
-                                    if force:IsA("BodyForce") then
-                                        local forceMagnitude = force.Force.Magnitude
-                                        if forceMagnitude > 1000 then
-                                            force:Destroy()
-                                        end
-                                    elseif force:IsA("BodyVelocity") then
-                                        if force.Velocity.Magnitude > 30 then
-                                            force:Destroy()
-                                        end
-                                    end
-                                end
-                            end
-                        end
+                -- 4. Обработка корневого объекта
+                local externalForces = {}
+                for _, force in pairs(HumanoidRootPart:GetChildren()) do
+                    if force:IsA("BodyForce") or force:IsA("BodyVelocity") then
+                        table.insert(externalForces, force)
                     end
                 end
                 
-                -- 5. Для корневого объекта
-                local playerInputVelocity = HumanoidRootPart.Velocity
-                
-                -- ОПТИМИЗАЦИЯ: Проверяем внешние силы только при резких изменениях
-                local shouldCheckForces = false
-                if cachedObjects.lastForceCheck then
-                    local speedChange = math.abs(playerInputVelocity.Magnitude - (cachedObjects.lastSpeed or 0))
-                    shouldCheckForces = speedChange > 10 or time - cachedObjects.lastForceCheck > 0.5
-                else
-                    shouldCheckForces = true
-                end
-                
-                if shouldCheckForces then
-                    cachedObjects.lastSpeed = playerInputVelocity.Magnitude
-                    cachedObjects.lastForceCheck = time
-                    
-                    local externalForces = {}
-                    for _, force in pairs(HumanoidRootPart:GetChildren()) do
-                        if force:IsA("BodyForce") or force:IsA("BodyVelocity") then
-                            table.insert(externalForces, force)
-                        end
+                if #externalForces > 0 then
+                    for _, force in pairs(externalForces) do
+                        force:Destroy()
                     end
-                    
-                    if #externalForces > 0 then
-                        local filteredVelocity = Vector3.new(
-                            playerInputVelocity.X,
-                            HumanoidRootPart.Velocity.Y,
-                            playerInputVelocity.Z
-                        )
-                        
-                        HumanoidRootPart.Velocity = filteredVelocity
-                        
-                        for _, force in pairs(externalForces) do
-                            task.spawn(function()
-                                if force:IsA("BodyVelocity") then
-                                    for i = 1, 5 do
-                                        if force and force.Parent then
-                                            force.Velocity = force.Velocity * 0.5
-                                            task.wait(0.02)
-                                        end
-                                    end
-                                end
-                                pcall(function() force:Destroy() end)
-                            end)
-                        end
-                    end
-                end
-                
-                -- 6. Защита от будущих толчков
-                -- ОПТИМИЗАЦИЯ: Добавляем слушатель только один раз
-                if not cachedObjects.childAddedListener then
-                    cachedObjects.childAddedListener = true
-                    HumanoidRootPart.ChildAdded:Connect(function(child)
-                        if MainModule.Misc.BypassRagdollEnabled and 
-                           (child:IsA("BodyForce") or child:IsA("BodyVelocity")) then
-                            task.wait(0.01)
-                            pcall(function() child:Destroy() end)
-                        end
-                    end)
                 end
             end)
         end)
         
-        -- 7. Слушатель для мгновенного удаления новых Ragdoll объектов
+        -- 5. Слушатель для мгновенного удаления новых Ragdoll объектов
         local char = LocalPlayer.Character
-        if char and not cachedObjects.charListenerAdded then
-            cachedObjects.charListenerAdded = true
-            char.ChildAdded:Connect(function(child)
+        if char then
+            local ragdollListener = char.ChildAdded:Connect(function(child)
                 if child.Name == "Ragdoll" and MainModule.Misc.BypassRagdollEnabled then
-                    task.wait(0.1)
-                    pcall(function() child:Destroy() end)
-                    
-                    local humanoid = char:FindFirstChild("Humanoid")
-                    if humanoid then
-                        humanoid.PlatformStand = false
-                        humanoid:ChangeState(Enum.HumanoidStateType.Running)
-                    end
+                    task.wait(0.05) -- Минимальная задержка для анимации
+                    pcall(function() 
+                        child:Destroy() 
+                        local humanoid = char:FindFirstChild("Humanoid")
+                        if humanoid then
+                            humanoid.PlatformStand = false
+                            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                        end
+                    end)
                 end
             end)
+            
+            -- Сохраняем для отключения
+            MainModule.Misc.RagdollListener = ragdollListener
         end
     else
-        -- ОПТИМИЗАЦИЯ: Очищаем кеш при выключении
-        cachedObjects = {}
-        
-        local character = LocalPlayer.Character
-        if character then
-            local rootPart = character:FindFirstChild("HumanoidRootPart")
-            if rootPart then
-                for _, conn in pairs(getconnections(rootPart.ChildAdded)) do
-                    conn:Disconnect()
-                end
-            end
+        -- При выключении очищаем все слушатели
+        if MainModule.Misc.RagdollListener then
+            MainModule.Misc.RagdollListener:Disconnect()
+            MainModule.Misc.RagdollListener = nil
         end
     end
 end
@@ -1722,3 +1584,4 @@ game:GetService("Players").LocalPlayer:GetPropertyChangedSignal("Parent"):Connec
 end)
 
 return MainModule
+
