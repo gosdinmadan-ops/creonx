@@ -203,8 +203,8 @@ local function playerHasKnife(player)
     
     return false
 end
-
--- Bypass Ragdoll функция (оптимизированная версия без лагов)
+вот запомни функцию
+-- Bypass Ragdoll функция (полностью исправлена без изменения физики)
 function MainModule.ToggleBypassRagdoll(enabled)
     MainModule.Misc.BypassRagdollEnabled = enabled
     
@@ -214,13 +214,8 @@ function MainModule.ToggleBypassRagdoll(enabled)
     end
     
     if enabled then
-        local lastCheckTime = 0
-        local checkInterval = 0.1 -- 10 FPS
-        
-        bypassRagdollConnection = RunService.Heartbeat:Connect(function(currentTime)
+        bypassRagdollConnection = RunService.Stepped:Connect(function()
             if not MainModule.Misc.BypassRagdollEnabled then return end
-            if currentTime - lastCheckTime < checkInterval then return end
-            lastCheckTime = currentTime
             
             pcall(function()
                 local Character = LocalPlayer.Character
@@ -232,16 +227,31 @@ function MainModule.ToggleBypassRagdoll(enabled)
                 
                 if not (Humanoid and HumanoidRootPart and Torso) then return end
 
-                -- 1. Быстрая проверка на Ragdoll
-                local ragdoll = Character:FindFirstChild("Ragdoll")
-                if ragdoll then
-                    -- Быстро уничтожаем Ragdoll без анимации
-                    ragdoll:Destroy()
-                    Humanoid.PlatformStand = false
-                    Humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                -- 1. Мягкое удаление Ragdoll объектов (не сразу, чтобы была анимация)
+                for _, child in ipairs(Character:GetChildren()) do
+                    if child.Name == "Ragdoll" then
+                        -- Медленно уничтожаем Ragdoll, но оставляем анимацию
+                        task.spawn(function()
+                            for i = 1, 10 do
+                                if child and child.Parent then
+                                    for _, part in pairs(child:GetChildren()) do
+                                        if part:IsA("BasePart") then
+                                            part.Transparency = part.Transparency + 0.1
+                                        end
+                                    end
+                                    task.wait(0.05)
+                                end
+                            end
+                            pcall(function() child:Destroy() end)
+                        end)
+                        
+                        -- Восстанавливаем контроль игрока
+                        Humanoid.PlatformStand = false
+                        Humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                    end
                 end
 
-                -- 2. Быстрое удаление вредоносных папок
+                -- 2. Удаляем только вредоносные папки
                 local harmfulFolders = {"RotateDisabled", "RagdollWakeupImmunity"}
                 for _, folderName in pairs(harmfulFolders) do
                     local folder = Character:FindFirstChild(folderName)
@@ -250,21 +260,61 @@ function MainModule.ToggleBypassRagdoll(enabled)
                     end
                 end
 
-                -- 3. Нейтрализация толчков - упрощенная версия
+                -- 3. Сохраняем суставы, но не трогаем их
+                local joints = {"Left Hip", "Left Shoulder", "Neck", "Right Hip", "Right Shoulder"}
+                for _, jointName in pairs(joints) do
+                    local motor = Torso:FindFirstChild(jointName)
+                    if motor and motor:IsA("Motor6D") then
+                        -- Просто убеждаемся, что суставы на месте
+                        if not motor.Part0 then
+                            motor.Part0 = Torso
+                        end
+                        if motor.Part1 and motor.Part1:IsA("BasePart") then
+                            motor.Part1.CanCollide = true
+                        end
+                    end
+                end
+                
+                -- 4. Основная магия: нейтрализуем толчки в реальном времени
+                -- Не меняем физические свойства, а просто нейтрализуем нежелательные силы
                 for _, part in pairs(Character:GetChildren()) do
                     if part:IsA("BasePart") then
-                        -- Проверяем только BodyVelocity и BodyForce
+                        -- Определяем, является ли эта сила "толчком" (слишком большая горизонтальная скорость)
+                        local currentVelocity = part.Velocity
+                        local horizontalSpeed = Vector3.new(currentVelocity.X, 0, currentVelocity.Z).Magnitude
+                        
+                        -- Если это похоже на толчок от Ragdoll или другого игрока
+                        if horizontalSpeed > 50 and part ~= HumanoidRootPart then
+                            -- Медленно уменьшаем нежелательную скорость
+                            local newVelocity = Vector3.new(
+                                currentVelocity.X * 0.8,
+                                currentVelocity.Y,  -- Вертикальную оставляем для прыжков
+                                currentVelocity.Z * 0.8
+                            )
+                            part.Velocity = newVelocity
+                        end
+                        
+                        -- Удаляем явные силы толчка
                         for _, force in pairs(part:GetChildren()) do
-                            if force:IsA("BodyForce") and force.Force.Magnitude > 500 then
-                                force:Destroy()
-                            elseif force:IsA("BodyVelocity") and force.Velocity.Magnitude > 20 then
-                                force:Destroy()
+                            if force:IsA("BodyForce") then
+                                local forceMagnitude = force.Force.Magnitude
+                                if forceMagnitude > 1000 then  -- Слишком большая сила = толчок
+                                    force:Destroy()
+                                end
+                            elseif force:IsA("BodyVelocity") then
+                                if force.Velocity.Magnitude > 30 then
+                                    force:Destroy()
+                                end
                             end
                         end
                     end
                 end
                 
-                -- 4. Обработка корневого объекта
+                -- 5. Для корневого объекта - особый подход
+                -- Сохраняем нашу преднамеренную скорость (от игрока)
+                local playerInputVelocity = HumanoidRootPart.Velocity
+                
+                -- Определяем, есть ли нежелательные толчки
                 local externalForces = {}
                 for _, force in pairs(HumanoidRootPart:GetChildren()) do
                     if force:IsA("BodyForce") or force:IsA("BodyVelocity") then
@@ -272,39 +322,72 @@ function MainModule.ToggleBypassRagdoll(enabled)
                     end
                 end
                 
+                -- Если найдены внешние силы, нейтрализуем их
                 if #externalForces > 0 then
+                    -- Сохраняем только вертикальную компоненту от внешних сил
+                    local filteredVelocity = Vector3.new(
+                        playerInputVelocity.X,  -- Горизонталь от игрока
+                        HumanoidRootPart.Velocity.Y,  -- Вертикаль оставляем
+                        playerInputVelocity.Z   -- Горизонталь от игрока
+                    )
+                    
+                    HumanoidRootPart.Velocity = filteredVelocity
+                    
+                    -- Мягко удаляем внешние силы
                     for _, force in pairs(externalForces) do
-                        force:Destroy()
+                        task.spawn(function()
+                            if force:IsA("BodyVelocity") then
+                                for i = 1, 5 do
+                                    if force and force.Parent then
+                                        force.Velocity = force.Velocity * 0.5
+                                        task.wait(0.02)
+                                    end
+                                end
+                            end
+                            pcall(function() force:Destroy() end)
+                        end)
                     end
                 end
+                
+                -- 6. Защита от будущих толчков через слушатель
+                HumanoidRootPart.ChildAdded:Connect(function(child)
+                    if MainModule.Misc.BypassRagdollEnabled and 
+                       (child:IsA("BodyForce") or child:IsA("BodyVelocity")) then
+                        task.wait(0.01)  -- Даем немного времени для применения
+                        pcall(function() child:Destroy() end)
+                    end
+                end)
             end)
         end)
         
-        -- 5. Слушатель для мгновенного удаления новых Ragdoll объектов
+        -- 7. Слушатель для мгновенного удаления новых Ragdoll объектов
         local char = LocalPlayer.Character
         if char then
-            local ragdollListener = char.ChildAdded:Connect(function(child)
+            char.ChildAdded:Connect(function(child)
                 if child.Name == "Ragdoll" and MainModule.Misc.BypassRagdollEnabled then
-                    task.wait(0.05) -- Минимальная задержка для анимации
-                    pcall(function() 
-                        child:Destroy() 
-                        local humanoid = char:FindFirstChild("Humanoid")
-                        if humanoid then
-                            humanoid.PlatformStand = false
-                            humanoid:ChangeState(Enum.HumanoidStateType.Running)
-                        end
-                    end)
+                    task.wait(0.1)  -- Даем время на визуальную анимацию падения
+                    pcall(function() child:Destroy() end)
+                    
+                    -- Восстанавливаем контроль
+                    local humanoid = char:FindFirstChild("Humanoid")
+                    if humanoid then
+                        humanoid.PlatformStand = false
+                        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                    end
                 end
             end)
-            
-            -- Сохраняем для отключения
-            MainModule.Misc.RagdollListener = ragdollListener
         end
     else
-        -- При выключении очищаем все слушатели
-        if MainModule.Misc.RagdollListener then
-            MainModule.Misc.RagdollListener:Disconnect()
-            MainModule.Misc.RagdollListener = nil
+        -- При выключении очищаем слушатели
+        local character = LocalPlayer.Character
+        if character then
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if rootPart then
+                -- Убираем все слушатели ChildAdded
+                for _, conn in pairs(getconnections(rootPart.ChildAdded)) do
+                    conn:Disconnect()
+                end
+            end
         end
     end
 end
@@ -1584,5 +1667,6 @@ game:GetService("Players").LocalPlayer:GetPropertyChangedSignal("Parent"):Connec
 end)
 
 return MainModule
+
 
 
