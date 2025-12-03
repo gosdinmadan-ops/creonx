@@ -203,7 +203,7 @@ local function playerHasKnife(player)
     
     return false
 end
-вот запомни функцию
+
 -- Bypass Ragdoll функция (полностью исправлена без изменения физики)
 function MainModule.ToggleBypassRagdoll(enabled)
     MainModule.Misc.BypassRagdollEnabled = enabled
@@ -1667,6 +1667,7 @@ game:GetService("Players").LocalPlayer:GetPropertyChangedSignal("Parent"):Connec
 end)
 
 return MainModule
+
 
 
 
