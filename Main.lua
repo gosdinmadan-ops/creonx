@@ -90,9 +90,14 @@ MainModule.HNS = {
     CurrentTargetName = nil,
     TargetDistance = 0,
     
+    AutoDodgeEnabled = false,
     LastDodgeTime = 0,
     DodgeCooldown = 1.0,
-    DodgeRange = 9, -- Изменил с 5 на 9
+    DodgeRange = 9,
+    Connections = {},
+    AttackDetectionThreshold = 0.3, -- Время между проверками атак
+    LastAttackCheck = 0,
+    ToolUsageHistory = {}
     
     SpikePositions = {},
     OriginalSpikeData = {},
@@ -2133,5 +2138,6 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
