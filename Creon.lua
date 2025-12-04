@@ -896,7 +896,7 @@ local function CreateDalgonaContent()
     end)
 end
 
--- HNS TAB (обновленная)
+-- HNS TAB
 local function CreateHNSContent()
     ClearContent()
     
@@ -911,12 +911,12 @@ local function CreateHNSContent()
     staminaToggle.LayoutOrder = 1
 end
 
--- GLASS BRIDGE TAB (обновленная)
+-- GLASS BRIDGE TAB (обновленная с кликабельными кнопками)
 local function CreateGlassBridgeContent()
     ClearContent()
     
-    -- Anti Glass Break + Anti Fall
-    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("Anti Glass Break + Anti Fall", MainModule.GlassBridge.AntiBreakEnabled, function(enabled)
+    -- AntiBreak (переключатель)
+    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("AntiBreak", MainModule.GlassBridge.AntiBreakEnabled, function(enabled)
         if MainModule.ToggleGlassBridgeAntiBreak then
             MainModule.ToggleGlassBridgeAntiBreak(enabled)
         else
@@ -925,17 +925,23 @@ local function CreateGlassBridgeContent()
     end)
     antiBreakToggle.LayoutOrder = 1
     
-    -- Anti Fall (универсальная платформа)
-    local antiFallToggle, updateAntiFallToggle = CreateToggle("Anti Fall Platform", MainModule.GlassBridge.AntiFallEnabled, function(enabled)
-        if MainModule.ToggleAntiFall then
-            MainModule.ToggleAntiFall(enabled)
-        else
-            MainModule.GlassBridge.AntiFallEnabled = enabled
+    -- AntiFall (кликабельная кнопка)
+    local antiFallBtn = CreateButton("AntiFall")
+    antiFallBtn.LayoutOrder = 2
+    antiFallBtn.MouseButton1Click:Connect(function()
+        if MainModule.CreateGlassBridgeAntiFall then
+            local platform = MainModule.CreateGlassBridgeAntiFall()
+            if platform then
+                antiFallBtn.Text = "AntiFall (Created)"
+                antiFallBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+                task.wait(1)
+                antiFallBtn.Text = "AntiFall"
+                antiFallBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+            end
         end
     end)
-    antiFallToggle.LayoutOrder = 2
     
-    -- Teleport to End
+    -- Teleport to End (кликабельная кнопка)
     local tpEndBtn = CreateButton("Teleport to End")
     tpEndBtn.LayoutOrder = 3
     tpEndBtn.MouseButton1Click:Connect(function()
@@ -944,10 +950,10 @@ local function CreateGlassBridgeContent()
         end
     end)
     
-    local instructionLabel = CreateButton("Anti Fall: Creates white platform")
-    instructionLabel.LayoutOrder = 4
-    instructionLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-    instructionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    local infoLabel = CreateButton("AntiBreak: Glass protection + auto AntiFall")
+    infoLabel.LayoutOrder = 4
+    infoLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    infoLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
 end
 
 -- TUG OF WAR TAB
@@ -964,62 +970,66 @@ local function CreateTugOfWarContent()
     autoPullToggle.LayoutOrder = 1
 end
 
--- JUMP ROPE TAB (обновленная)
+-- JUMP ROPE TAB (обновленная с кликабельными кнопками)
 local function CreateJumpRopeContent()
     ClearContent()
     
-    -- Teleport to End кнопка
+    -- Delete The Rope (кликабельная кнопка)
+    local deleteRopeBtn = CreateButton("Delete The Rope")
+    deleteRopeBtn.LayoutOrder = 1
+    deleteRopeBtn.MouseButton1Click:Connect(function()
+        if MainModule.DeleteJumpRope then
+            local success = MainModule.DeleteJumpRope()
+            if success then
+                deleteRopeBtn.Text = "Rope Deleted!"
+                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+                task.wait(1)
+                deleteRopeBtn.Text = "Delete The Rope"
+                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+            else
+                deleteRopeBtn.Text = "Rope Not Found"
+                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+                task.wait(1)
+                deleteRopeBtn.Text = "Delete The Rope"
+                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+            end
+        end
+    end)
+    
+    -- Teleport to End (кликабельная кнопка)
     local tpEndBtn = CreateButton("Teleport to End")
-    tpEndBtn.LayoutOrder = 1
+    tpEndBtn.LayoutOrder = 2
     tpEndBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportToJumpRopeEnd then
             MainModule.TeleportToJumpRopeEnd()
         end
     end)
-    
-    -- Delete The Rope toggle
-    local deleteRopeToggle, updateDeleteRopeToggle = CreateToggle("Delete The Rope", MainModule.JumpRope.DeleteRopeEnabled, function(enabled)
-        if MainModule.ToggleDeleteRope then
-            MainModule.ToggleDeleteRope(enabled)
-        else
-            MainModule.JumpRope.DeleteRopeEnabled = enabled
-        end
-    end)
-    deleteRopeToggle.LayoutOrder = 2
-    
-    -- Delete Rope Now кнопка
-    local deleteNowBtn = CreateButton("Delete Rope Now")
-    deleteNowBtn.LayoutOrder = 3
-    deleteNowBtn.MouseButton1Click:Connect(function()
-        if MainModule.DeleteJumpRope then
-            MainModule.DeleteJumpRope()
-            deleteNowBtn.Text = "Rope Deleted!"
-            deleteNowBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-            task.wait(1)
-            deleteNowBtn.Text = "Delete Rope Now"
-            deleteNowBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-        end
-    end)
 end
 
--- SKY SQUID TAB (обновленная)
+-- SKY SQUID TAB (обновленная с кликабельными кнопками)
 local function CreateSkySquidContent()
     ClearContent()
     
-    -- Anti Fall (белая платформа)
-    local antiFallToggle, updateAntiFallToggle = CreateToggle("Anti Fall", MainModule.SkySquid.AntiFall, function(enabled)
-        if MainModule.ToggleSkySquidAntiFall then
-            MainModule.ToggleSkySquidAntiFall(enabled)
-        else
-            MainModule.SkySquid.AntiFall = enabled
+    -- AntiFall (кликабельная кнопка)
+    local antiFallBtn = CreateButton("AntiFall")
+    antiFallBtn.LayoutOrder = 1
+    antiFallBtn.MouseButton1Click:Connect(function()
+        if MainModule.CreateSkySquidAntiFall then
+            local platform = MainModule.CreateSkySquidAntiFall()
+            if platform then
+                antiFallBtn.Text = "AntiFall (Created)"
+                antiFallBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+                task.wait(1)
+                antiFallBtn.Text = "AntiFall"
+                antiFallBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+            end
         end
     end)
-    antiFallToggle.LayoutOrder = 1
     
-    local instructionLabel = CreateButton("Creates white platform below you")
-    instructionLabel.LayoutOrder = 2
-    instructionLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-    instructionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    local infoLabel = CreateButton("Creates platform 4 blocks below you")
+    infoLabel.LayoutOrder = 2
+    infoLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    infoLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
 end
 
 -- SETTINGS TAB
