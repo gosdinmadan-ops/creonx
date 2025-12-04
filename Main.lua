@@ -52,7 +52,7 @@ MainModule.RLGL = {
     LastHealth = 100,
     GodModeHeight = 160,
     NormalHeight = 80,
-    DamageTeleportPosition = Vector3.new(-903.4, 1184.9, -556),
+    DamageTeleportPosition = Vector3.new(-902, 1184.9, -555),
     StartPosition = Vector3.new(-55.3, 1023.1, -545.8),
     EndPosition = Vector3.new(-214.4, 1023.1, 146.7),
     Connection = nil
@@ -2047,3 +2047,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
