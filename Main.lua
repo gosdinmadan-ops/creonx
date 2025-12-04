@@ -561,7 +561,54 @@ function MainModule.TeleportToStart()
     SafeTeleport(MainModule.RLGL.StartPosition)
 end
 
--- Упрощенный AutoDodge
+-- Функция для отслеживания использования ножа
+local function setupKnifeUsageDetection()
+    -- Отслеживаем активацию инструментов у всех игроков
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            -- Подписываемся на изменение инструментов в руках
+            local character = player.Character
+            if character then
+                character.ChildAdded:Connect(function(child)
+                    if child:IsA("Tool") then
+                        -- Если игрок взял нож в руки - это признак начала атаки
+                        local toolName = child.Name:lower()
+                        if toolName:find("knife") or toolName:find("нож") or toolName:find("sword") or toolName:find("dagger") then
+                            MainModule.HNS.ToolUsageHistory[player] = tick()
+                        end
+                    end
+                end)
+                
+                -- Также проверяем активацию анимаций атаки
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid:GetPropertyChangedSignal("Sit"):Connect(function()
+                        -- Если игрок начал "сидеть" (часто используется для атаки)
+                        if humanoid.Sit and MainModule.HNS.AutoDodgeEnabled then
+                            MainModule.HNS.ToolUsageHistory[player] = tick()
+                        end
+                    end)
+                end
+            end
+        end
+    end
+    
+    -- Подписываемся на новых игроков
+    Players.PlayerAdded:Connect(function(player)
+        player.CharacterAdded:Connect(function(character)
+            character.ChildAdded:Connect(function(child)
+                if child:IsA("Tool") and player ~= LocalPlayer then
+                    local toolName = child.Name:lower()
+                    if toolName:find("knife") or toolName:find("нож") or toolName:find("sword") or toolName:find("dagger") then
+                        MainModule.HNS.ToolUsageHistory[player] = tick()
+                    end
+                end
+            end)
+        end)
+    end)
+end
+
+-- Улучшенный AutoDodge с детекцией использования ножа
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.HNS.AutoDodgeEnabled = enabled
     
@@ -570,131 +617,113 @@ function MainModule.ToggleAutoDodge(enabled)
         MainModule.HNS.Connections.AutoDodge = nil
     end
     
-    if enabled then
-        MainModule.HNS.Connections.AutoDodge = RunService.Heartbeat:Connect(function()
-            if not MainModule.HNS.AutoDodgeEnabled then return end
+    -- Очищаем историю при отключении
+    if not enabled then
+        MainModule.HNS.ToolUsageHistory = {}
+        return
+    end
+    
+    -- Настраиваем детекцию использования ножа
+    setupKnifeUsageDetection()
+    
+    MainModule.HNS.Connections.AutoDodge = RunService.Heartbeat:Connect(function()
+        if not MainModule.HNS.AutoDodgeEnabled then return end
+        
+        local currentTime = tick()
+        
+        -- Проверяем кулдаун
+        if currentTime - MainModule.HNS.LastDodgeTime < MainModule.HNS.DodgeCooldown then return end
+        
+        -- Оптимизация: проверяем не слишком часто
+        if currentTime - MainModule.HNS.LastAttackCheck < MainModule.HNS.AttackDetectionThreshold then return end
+        MainModule.HNS.LastAttackCheck = currentTime
+        
+        pcall(function()
+            local localPlayer = Players.LocalPlayer
+            local character = localPlayer.Character
+            if not character then return end
             
-            -- Проверяем кулдаун
-            local currentTime = tick()
-            if currentTime - MainModule.HNS.LastDodgeTime < MainModule.HNS.DodgeCooldown then return end
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if not rootPart then return end
             
-            pcall(function()
-                local character = GetCharacter()
-                if not character then return end
+            local myPosition = rootPart.Position
+            local shouldDodge = false
+            
+            -- Проверяем всех игроков в радиусе 9
+            for _, player in pairs(Players:GetPlayers()) do
+                if player == localPlayer then continue end
                 
-                local rootPart = GetRootPart(character)
-                if not rootPart then return end
-                
-                -- Сначала проверяем всех игроков в радиусе 9 с ножами
-                local playersWithKnives = {}
-                
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player == LocalPlayer then continue end
+                -- Проверяем, использовал ли игрок нож недавно
+                local lastKnifeUsage = MainModule.HNS.ToolUsageHistory[player]
+                if lastKnifeUsage and (currentTime - lastKnifeUsage < 0.5) then -- Использовал нож в последние 0.5 секунды
                     
-                    local targetChar = GetCharacter(player)
+                    local targetChar = player.Character
                     if not targetChar then continue end
                     
-                    local targetRoot = GetRootPart(targetChar)
+                    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
                     if not targetRoot then continue end
                     
                     -- Проверяем расстояние
-                    local distance = GetDistance(rootPart.Position, targetRoot.Position)
-                    if distance > MainModule.HNS.DodgeRange then continue end
-                    
-                    -- Проверяем, есть ли у игрока нож
-                    if playerHasKnife(player) then
-                        table.insert(playersWithKnives, {
-                            player = player,
-                            character = targetChar,
-                            root = targetRoot,
-                            distance = distance
-                        })
-                    end
-                end
-                
-                -- Если рядом есть игроки с ножами, проверяем физическое взаимодействие
-                if #playersWithKnives > 0 then
-                    -- Проверяем наличие BodyVelocity или BodyForce (признак физического воздействия)
-                    local hasPhysicalInteraction = false
-                    
-                    for _, child in pairs(rootPart:GetChildren()) do
-                        if child:IsA("BodyVelocity") or child:IsA("BodyForce") then
-                            hasPhysicalInteraction = true
+                    local distance = (myPosition - targetRoot.Position).Magnitude
+                    if distance <= MainModule.HNS.DodgeRange then
+                        -- Дополнительная проверка: есть ли у игрока нож сейчас
+                        local hasKnifeNow = false
+                        for _, tool in pairs(targetChar:GetChildren()) do
+                            if tool:IsA("Tool") then
+                                local toolName = tool.Name:lower()
+                                if toolName:find("knife") or toolName:find("нож") or toolName:find("sword") or toolName:find("dagger") then
+                                    hasKnifeNow = true
+                                    break
+                                end
+                            end
+                        end
+                        
+                        -- Если игрок недавно использовал нож И он в радиусе И у него есть нож сейчас
+                        if hasKnifeNow then
+                            shouldDodge = true
                             break
                         end
                     end
-                    
-                    -- Если обнаружено физическое взаимодействие - делаем додж
-                    if hasPhysicalInteraction then
-                        MainModule.HNS.LastDodgeTime = currentTime
-                        
-                        -- Выполняем додж
-                        task.spawn(function()
-                            pcall(function()
-                                -- Ищем инструмент доджа
-                                local backpack = LocalPlayer:FindFirstChild("Backpack")
-                                local char = GetCharacter()
-                                
-                                if backpack and char then
-                                    local dodgeTool = nil
-                                    
-                                    -- Ищем по имени
-                                    for _, tool in pairs(backpack:GetChildren()) do
-                                        if tool:IsA("Tool") then
-                                            local toolName = tool.Name:lower()
-                                            if toolName:find("dodge") or toolName:find("roll") or toolName:find("уворот") then
-                                                dodgeTool = tool
-                                                break
-                                            end
-                                        end
-                                    end
-                                    
-                                    -- Если не нашли, берем первый инструмент
-                                    if not dodgeTool then
-                                        for _, tool in pairs(backpack:GetChildren()) do
-                                            if tool:IsA("Tool") then
-                                                dodgeTool = tool
-                                                break
-                                            end
-                                        end
-                                    end
-                                    
-                                    if dodgeTool then
-                                        if UserInputService.TouchEnabled then
-                                            -- Мобильные: используем 1 слот
-                                            dodgeTool.Parent = char
-                                            task.wait(0.1)
-                                            dodgeTool.Parent = backpack
-                                        else
-                                            -- ПК: нажимаем клавишу 1
-                                            local virtualInput = game:GetService("VirtualInputManager")
-                                            virtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-                                            task.wait(0.05)
-                                            virtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-                                        end
-                                        
-                                        -- Визуальный эффект
-                                        local effect = Instance.new("Part")
-                                        effect.Size = Vector3.new(5, 0.2, 5)
-                                        effect.Position = rootPart.Position - Vector3.new(0, 3, 0)
-                                        effect.Color = Color3.fromRGB(255, 255, 0)
-                                        effect.Material = Enum.Material.Neon
-                                        effect.Anchored = true
-                                        effect.CanCollide = false
-                                        effect.Transparency = 0.7
-                                        effect.Name = "DodgeEffect"
-                                        effect.Parent = workspace
-                                        
-                                        game:GetService("Debris"):AddItem(effect, 0.3)
-                                    end
-                                end
-                            end)
-                        end)
-                    end
                 end
-            end)
+            end
+            
+            -- Если нужно сделать додж
+            if shouldDodge then
+                MainModule.HNS.LastDodgeTime = currentTime
+                
+                -- Выполняем додж
+                task.spawn(function()
+                    if UserInputService.TouchEnabled then
+                        -- Мобильные: используем 1 слот
+                        local backpack = localPlayer:FindFirstChild("Backpack")
+                        local char = localPlayer.Character
+                        
+                        if backpack and char then
+                            local firstTool = nil
+                            for _, tool in pairs(backpack:GetChildren()) do
+                                if tool:IsA("Tool") then
+                                    firstTool = tool
+                                    break
+                                end
+                            end
+                            
+                            if firstTool then
+                                firstTool.Parent = char
+                                task.wait(0.1)
+                                firstTool.Parent = backpack
+                            end
+                        end
+                    else
+                        -- ПК: нажимаем клавишу 1
+                        local virtualInput = game:GetService("VirtualInputManager")
+                        virtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
+                        task.wait(0.05)
+                        virtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
+                    end
+                end)
+            end
         end)
-    end
+    end)
 end
 
 -- Улучшенная функция Bypass Ragdoll с дополнительными защитами
@@ -2104,4 +2133,5 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
