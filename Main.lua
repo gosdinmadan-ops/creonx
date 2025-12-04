@@ -1,4 +1,4 @@
--- Main.lua - Creon X v2.3 (Обновленная версия с новыми функциями)
+-- Main.lua - Creon X v2.3 (Исправленная версия)
 local MainModule = {}
 
 -- Services
@@ -52,7 +52,7 @@ MainModule.RLGL = {
     LastHealth = 100,
     GodModeHeight = 160,
     NormalHeight = 80,
-    DamageTeleportPosition = Vector3.new(-902, 1184.9, -555),
+    DamageTeleportPosition = Vector3.new(-903.4, 1184.9, -556),
     StartPosition = Vector3.new(-55.3, 1023.1, -545.8),
     EndPosition = Vector3.new(-214.4, 1023.1, 146.7),
     Connection = nil
@@ -78,14 +78,13 @@ MainModule.Dalgona = {
 -- Glass Bridge System (обновленная)
 MainModule.GlassBridge = {
     AntiBreakEnabled = false,
-    AntiFallEnabled = false,
     AntiBreakConnection = nil,
-    AntiFallConnection = nil,
     GlassPlatforms = {},
-    AntiFallPlatform = nil,
+    GlassAntiFallPlatform = nil,
     
     EndPosition = Vector3.new(-196.372467, 522.192139, -1534.20984),
-    SafeHeight = 500
+    BridgeHeight = 520.4,
+    AntiFallYOffset = -3
 }
 
 MainModule.TugOfWar = {
@@ -95,14 +94,11 @@ MainModule.TugOfWar = {
 
 MainModule.JumpRope = {
     TeleportToEnd = false,
-    DeleteRopeEnabled = false,
     AntiFallPlatform = nil,
     Connection = nil
 }
 
 MainModule.SkySquid = {
-    AntiFall = false,
-    VoidKill = false,
     AntiFallPlatform = nil,
     SafePlatform = nil,
     Connection = nil
@@ -1529,23 +1525,6 @@ function MainModule.DeleteJumpRope()
     return ropeFound
 end
 
-function MainModule.ToggleDeleteRope(enabled)
-    MainModule.JumpRope.DeleteRopeEnabled = enabled
-    
-    if jumpRopeConnection then
-        jumpRopeConnection:Disconnect()
-        jumpRopeConnection = nil
-    end
-    
-    if enabled then
-        jumpRopeConnection = RunService.Heartbeat:Connect(function()
-            if MainModule.JumpRope.DeleteRopeEnabled then
-                MainModule.DeleteJumpRope()
-            end
-        end)
-    end
-end
-
 function MainModule.TeleportToJumpRopeEnd()
     local character = GetCharacter()
     if character then
@@ -1566,7 +1545,7 @@ function MainModule.TeleportToJumpRopeStart()
     end
 end
 
--- Glass Bridge функции (новые)
+-- Glass Bridge функции (исправленные)
 function MainModule.ToggleGlassBridgeAntiBreak(enabled)
     MainModule.GlassBridge.AntiBreakEnabled = enabled
     
@@ -1583,6 +1562,12 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
             end
         end
         MainModule.GlassBridge.GlassPlatforms = {}
+        
+        -- Удаляем общую платформу при отключении
+        if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
+            MainModule.GlassBridge.GlassAntiFallPlatform:Destroy()
+            MainModule.GlassBridge.GlassAntiFallPlatform = nil
+        end
         return
     end
     
@@ -1591,7 +1576,15 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
         if not glassModel or not glassModel.PrimaryPart then return end
         
         local platformName = "AntiFallPlatform_" .. glassModel.Name
-        local existingPlatform = workspace:FindFirstChild(platformName)
+        
+        -- Проверяем, существует ли уже платформа
+        local existingPlatform = nil
+        for _, platform in pairs(MainModule.GlassBridge.GlassPlatforms) do
+            if platform and platform.Name == platformName then
+                existingPlatform = platform
+                break
+            end
+        end
         
         if existingPlatform then
             existingPlatform.CFrame = glassModel.PrimaryPart.CFrame * CFrame.new(0, -1.5, 0)
@@ -1620,6 +1613,32 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
         
         return platform
     end
+    
+    -- Создаем общую платформу для всего моста
+    local function createGlobalAntiFallPlatform()
+        if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
+            return MainModule.GlassBridge.GlassAntiFallPlatform
+        end
+        
+        -- Создание большой невидимой платформы на высоте моста
+        local platform = Instance.new("Part")
+        platform.Name = "GlassBridgeGlobalAntiFall"
+        platform.Size = Vector3.new(200, 2, 200) -- Большая платформа
+        platform.Anchored = true
+        platform.CanCollide = true
+        platform.Transparency = 1 -- Полностью невидимая
+        platform.CastShadow = false
+        
+        -- Позиция на высоте моста (520.4 - 3 = 517.4)
+        platform.Position = Vector3.new(0, MainModule.GlassBridge.BridgeHeight + MainModule.GlassBridge.AntiFallYOffset, 0)
+        platform.Parent = workspace
+        
+        MainModule.GlassBridge.GlassAntiFallPlatform = platform
+        return platform
+    end
+    
+    -- Создаем общую платформу сразу
+    createGlobalAntiFallPlatform()
     
     -- Подключение Heartbeat для постоянной проверки
     MainModule.GlassBridge.AntiBreakConnection = RunService.Heartbeat:Connect(function()
@@ -1690,53 +1709,28 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
     end)
 end
 
--- Anti Fall функция (общая - белая платформа)
-function MainModule.ToggleAntiFall(enabled)
-    MainModule.GlassBridge.AntiFallEnabled = enabled
-    
-    if MainModule.GlassBridge.AntiFallConnection then
-        MainModule.GlassBridge.AntiFallConnection:Disconnect()
-        MainModule.GlassBridge.AntiFallConnection = nil
+-- Anti Fall для Glass Bridge (кликабельная кнопка)
+function MainModule.CreateGlassBridgeAntiFall()
+    -- Удаляем старую платформу если она есть
+    if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
+        MainModule.GlassBridge.GlassAntiFallPlatform:Destroy()
     end
     
-    -- Удаляем платформу при отключении
-    if not enabled then
-        if MainModule.GlassBridge.AntiFallPlatform and MainModule.GlassBridge.AntiFallPlatform.Parent then
-            MainModule.GlassBridge.AntiFallPlatform:Destroy()
-            MainModule.GlassBridge.AntiFallPlatform = nil
-        end
-        return
-    end
+    -- Создание новой платформы
+    local platform = Instance.new("Part")
+    platform.Name = "GlassBridgeAntiFall"
+    platform.Size = Vector3.new(200, 2, 200) -- Большая платформа
+    platform.Anchored = true
+    platform.CanCollide = true
+    platform.Transparency = 1 -- Полностью невидимая
+    platform.CastShadow = false
     
-    MainModule.GlassBridge.AntiFallConnection = RunService.Heartbeat:Connect(function()
-        local character = GetCharacter()
-        if not character then return end
-        
-        local rootPart = GetRootPart(character)
-        if not rootPart then return end
-        
-        local currentPosition = rootPart.Position
-        
-        -- Создаем или обновляем платформу
-        if not MainModule.GlassBridge.AntiFallPlatform or not MainModule.GlassBridge.AntiFallPlatform.Parent then
-            MainModule.GlassBridge.AntiFallPlatform = Instance.new("Part")
-            MainModule.GlassBridge.AntiFallPlatform.Name = "UniversalAntiFallPlatform"
-            MainModule.GlassBridge.AntiFallPlatform.Size = Vector3.new(500, 2, 500) -- Огромная платформа 500x2x500
-            MainModule.GlassBridge.AntiFallPlatform.Anchored = true
-            MainModule.GlassBridge.AntiFallPlatform.CanCollide = true
-            MainModule.GlassBridge.AntiFallPlatform.Transparency = 0.3 -- Полупрозрачная
-            MainModule.GlassBridge.AntiFallPlatform.Color = Color3.fromRGB(255, 255, 255) -- Белый цвет
-            MainModule.GlassBridge.AntiFallPlatform.Material = Enum.Material.Neon
-            MainModule.GlassBridge.AntiFallPlatform.Parent = workspace
-        end
-        
-        -- Позиция платформы на 2 единицы ниже игрока
-        MainModule.GlassBridge.AntiFallPlatform.Position = Vector3.new(
-            currentPosition.X,
-            currentPosition.Y - 2,
-            currentPosition.Z
-        )
-    end)
+    -- Позиция на высоте моста (520.4 - 3 = 517.4)
+    platform.Position = Vector3.new(0, MainModule.GlassBridge.BridgeHeight + MainModule.GlassBridge.AntiFallYOffset, 0)
+    platform.Parent = workspace
+    
+    MainModule.GlassBridge.GlassAntiFallPlatform = platform
+    return platform
 end
 
 -- Teleport to End для Glass Bridge
@@ -1744,53 +1738,40 @@ function MainModule.TeleportToGlassBridgeEnd()
     SafeTeleport(MainModule.GlassBridge.EndPosition)
 end
 
--- Sky Squid Anti Fall функция
-function MainModule.ToggleSkySquidAntiFall(enabled)
-    MainModule.SkySquid.AntiFall = enabled
-    
-    if MainModule.SkySquid.Connection then
-        MainModule.SkySquid.Connection:Disconnect()
-        MainModule.SkySquid.Connection = nil
+-- Sky Squid Anti Fall функция (кликабельная кнопка)
+function MainModule.CreateSkySquidAntiFall()
+    -- Удаляем старую платформу если она есть
+    if MainModule.SkySquid.AntiFallPlatform and MainModule.SkySquid.AntiFallPlatform.Parent then
+        MainModule.SkySquid.AntiFallPlatform:Destroy()
     end
     
-    -- Удаляем платформу при отключении
-    if not enabled then
-        if MainModule.SkySquid.AntiFallPlatform and MainModule.SkySquid.AntiFallPlatform.Parent then
-            MainModule.SkySquid.AntiFallPlatform:Destroy()
-            MainModule.SkySquid.AntiFallPlatform = nil
-        end
-        return
-    end
+    local character = GetCharacter()
+    if not character then return nil end
     
-    MainModule.SkySquid.Connection = RunService.Heartbeat:Connect(function()
-        local character = GetCharacter()
-        if not character then return end
-        
-        local rootPart = GetRootPart(character)
-        if not rootPart then return end
-        
-        local currentPosition = rootPart.Position
-        
-        -- Создаем или обновляем платформу
-        if not MainModule.SkySquid.AntiFallPlatform or not MainModule.SkySquid.AntiFallPlatform.Parent then
-            MainModule.SkySquid.AntiFallPlatform = Instance.new("Part")
-            MainModule.SkySquid.AntiFallPlatform.Name = "SkySquidAntiFallPlatform"
-            MainModule.SkySquid.AntiFallPlatform.Size = Vector3.new(200, 2, 200) -- Большая платформа 200x2x200
-            MainModule.SkySquid.AntiFallPlatform.Anchored = true
-            MainModule.SkySquid.AntiFallPlatform.CanCollide = true
-            MainModule.SkySquid.AntiFallPlatform.Transparency = 0.2 -- Мало прозрачная
-            MainModule.SkySquid.AntiFallPlatform.Color = Color3.fromRGB(255, 255, 255) -- Белый цвет
-            MainModule.SkySquid.AntiFallPlatform.Material = Enum.Material.Neon
-            MainModule.SkySquid.AntiFallPlatform.Parent = workspace
-        end
-        
-        -- Позиция платформы на 2 единицы ниже игрока
-        MainModule.SkySquid.AntiFallPlatform.Position = Vector3.new(
-            currentPosition.X,
-            currentPosition.Y - 2,
-            currentPosition.Z
-        )
-    end)
+    local rootPart = GetRootPart(character)
+    if not rootPart then return nil end
+    
+    local currentPosition = rootPart.Position
+    
+    -- Создание платформы
+    local platform = Instance.new("Part")
+    platform.Name = "SkySquidAntiFall"
+    platform.Size = Vector3.new(100, 2, 100) -- Большая платформа
+    platform.Anchored = true
+    platform.CanCollide = true
+    platform.Transparency = 1 -- Полностью невидимая
+    platform.CastShadow = false
+    
+    -- Позиция на 4 единицы ниже игрока
+    platform.Position = Vector3.new(
+        currentPosition.X,
+        currentPosition.Y - 4,
+        currentPosition.Z
+    )
+    platform.Parent = workspace
+    
+    MainModule.SkySquid.AntiFallPlatform = platform
+    return platform
 end
 
 -- HNS Infinity Stamina функция
@@ -1929,11 +1910,6 @@ function MainModule.Cleanup()
         MainModule.GlassBridge.AntiBreakConnection = nil
     end
     
-    if MainModule.GlassBridge.AntiFallConnection then
-        MainModule.GlassBridge.AntiFallConnection:Disconnect()
-        MainModule.GlassBridge.AntiFallConnection = nil
-    end
-    
     -- Отключаем Jump Rope соединения
     if MainModule.JumpRope.Connection then
         MainModule.JumpRope.Connection:Disconnect()
@@ -1997,9 +1973,9 @@ function MainModule.Cleanup()
     MainModule.GlassBridge.GlassPlatforms = {}
     
     -- Удаляем Anti Fall платформы
-    if MainModule.GlassBridge.AntiFallPlatform and MainModule.GlassBridge.AntiFallPlatform.Parent then
-        MainModule.GlassBridge.AntiFallPlatform:Destroy()
-        MainModule.GlassBridge.AntiFallPlatform = nil
+    if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
+        MainModule.GlassBridge.GlassAntiFallPlatform:Destroy()
+        MainModule.GlassBridge.GlassAntiFallPlatform = nil
     end
     
     if MainModule.SkySquid.AntiFallPlatform and MainModule.SkySquid.AntiFallPlatform.Parent then
@@ -2029,12 +2005,9 @@ function MainModule.Cleanup()
     MainModule.Misc.NoCooldownProximity = false
     MainModule.Misc.BypassRagdollEnabled = false
     MainModule.TugOfWar.AutoPull = false
-    MainModule.JumpRope.DeleteRopeEnabled = false
     MainModule.Dalgona.CompleteEnabled = false
     MainModule.Dalgona.FreeLighterEnabled = false
     MainModule.GlassBridge.AntiBreakEnabled = false
-    MainModule.GlassBridge.AntiFallEnabled = false
-    MainModule.SkySquid.AntiFall = false
     
     print("Creon X cleanup complete")
 end
@@ -2047,4 +2020,3 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
-
