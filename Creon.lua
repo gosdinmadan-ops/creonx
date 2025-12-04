@@ -1,4 +1,4 @@
--- Creon X v2.1 (исправленная версия для ПК и Delta Mobile)
+-- Creon X v2.3 (исправленная версия для ПК и Delta Mobile)
 -- Проверка исполнителя
 local executorName = "Unknown"
 if identifyexecutor then
@@ -38,7 +38,7 @@ if not success then
     return
 end
 
--- GUI Creon X v2.1
+-- GUI Creon X v2.3
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
 local TitleBar = Instance.new("Frame")
@@ -53,7 +53,7 @@ local ContentLayout = Instance.new("UIListLayout")
 local MobileOpenButton = Instance.new("TextButton")
 
 ScreenGui.Parent = game.CoreGui
-ScreenGui.Name = "CreonXv21"
+ScreenGui.Name = "CreonXv23"
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 ScreenGui.ResetOnSpawn = false
 
@@ -96,7 +96,7 @@ titleCorner.Parent = TitleBar
 TitleLabel.Size = UDim2.new(0.7, 0, 1, 0)
 TitleLabel.Position = UDim2.new(0.1, 0, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "Creon X v2.1"
+TitleLabel.Text = "Creon X v2.3"
 TitleLabel.TextColor3 = Color3.fromRGB(220, 220, 255)
 TitleLabel.TextSize = 14
 TitleLabel.Font = Enum.Font.GothamBold
@@ -896,60 +896,58 @@ local function CreateDalgonaContent()
     end)
 end
 
--- HNS TAB
+-- HNS TAB (обновленная)
 local function CreateHNSContent()
     ClearContent()
-
-    -- Kill Hiders
-    local killHidersToggle, updateKillHidersToggle = CreateToggle("Kill Hiders", MainModule.HNS.KillAuraEnabled, function(enabled)
-        if MainModule.ToggleKillHiders then
-            MainModule.ToggleKillHiders(enabled)
-        else
-            MainModule.HNS.KillAuraEnabled = enabled
-        end
-    end)
-    killHidersToggle.LayoutOrder = 1
     
-    -- Auto Dodge
-    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", MainModule.HNS.AutoDodgeEnabled, function(enabled)
-        if MainModule.ToggleAutoDodge then
-            MainModule.ToggleAutoDodge(enabled)
+    -- Infinity Stamina
+    local staminaToggle, updateStaminaToggle = CreateToggle("Infinity Stamina", MainModule.HNS.InfinityStaminaEnabled, function(enabled)
+        if MainModule.ToggleHNSInfinityStamina then
+            MainModule.ToggleHNSInfinityStamina(enabled)
         else
-            MainModule.HNS.AutoDodgeEnabled = enabled
+            MainModule.HNS.InfinityStaminaEnabled = enabled
         end
     end)
-    autoDodgeToggle.LayoutOrder = 2
-    
-    -- Disable Spikes (кнопка)
-    local disableSpikesBtn = CreateButton("Disable Spikes")
-    disableSpikesBtn.LayoutOrder = 3
-    disableSpikesBtn.MouseButton1Click:Connect(function()
-        if MainModule.ToggleDisableSpikes then
-            local newState = not MainModule.HNS.DisableSpikesEnabled
-            MainModule.ToggleDisableSpikes(newState)
-            if newState then
-                disableSpikesBtn.Text = "Disable Spikes (ON)"
-                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-            else
-                disableSpikesBtn.Text = "Disable Spikes"
-                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-            end
-        end
-    end)
+    staminaToggle.LayoutOrder = 1
 end
 
--- GLASS BRIDGE TAB
+-- GLASS BRIDGE TAB (обновленная)
 local function CreateGlassBridgeContent()
     ClearContent()
     
-    local comingSoon = Instance.new("TextLabel")
-    comingSoon.Size = UDim2.new(1, 0, 0, 40)
-    comingSoon.BackgroundTransparency = 1
-    comingSoon.Text = "Glass Bridge Features Coming Soon"
-    comingSoon.TextColor3 = Color3.fromRGB(200, 200, 200)
-    comingSoon.TextSize = 16
-    comingSoon.Font = Enum.Font.Gotham
-    comingSoon.Parent = ContentScrolling
+    -- Anti Glass Break + Anti Fall
+    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("Anti Glass Break + Anti Fall", MainModule.GlassBridge.AntiBreakEnabled, function(enabled)
+        if MainModule.ToggleGlassBridgeAntiBreak then
+            MainModule.ToggleGlassBridgeAntiBreak(enabled)
+        else
+            MainModule.GlassBridge.AntiBreakEnabled = enabled
+        end
+    end)
+    antiBreakToggle.LayoutOrder = 1
+    
+    -- Anti Fall (универсальная платформа)
+    local antiFallToggle, updateAntiFallToggle = CreateToggle("Anti Fall Platform", MainModule.GlassBridge.AntiFallEnabled, function(enabled)
+        if MainModule.ToggleAntiFall then
+            MainModule.ToggleAntiFall(enabled)
+        else
+            MainModule.GlassBridge.AntiFallEnabled = enabled
+        end
+    end)
+    antiFallToggle.LayoutOrder = 2
+    
+    -- Teleport to End
+    local tpEndBtn = CreateButton("Teleport to End")
+    tpEndBtn.LayoutOrder = 3
+    tpEndBtn.MouseButton1Click:Connect(function()
+        if MainModule.TeleportToGlassBridgeEnd then
+            MainModule.TeleportToGlassBridgeEnd()
+        end
+    end)
+    
+    local instructionLabel = CreateButton("Anti Fall: Creates white platform")
+    instructionLabel.LayoutOrder = 4
+    instructionLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    instructionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
 end
 
 -- TUG OF WAR TAB
@@ -966,10 +964,11 @@ local function CreateTugOfWarContent()
     autoPullToggle.LayoutOrder = 1
 end
 
--- JUMP ROPE TAB
+-- JUMP ROPE TAB (обновленная)
 local function CreateJumpRopeContent()
     ClearContent()
     
+    -- Teleport to End кнопка
     local tpEndBtn = CreateButton("Teleport to End")
     tpEndBtn.LayoutOrder = 1
     tpEndBtn.MouseButton1Click:Connect(function()
@@ -978,29 +977,49 @@ local function CreateJumpRopeContent()
         end
     end)
     
-    local deleteRopeBtn = CreateButton("Delete The Rope")
-    deleteRopeBtn.LayoutOrder = 2
-    deleteRopeBtn.MouseButton1Click:Connect(function()
+    -- Delete The Rope toggle
+    local deleteRopeToggle, updateDeleteRopeToggle = CreateToggle("Delete The Rope", MainModule.JumpRope.DeleteRopeEnabled, function(enabled)
         if MainModule.ToggleDeleteRope then
-            MainModule.ToggleDeleteRope(true)
-            deleteRopeBtn.Text = "Delete Rope (ON)"
-            deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+            MainModule.ToggleDeleteRope(enabled)
+        else
+            MainModule.JumpRope.DeleteRopeEnabled = enabled
+        end
+    end)
+    deleteRopeToggle.LayoutOrder = 2
+    
+    -- Delete Rope Now кнопка
+    local deleteNowBtn = CreateButton("Delete Rope Now")
+    deleteNowBtn.LayoutOrder = 3
+    deleteNowBtn.MouseButton1Click:Connect(function()
+        if MainModule.DeleteJumpRope then
+            MainModule.DeleteJumpRope()
+            deleteNowBtn.Text = "Rope Deleted!"
+            deleteNowBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+            task.wait(1)
+            deleteNowBtn.Text = "Delete Rope Now"
+            deleteNowBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
         end
     end)
 end
 
--- SKY SQUID TAB
+-- SKY SQUID TAB (обновленная)
 local function CreateSkySquidContent()
     ClearContent()
     
-    local comingSoon = Instance.new("TextLabel")
-    comingSoon.Size = UDim2.new(1, 0, 0, 40)
-    comingSoon.BackgroundTransparency = 1
-    comingSoon.Text = "Sky Squid Features Coming Soon"
-    comingSoon.TextColor3 = Color3.fromRGB(200, 200, 200)
-    comingSoon.TextSize = 16
-    comingSoon.Font = Enum.Font.Gotham
-    comingSoon.Parent = ContentScrolling
+    -- Anti Fall (белая платформа)
+    local antiFallToggle, updateAntiFallToggle = CreateToggle("Anti Fall", MainModule.SkySquid.AntiFall, function(enabled)
+        if MainModule.ToggleSkySquidAntiFall then
+            MainModule.ToggleSkySquidAntiFall(enabled)
+        else
+            MainModule.SkySquid.AntiFall = enabled
+        end
+    end)
+    antiFallToggle.LayoutOrder = 1
+    
+    local instructionLabel = CreateButton("Creates white platform below you")
+    instructionLabel.LayoutOrder = 2
+    instructionLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    instructionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
 end
 
 -- SETTINGS TAB
@@ -1011,7 +1030,7 @@ local function CreateSettingsContent()
     creatorLabel.TextXAlignment = Enum.TextXAlignment.Left
     creatorLabel.LayoutOrder = 1
     
-    local versionLabel = CreateButton("Version: 2.1")
+    local versionLabel = CreateButton("Version: 2.3")
     versionLabel.TextXAlignment = Enum.TextXAlignment.Left
     versionLabel.LayoutOrder = 2
     
@@ -1176,7 +1195,7 @@ ScreenGui.AncestryChanged:Connect(function()
 end)
 
 -- Отображение сообщения о загрузке
-print("Creon X v2.1 loaded successfully")
+print("Creon X v2.3 loaded successfully")
 if not isSupported then
     warn("Warning: Executor " .. executorName .. " is not officially supported")
 else
