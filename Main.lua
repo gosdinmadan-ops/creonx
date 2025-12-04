@@ -79,6 +79,7 @@ MainModule.Dalgona = {
 MainModule.GlassBridge = {
     AntiBreakEnabled = false,
     AntiBreakConnection = nil,
+    AntiFallEnabled = false,
     GlassPlatforms = {},
     GlassAntiFallPlatform = nil,
     GlassESPEnabled = false,
@@ -87,8 +88,8 @@ MainModule.GlassBridge = {
     EndPosition = Vector3.new(-196.372467, 522.192139, -1534.20984),
     BridgeHeight = 520.4,
     AntiFallYOffset = -3,
-    PlatformSize = Vector3.new(400, 10, 400), -- ОГРОМНАЯ платформа 400%
-    SkySquidPlatformSize = Vector3.new(400, 10, 400) -- ОГРОМНАЯ платформа для Sky Squid
+    PlatformSize = Vector3.new(400, 0.5, 400), -- ТОНКАЯ платформа 400x0.5x400 (ранее было 400x10x400)
+    SkySquidPlatformSize = Vector3.new(400, 0.5, 400) -- ТОНКАЯ платформа для Sky Squid
 }
 
 MainModule.TugOfWar = {
@@ -289,6 +290,68 @@ local function GetSafePositionAbove(currentPosition, height)
     else
         return currentPosition + Vector3.new(0, height, 0)
     end
+end
+
+-- Функция для проверки, есть ли коллизия в определенной позиции
+local function CheckCollisionAtPosition(position, size)
+    local region = Region3.new(
+        position - size/2,
+        position + size/2
+    )
+    
+    local parts = workspace:FindPartsInRegion3(region, nil, math.huge)
+    
+    -- Исключаем самого игрока и его части
+    local filteredParts = {}
+    local character = GetCharacter()
+    
+    for _, part in ipairs(parts) do
+        local isPlayerPart = false
+        
+        if character then
+            for _, charPart in ipairs(character:GetDescendants()) do
+                if charPart == part then
+                    isPlayerPart = true
+                    break
+                end
+            end
+        end
+        
+        if not isPlayerPart then
+            table.insert(filteredParts, part)
+        end
+    end
+    
+    return #filteredParts > 0, filteredParts
+end
+
+-- Функция для нахождения свободной позиции для платформы
+local function FindFreePositionForPlatform(startPosition, searchRadius, platformSize)
+    local bestPosition = startPosition
+    
+    -- Проверяем центральную позицию
+    local hasCollision, collidingParts = CheckCollisionAtPosition(startPosition, Vector3.new(5, 5, 5))
+    
+    if not hasCollision then
+        return startPosition
+    end
+    
+    -- Если есть коллизия, ищем вокруг
+    local searchStep = 10 -- шаг поиска в студиях
+    
+    for x = -searchRadius, searchRadius, searchStep do
+        for z = -searchRadius, searchRadius, searchStep do
+            local checkPosition = startPosition + Vector3.new(x, 0, z)
+            hasCollision, collidingParts = CheckCollisionAtPosition(checkPosition, Vector3.new(5, 5, 5))
+            
+            if not hasCollision then
+                return checkPosition
+            end
+        end
+    end
+    
+    -- Если ничего не нашли, возвращаем исходную позицию
+    return bestPosition
 end
 
 -- Функция для получения оружия игрока
@@ -1549,7 +1612,53 @@ function MainModule.TeleportToJumpRopeStart()
     end
 end
 
--- Glass Bridge функции (исправленные)
+-- Функция для создания AntiFall платформы Glass Bridge (с тонкой платформой)
+function MainModule.CreateGlassBridgeAntiFall()
+    -- Удаляем старую платформу если она есть
+    if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
+        MainModule.GlassBridge.GlassAntiFallPlatform:Destroy()
+        MainModule.GlassBridge.GlassAntiFallPlatform = nil
+    end
+    
+    -- Создание ТОНКОЙ платформы 400x0.5x400
+    local platform = Instance.new("Part")
+    platform.Name = "GlassBridgeAntiFall"
+    platform.Size = MainModule.GlassBridge.PlatformSize -- ТОНКАЯ платформа 400x0.5x400
+    platform.Anchored = true
+    platform.CanCollide = true
+    platform.Transparency = 1 -- Полностью невидимая
+    platform.CastShadow = false
+    
+    -- Позиция на высоте моста (520.4 - 3 = 517.4)
+    local basePosition = Vector3.new(0, MainModule.GlassBridge.BridgeHeight + MainModule.GlassBridge.AntiFallYOffset, 0)
+    
+    -- Проверяем, нет ли коллизии в этой позиции
+    local hasCollision, collidingParts = CheckCollisionAtPosition(basePosition, Vector3.new(100, 10, 100))
+    
+    if hasCollision then
+        -- Если есть коллизия, ищем свободное место
+        basePosition = FindFreePositionForPlatform(basePosition, 200, MainModule.GlassBridge.PlatformSize)
+    end
+    
+    platform.Position = basePosition
+    platform.Parent = workspace
+    
+    MainModule.GlassBridge.GlassAntiFallPlatform = platform
+    MainModule.GlassBridge.AntiFallEnabled = true
+    return platform
+end
+
+-- Функция для удаления AntiFall платформы Glass Bridge
+function MainModule.RemoveGlassBridgeAntiFall()
+    if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
+        MainModule.GlassBridge.GlassAntiFallPlatform:Destroy()
+        MainModule.GlassBridge.GlassAntiFallPlatform = nil
+    end
+    MainModule.GlassBridge.AntiFallEnabled = false
+    return true
+end
+
+-- Glass Bridge AntiBreak функция (обновленная - автоматически создает AntiFall)
 function MainModule.ToggleGlassBridgeAntiBreak(enabled)
     MainModule.GlassBridge.AntiBreakEnabled = enabled
     
@@ -1567,13 +1676,14 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
         end
         MainModule.GlassBridge.GlassPlatforms = {}
         
-        -- Удаляем общую платформу при отключении
-        if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
-            MainModule.GlassBridge.GlassAntiFallPlatform:Destroy()
-            MainModule.GlassBridge.GlassAntiFallPlatform = nil
-        end
+        -- Удаляем AntiFall платформу при отключении
+        MainModule.RemoveGlassBridgeAntiFall()
         return
     end
+    
+    -- Автоматически создаем AntiFall платформу при включении
+    task.wait(0.2)
+    MainModule.CreateGlassBridgeAntiFall()
     
     -- Функция создания платформы под стеклом
     local function createPlatformUnderGlass(glassModel)
@@ -1598,7 +1708,7 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
         -- Создание невидимой платформы
         local platform = Instance.new("Part")
         platform.Name = platformName
-        platform.Size = Vector3.new(5, 1, 5) -- Размер больше чем стекло для надежности
+        platform.Size = Vector3.new(5, 0.5, 5) -- ТОНКАЯ платформа 5x0.5x5
         platform.Anchored = true
         platform.CanCollide = true
         platform.Transparency = 1 -- Полностью невидимая
@@ -1617,32 +1727,6 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
         
         return platform
     end
-    
-    -- Создаем ОГРОМНУЮ платформу для всего моста (400%)
-    local function createGlobalAntiFallPlatform()
-        if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
-            return MainModule.GlassBridge.GlassAntiFallPlatform
-        end
-        
-        -- Создание ОГРОМНОЙ невидимой платформы на высоте моста
-        local platform = Instance.new("Part")
-        platform.Name = "GlassBridgeGlobalAntiFall"
-        platform.Size = MainModule.GlassBridge.PlatformSize -- ОГРОМНАЯ платформа 400x10x400
-        platform.Anchored = true
-        platform.CanCollide = true
-        platform.Transparency = 1 -- Полностью невидимая
-        platform.CastShadow = false
-        
-        -- Позиция на высоте моста (520.4 - 3 = 517.4)
-        platform.Position = Vector3.new(0, MainModule.GlassBridge.BridgeHeight + MainModule.GlassBridge.AntiFallYOffset, 0)
-        platform.Parent = workspace
-        
-        MainModule.GlassBridge.GlassAntiFallPlatform = platform
-        return platform
-    end
-    
-    -- Создаем общую платформу сразу
-    createGlobalAntiFallPlatform()
     
     -- Подключение Heartbeat для постоянной проверки
     MainModule.GlassBridge.AntiBreakConnection = RunService.Heartbeat:Connect(function()
@@ -1776,40 +1860,17 @@ function MainModule.RevealGlassBridge()
     print("[CreonHub]: Safe tiles are green, breakable tiles are red!")
 end
 
--- Anti Fall для Glass Bridge (кликабельная кнопка) - ОГРОМНАЯ платформа
-function MainModule.CreateGlassBridgeAntiFall()
-    -- Удаляем старую платформу если она есть
-    if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
-        MainModule.GlassBridge.GlassAntiFallPlatform:Destroy()
-    end
-    
-    -- Создание ОГРОМНОЙ платформы 400%
-    local platform = Instance.new("Part")
-    platform.Name = "GlassBridgeAntiFall"
-    platform.Size = MainModule.GlassBridge.PlatformSize -- ОГРОМНАЯ платформа 400x10x400
-    platform.Anchored = true
-    platform.CanCollide = true
-    platform.Transparency = 1 -- Полностью невидимая
-    platform.CastShadow = false
-    
-    -- Позиция на высоте моста (520.4 - 3 = 517.4)
-    platform.Position = Vector3.new(0, MainModule.GlassBridge.BridgeHeight + MainModule.GlassBridge.AntiFallYOffset, 0)
-    platform.Parent = workspace
-    
-    MainModule.GlassBridge.GlassAntiFallPlatform = platform
-    return platform
-end
-
 -- Teleport to End для Glass Bridge
 function MainModule.TeleportToGlassBridgeEnd()
     SafeTeleport(MainModule.GlassBridge.EndPosition)
 end
 
--- Sky Squid Anti Fall функция (кликабельная кнопка) - ОГРОМНАЯ платформа
+-- Sky Squid Anti Fall функция (с умной логикой поиска свободного места)
 function MainModule.CreateSkySquidAntiFall()
     -- Удаляем старую платформу если она есть
     if MainModule.SkySquid.AntiFallPlatform and MainModule.SkySquid.AntiFallPlatform.Parent then
         MainModule.SkySquid.AntiFallPlatform:Destroy()
+        MainModule.SkySquid.AntiFallPlatform = nil
     end
     
     local character = GetCharacter()
@@ -1820,25 +1881,114 @@ function MainModule.CreateSkySquidAntiFall()
     
     local currentPosition = rootPart.Position
     
-    -- Создание ОГРОМНОЙ платформы 400%
+    -- Создание ТОНКОЙ платформы 400x0.5x400
     local platform = Instance.new("Part")
     platform.Name = "SkySquidAntiFall"
-    platform.Size = MainModule.GlassBridge.SkySquidPlatformSize -- ОГРОМНАЯ платформа 400x10x400
+    platform.Size = MainModule.GlassBridge.SkySquidPlatformSize -- ТОНКАЯ платформа 400x0.5x400
     platform.Anchored = true
     platform.CanCollide = true
     platform.Transparency = 1 -- Полностью невидимая
     platform.CastShadow = false
     
-    -- Позиция на 4 единицы ниже игрока
-    platform.Position = Vector3.new(
+    -- Позиция на 5 единиц ниже игрока (ранее было -4)
+    local basePosition = Vector3.new(
         currentPosition.X,
-        currentPosition.Y - 4,
+        currentPosition.Y - 5,
         currentPosition.Z
     )
+    
+    -- Проверяем, нет ли коллизии в этой позиции
+    local hasCollision, collidingParts = CheckCollisionAtPosition(basePosition, Vector3.new(100, 10, 100))
+    
+    if hasCollision then
+        -- Если есть коллизия, ищем свободное место вокруг
+        print("[Sky Squid AntiFall] Collision detected, searching for free position...")
+        basePosition = FindFreePositionForPlatform(basePosition, 200, MainModule.GlassBridge.SkySquidPlatformSize)
+    else
+        print("[Sky Squid AntiFall] No collision, creating platform at original position")
+    end
+    
+    platform.Position = basePosition
     platform.Parent = workspace
     
     MainModule.SkySquid.AntiFallPlatform = platform
+    
+    print(string.format("[Sky Squid AntiFall] Platform created at X:%.1f, Y:%.1f, Z:%.1f", 
+        basePosition.X, basePosition.Y, basePosition.Z))
+    
     return platform
+end
+
+-- Функция для удаления Sky Squid AntiFall платформы
+function MainModule.RemoveSkySquidAntiFall()
+    if MainModule.SkySquid.AntiFallPlatform and MainModule.SkySquid.AntiFallPlatform.Parent then
+        MainModule.SkySquid.AntiFallPlatform:Destroy()
+        MainModule.SkySquid.AntiFallPlatform = nil
+    end
+    return true
+end
+
+-- Jump Rope AntiFall функция (добавляем)
+function MainModule.CreateJumpRopeAntiFall()
+    -- Удаляем старую платформу если она есть
+    if MainModule.JumpRope.AntiFallPlatform and MainModule.JumpRope.AntiFallPlatform.Parent then
+        MainModule.JumpRope.AntiFallPlatform:Destroy()
+        MainModule.JumpRope.AntiFallPlatform = nil
+    end
+    
+    local character = GetCharacter()
+    if not character then return nil end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return nil end
+    
+    local currentPosition = rootPart.Position
+    
+    -- Создание ТОНКОЙ платформы
+    local platform = Instance.new("Part")
+    platform.Name = "JumpRopeAntiFall"
+    platform.Size = Vector3.new(200, 0.5, 200) -- ТОНКАЯ платформа 200x0.5x200
+    platform.Anchored = true
+    platform.CanCollide = true
+    platform.Transparency = 1 -- Полностью невидимая
+    platform.CastShadow = false
+    
+    -- Позиция на 5 единиц ниже игрока
+    local basePosition = Vector3.new(
+        currentPosition.X,
+        currentPosition.Y - 5,
+        currentPosition.Z
+    )
+    
+    -- Проверяем, нет ли коллизии в этой позиции
+    local hasCollision, collidingParts = CheckCollisionAtPosition(basePosition, Vector3.new(50, 10, 50))
+    
+    if hasCollision then
+        -- Если есть коллизия, ищем свободное место вокруг
+        print("[Jump Rope AntiFall] Collision detected, searching for free position...")
+        basePosition = FindFreePositionForPlatform(basePosition, 100, Vector3.new(200, 0.5, 200))
+    else
+        print("[Jump Rope AntiFall] No collision, creating platform at original position")
+    end
+    
+    platform.Position = basePosition
+    platform.Parent = workspace
+    
+    MainModule.JumpRope.AntiFallPlatform = platform
+    
+    print(string.format("[Jump Rope AntiFall] Platform created at X:%.1f, Y:%.1f, Z:%.1f", 
+        basePosition.X, basePosition.Y, basePosition.Z))
+    
+    return platform
+end
+
+-- Функция для удаления Jump Rope AntiFall платформы
+function MainModule.RemoveJumpRopeAntiFall()
+    if MainModule.JumpRope.AntiFallPlatform and MainModule.JumpRope.AntiFallPlatform.Parent then
+        MainModule.JumpRope.AntiFallPlatform:Destroy()
+        MainModule.JumpRope.AntiFallPlatform = nil
+    end
+    return true
 end
 
 -- HNS Infinity Stamina функция
@@ -2056,6 +2206,11 @@ function MainModule.Cleanup()
         MainModule.SkySquid.AntiFallPlatform = nil
     end
     
+    if MainModule.JumpRope.AntiFallPlatform and MainModule.JumpRope.AntiFallPlatform.Parent then
+        MainModule.JumpRope.AntiFallPlatform:Destroy()
+        MainModule.JumpRope.AntiFallPlatform = nil
+    end
+    
     -- Восстанавливаем скорость
     if MainModule.SpeedHack.Enabled then
         MainModule.ToggleSpeedHack(false)
@@ -2081,6 +2236,7 @@ function MainModule.Cleanup()
     MainModule.Dalgona.CompleteEnabled = false
     MainModule.Dalgona.FreeLighterEnabled = false
     MainModule.GlassBridge.AntiBreakEnabled = false
+    MainModule.GlassBridge.AntiFallEnabled = false
     MainModule.GlassBridge.GlassESPEnabled = false
     
     print("Creon X cleanup complete")
