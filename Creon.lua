@@ -1,4 +1,4 @@
--- Creon X v2.3 (исправленная версия для ПК и Delta Mobile)
+-- Creon X v2.3 (исправленная версия для ПК и Delta Mobile) - С ANTIFALL
 -- Проверка исполнителя
 local executorName = "Unknown"
 if identifyexecutor then
@@ -596,12 +596,13 @@ local function ClearContent()
     end
 end
 
--- MAIN TAB
+-- MAIN TAB (С ГЛОБАЛЬНЫМ ANTIFALL)
 local function CreateMainContent()
     ClearContent()
     
     -- Speed Slider
     local speedLabel = CreateSpeedSlider()
+    speedLabel.LayoutOrder = 0
     
     -- Speed Toggle
     local speedToggle, updateSpeedToggle = CreateToggle("SpeedHack", MainModule.SpeedHack.Enabled, function(enabled)
@@ -613,6 +614,105 @@ local function CreateMainContent()
     end)
     speedToggle.LayoutOrder = 1
     
+    -- 🚀 ГЛОБАЛЬНЫЙ ANTIFALL ТОГГЛ
+    local antifallToggle, updateAntifallToggle = CreateToggle("Global Antifall", MainModule.Antifall.Enabled, function(enabled)
+        if MainModule.ToggleAntifall then
+            MainModule.ToggleAntifall(enabled)
+        else
+            MainModule.Antifall.Enabled = enabled
+        end
+    end)
+    antifallToggle.LayoutOrder = 2
+    
+    -- Управление высотой Antifall (кнопки)
+    local heightLabel = CreateButton("Antifall Height Control")
+    heightLabel.TextXAlignment = Enum.TextXAlignment.Center
+    heightLabel.TextColor3 = Color3.fromRGB(0, 170, 255)
+    heightLabel.LayoutOrder = 3
+    
+    local upDownContainer = Instance.new("Frame")
+    upDownContainer.Size = UDim2.new(1, -10, 0, 40)
+    upDownContainer.BackgroundTransparency = 1
+    upDownContainer.LayoutOrder = 4
+    upDownContainer.Parent = ContentScrolling
+    
+    -- Кнопка ВВЕРХ
+    local upButton = Instance.new("TextButton")
+    upButton.Size = UDim2.new(0.45, 0, 1, 0)
+    upButton.Position = UDim2.new(0, 0, 0, 0)
+    upButton.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+    upButton.BorderSizePixel = 0
+    upButton.Text = "UP (O)"
+    upButton.TextColor3 = Color3.fromRGB(240, 240, 255)
+    upButton.TextSize = 11
+    upButton.Font = Enum.Font.Gotham
+    upButton.AutoButtonColor = false
+    upButton.Parent = upDownContainer
+    
+    local upCorner = Instance.new("UICorner")
+    upCorner.CornerRadius = UDim.new(0, 6)
+    upCorner.Parent = upButton
+    
+    local upStroke = Instance.new("UIStroke")
+    upStroke.Color = Color3.fromRGB(80, 80, 100)
+    upStroke.Thickness = 1
+    upStroke.Parent = upButton
+    
+    -- Кнопка ВНИЗ
+    local downButton = Instance.new("TextButton")
+    downButton.Size = UDim2.new(0.45, 0, 1, 0)
+    downButton.Position = UDim2.new(0.55, 0, 0, 0)
+    downButton.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+    downButton.BorderSizePixel = 0
+    downButton.Text = "DOWN (P)"
+    downButton.TextColor3 = Color3.fromRGB(240, 240, 255)
+    downButton.TextSize = 11
+    downButton.Font = Enum.Font.Gotham
+    downButton.AutoButtonColor = false
+    downButton.Parent = upDownContainer
+    
+    local downCorner = Instance.new("UICorner")
+    downCorner.CornerRadius = UDim.new(0, 6)
+    downCorner.Parent = downButton
+    
+    local downStroke = Instance.new("UIStroke")
+    downStroke.Color = Color3.fromRGB(80, 80, 100)
+    downStroke.Thickness = 1
+    downStroke.Parent = downButton
+    
+    -- Анимации для кнопок
+    local function setupButtonAnim(button)
+        button.MouseEnter:Connect(function()
+            TweenService:Create(button, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(75, 75, 95),
+                TextColor3 = Color3.fromRGB(255, 255, 255)
+            }):Play()
+        end)
+        
+        button.MouseLeave:Connect(function()
+            TweenService:Create(button, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(60, 60, 75),
+                TextColor3 = Color3.fromRGB(240, 240, 255)
+            }):Play()
+        end)
+    end
+    
+    setupButtonAnim(upButton)
+    setupButtonAnim(downButton)
+    
+    -- Обработчики кнопок
+    upButton.MouseButton1Click:Connect(function()
+        if MainModule.MoveAntifallUp then
+            MainModule.MoveAntifallUp()
+        end
+    end)
+    
+    downButton.MouseButton1Click:Connect(function()
+        if MainModule.MoveAntifallDown then
+            MainModule.MoveAntifallDown()
+        end
+    end)
+    
     -- Anti Stun QTE
     local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun QTE", MainModule.AutoQTE.AntiStunEnabled, function(enabled)
         if MainModule.ToggleAntiStunQTE then
@@ -621,7 +721,7 @@ local function CreateMainContent()
             MainModule.AutoQTE.AntiStunEnabled = enabled
         end
     end)
-    antiStunToggle.LayoutOrder = 2
+    antiStunToggle.LayoutOrder = 5
     
     -- Anti Stun + Anti Ragdoll
     local bypassRagdollToggle, updateBypassRagdollToggle = CreateToggle("Anti Stun + Anti Ragdoll", MainModule.Misc.BypassRagdollEnabled, function(enabled)
@@ -631,7 +731,7 @@ local function CreateMainContent()
             MainModule.Misc.BypassRagdollEnabled = enabled
         end
     end)
-    bypassRagdollToggle.LayoutOrder = 3
+    bypassRagdollToggle.LayoutOrder = 6
     
     -- Instance Interact
     local instaInteractToggle, updateInstaInteractToggle = CreateToggle("Instance Interact", MainModule.Misc.InstaInteract, function(enabled)
@@ -641,7 +741,7 @@ local function CreateMainContent()
             MainModule.Misc.InstaInteract = enabled
         end
     end)
-    instaInteractToggle.LayoutOrder = 4
+    instaInteractToggle.LayoutOrder = 7
     
     -- No Cooldown Proximity
     local noCooldownToggle, updateNoCooldownToggle = CreateToggle("No Cooldown Proximity", MainModule.Misc.NoCooldownProximity, function(enabled)
@@ -651,11 +751,11 @@ local function CreateMainContent()
             MainModule.Misc.NoCooldownProximity = enabled
         end
     end)
-    noCooldownToggle.LayoutOrder = 5
+    noCooldownToggle.LayoutOrder = 8
     
     -- Teleport Buttons
     local tpUpBtn = CreateButton("TP 100 blocks up")
-    tpUpBtn.LayoutOrder = 6
+    tpUpBtn.LayoutOrder = 9
     tpUpBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportUp100 then
             MainModule.TeleportUp100()
@@ -663,7 +763,7 @@ local function CreateMainContent()
     end)
     
     local tpDownBtn = CreateButton("TP 40 blocks down")
-    tpDownBtn.LayoutOrder = 7
+    tpDownBtn.LayoutOrder = 10
     tpDownBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportDown40 then
             MainModule.TeleportDown40()
@@ -672,7 +772,7 @@ local function CreateMainContent()
     
     -- Position display
     local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
-    positionLabel.LayoutOrder = 8
+    positionLabel.LayoutOrder = 11
     positionLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     positionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
     
@@ -680,6 +780,20 @@ local function CreateMainContent()
     game:GetService("RunService").Heartbeat:Connect(function()
         if positionLabel and positionLabel.Parent then
             positionLabel.Text = "Position: " .. MainModule.GetPlayerPosition()
+        end
+    end)
+    
+    -- Обновление текста Antifall при изменении высоты
+    local lastAntifallHeight = 0
+    game:GetService("RunService").Heartbeat:Connect(function()
+        if MainModule.Antifall and MainModule.Antifall.Platform then
+            local currentHeight = math.floor(MainModule.Antifall.Platform.Position.Y)
+            if currentHeight ~= lastAntifallHeight then
+                heightLabel.Text = string.format("Antifall Height: %d Y", currentHeight)
+                lastAntifallHeight = currentHeight
+            end
+        else
+            heightLabel.Text = "Antifall Height Control"
         end
     end)
 end
@@ -911,49 +1025,27 @@ local function CreateHNSContent()
     staminaToggle.LayoutOrder = 1
 end
 
--- GLASS BRIDGE TAB (раздельные кнопки)
+-- GLASS BRIDGE TAB (без Antifall)
 local function CreateGlassBridgeContent()
     ClearContent()
     
-    -- AntiBreak (переключатель) - при включении автоматически создает AntiFall
-    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("AntiBreak", MainModule.GlassBridge.AntiBreakEnabled, function(enabled)
+    -- AntiBreak
+    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("Glass Bridge AntiBreak", MainModule.GlassBridge.AntiBreakEnabled, function(enabled)
         if MainModule.ToggleGlassBridgeAntiBreak then
             MainModule.ToggleGlassBridgeAntiBreak(enabled)
         else
             MainModule.GlassBridge.AntiBreakEnabled = enabled
         end
-        
-        -- Автоматически создаем AntiFall платформу при включении
-        if enabled and MainModule.CreateGlassBridgeAntiFall then
-            task.wait(0.5) -- Небольшая задержка
-            MainModule.CreateGlassBridgeAntiFall()
-        end
     end)
     antiBreakToggle.LayoutOrder = 1
     
-    -- AntiFall (кликабельная кнопка) - отдельно от AntiBreak
-    local antiFallBtn = CreateButton("AntiFall")
-    antiFallBtn.LayoutOrder = 2
-    antiFallBtn.MouseButton1Click:Connect(function()
-        if MainModule.CreateGlassBridgeAntiFall then
-            local platform = MainModule.CreateGlassBridgeAntiFall()
-            if platform then
-                antiFallBtn.Text = "AntiFall ✓"
-                antiFallBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-                task.wait(1)
-                antiFallBtn.Text = "AntiFall"
-                antiFallBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-            end
-        end
-    end)
-    
     -- Glass ESP (кликабельная кнопка)
     local glassEspBtn = CreateButton("Glass ESP")
-    glassEspBtn.LayoutOrder = 3
+    glassEspBtn.LayoutOrder = 2
     glassEspBtn.MouseButton1Click:Connect(function()
         if MainModule.RevealGlassBridge then
             MainModule.RevealGlassBridge()
-            glassEspBtn.Text = "Glass ESP ✓"
+            glassEspBtn.Text = "Glass ESP (Revealed)"
             glassEspBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
             task.wait(1)
             glassEspBtn.Text = "Glass ESP"
@@ -963,7 +1055,7 @@ local function CreateGlassBridgeContent()
     
     -- Teleport to End (кликабельная кнопка)
     local tpEndBtn = CreateButton("Teleport to End")
-    tpEndBtn.LayoutOrder = 4
+    tpEndBtn.LayoutOrder = 3
     tpEndBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportToGlassBridgeEnd then
             MainModule.TeleportToGlassBridgeEnd()
@@ -985,7 +1077,7 @@ local function CreateTugOfWarContent()
     autoPullToggle.LayoutOrder = 1
 end
 
--- JUMP ROPE TAB (с добавлением AntiFall)
+-- JUMP ROPE TAB
 local function CreateJumpRopeContent()
     ClearContent()
     
@@ -1011,25 +1103,9 @@ local function CreateJumpRopeContent()
         end
     end)
     
-    -- AntiFall (кликабельная кнопка)
-    local antiFallBtn = CreateButton("AntiFall")
-    antiFallBtn.LayoutOrder = 2
-    antiFallBtn.MouseButton1Click:Connect(function()
-        if MainModule.CreateJumpRopeAntiFall then
-            local platform = MainModule.CreateJumpRopeAntiFall()
-            if platform then
-                antiFallBtn.Text = "AntiFall ✓"
-                antiFallBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-                task.wait(1)
-                antiFallBtn.Text = "AntiFall"
-                antiFallBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-            end
-        end
-    end)
-    
     -- Teleport to End (кликабельная кнопка)
     local tpEndBtn = CreateButton("Teleport to End")
-    tpEndBtn.LayoutOrder = 3
+    tpEndBtn.LayoutOrder = 2
     tpEndBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportToJumpRopeEnd then
             MainModule.TeleportToJumpRopeEnd()
@@ -1037,25 +1113,15 @@ local function CreateJumpRopeContent()
     end)
 end
 
--- SKY SQUID TAB (только AntiFall кнопка)
+-- SKY SQUID TAB (без Antifall - используем глобальный)
 local function CreateSkySquidContent()
     ClearContent()
     
-    -- AntiFall (кликабельная кнопка)
-    local antiFallBtn = CreateButton("AntiFall")
-    antiFallBtn.LayoutOrder = 1
-    antiFallBtn.MouseButton1Click:Connect(function()
-        if MainModule.CreateSkySquidAntiFall then
-            local platform = MainModule.CreateSkySquidAntiFall()
-            if platform then
-                antiFallBtn.Text = "AntiFall ✓"
-                antiFallBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-                task.wait(1)
-                antiFallBtn.Text = "AntiFall"
-                antiFallBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-            end
-        end
-    end)
+    local infoLabel = CreateButton("Use Global Antifall from Main tab")
+    infoLabel.TextXAlignment = Enum.TextXAlignment.Center
+    infoLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    infoLabel.TextColor3 = Color3.fromRGB(0, 170, 255)
+    infoLabel.LayoutOrder = 1
 end
 
 -- SETTINGS TAB
@@ -1237,3 +1303,6 @@ if not isSupported then
 else
     print("Executor " .. executorName .. " is supported")
 end
+
+print("Global Antifall: Press M to open menu")
+print("Antifall Controls: O = Up, P = Down")
