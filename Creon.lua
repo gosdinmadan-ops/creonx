@@ -911,36 +911,49 @@ local function CreateHNSContent()
     staminaToggle.LayoutOrder = 1
 end
 
--- Функция для GLASS BRIDGE (исправленная) - теперь при включении AntiBreak автоматически создается AntiFall
-local function GlassBridgeToggleCallback(enabled)
-    if MainModule.ToggleGlassBridgeAntiBreak then
-        MainModule.ToggleGlassBridgeAntiBreak(enabled)
-    else
-        MainModule.GlassBridge.AntiBreakEnabled = enabled
-    end
-    
-    -- Автоматически создаем AntiFall платформу при включении
-    if enabled and MainModule.CreateGlassBridgeAntiFall then
-        task.wait(0.5) -- Небольшая задержка
-        MainModule.CreateGlassBridgeAntiFall()
-    end
-end
-
--- GLASS BRIDGE TAB (упрощенная)
+-- GLASS BRIDGE TAB (раздельные кнопки)
 local function CreateGlassBridgeContent()
     ClearContent()
     
-    -- AntiBreak (теперь включает и AntiFall автоматически)
-    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("AntiBreak + AntiFall", MainModule.GlassBridge.AntiBreakEnabled, GlassBridgeToggleCallback)
+    -- AntiBreak (переключатель) - при включении автоматически создает AntiFall
+    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("AntiBreak", MainModule.GlassBridge.AntiBreakEnabled, function(enabled)
+        if MainModule.ToggleGlassBridgeAntiBreak then
+            MainModule.ToggleGlassBridgeAntiBreak(enabled)
+        else
+            MainModule.GlassBridge.AntiBreakEnabled = enabled
+        end
+        
+        -- Автоматически создаем AntiFall платформу при включении
+        if enabled and MainModule.CreateGlassBridgeAntiFall then
+            task.wait(0.5) -- Небольшая задержка
+            MainModule.CreateGlassBridgeAntiFall()
+        end
+    end)
     antiBreakToggle.LayoutOrder = 1
+    
+    -- AntiFall (кликабельная кнопка) - отдельно от AntiBreak
+    local antiFallBtn = CreateButton("AntiFall")
+    antiFallBtn.LayoutOrder = 2
+    antiFallBtn.MouseButton1Click:Connect(function()
+        if MainModule.CreateGlassBridgeAntiFall then
+            local platform = MainModule.CreateGlassBridgeAntiFall()
+            if platform then
+                antiFallBtn.Text = "AntiFall ✓"
+                antiFallBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+                task.wait(1)
+                antiFallBtn.Text = "AntiFall"
+                antiFallBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+            end
+        end
+    end)
     
     -- Glass ESP (кликабельная кнопка)
     local glassEspBtn = CreateButton("Glass ESP")
-    glassEspBtn.LayoutOrder = 2
+    glassEspBtn.LayoutOrder = 3
     glassEspBtn.MouseButton1Click:Connect(function()
         if MainModule.RevealGlassBridge then
             MainModule.RevealGlassBridge()
-            glassEspBtn.Text = "Glass ESP (Revealed)"
+            glassEspBtn.Text = "Glass ESP ✓"
             glassEspBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
             task.wait(1)
             glassEspBtn.Text = "Glass ESP"
@@ -950,7 +963,7 @@ local function CreateGlassBridgeContent()
     
     -- Teleport to End (кликабельная кнопка)
     local tpEndBtn = CreateButton("Teleport to End")
-    tpEndBtn.LayoutOrder = 3
+    tpEndBtn.LayoutOrder = 4
     tpEndBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportToGlassBridgeEnd then
             MainModule.TeleportToGlassBridgeEnd()
@@ -972,7 +985,7 @@ local function CreateTugOfWarContent()
     autoPullToggle.LayoutOrder = 1
 end
 
--- JUMP ROPE TAB (упрощенная)
+-- JUMP ROPE TAB (с добавлением AntiFall)
 local function CreateJumpRopeContent()
     ClearContent()
     
@@ -998,9 +1011,25 @@ local function CreateJumpRopeContent()
         end
     end)
     
+    -- AntiFall (кликабельная кнопка)
+    local antiFallBtn = CreateButton("AntiFall")
+    antiFallBtn.LayoutOrder = 2
+    antiFallBtn.MouseButton1Click:Connect(function()
+        if MainModule.CreateJumpRopeAntiFall then
+            local platform = MainModule.CreateJumpRopeAntiFall()
+            if platform then
+                antiFallBtn.Text = "AntiFall ✓"
+                antiFallBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+                task.wait(1)
+                antiFallBtn.Text = "AntiFall"
+                antiFallBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+            end
+        end
+    end)
+    
     -- Teleport to End (кликабельная кнопка)
     local tpEndBtn = CreateButton("Teleport to End")
-    tpEndBtn.LayoutOrder = 2
+    tpEndBtn.LayoutOrder = 3
     tpEndBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportToJumpRopeEnd then
             MainModule.TeleportToJumpRopeEnd()
@@ -1008,7 +1037,7 @@ local function CreateJumpRopeContent()
     end)
 end
 
--- SKY SQUID TAB (упрощенная)
+-- SKY SQUID TAB (только AntiFall кнопка)
 local function CreateSkySquidContent()
     ClearContent()
     
@@ -1019,7 +1048,7 @@ local function CreateSkySquidContent()
         if MainModule.CreateSkySquidAntiFall then
             local platform = MainModule.CreateSkySquidAntiFall()
             if platform then
-                antiFallBtn.Text = "AntiFall (Created)"
+                antiFallBtn.Text = "AntiFall ✓"
                 antiFallBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
                 task.wait(1)
                 antiFallBtn.Text = "AntiFall"
