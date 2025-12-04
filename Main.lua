@@ -92,9 +92,7 @@ MainModule.HNS = {
     
     LastDodgeTime = 0,
     DodgeCooldown = 1.0,
-    DodgeRange = 5,
-    PhysicalCheckRange = 3,
-    DodgeOnContactOnly = true,
+    DodgeRange = 9, -- Изменил с 5 на 9
     
     SpikePositions = {},
     OriginalSpikeData = {},
@@ -563,7 +561,7 @@ function MainModule.TeleportToStart()
     SafeTeleport(MainModule.RLGL.StartPosition)
 end
 
--- Исправленный AutoDodge с защитой от физических атак
+-- Упрощенный AutoDodge
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.HNS.AutoDodgeEnabled = enabled
     
@@ -571,12 +569,6 @@ function MainModule.ToggleAutoDodge(enabled)
         MainModule.HNS.Connections.AutoDodge:Disconnect()
         MainModule.HNS.Connections.AutoDodge = nil
     end
-    
-    -- Переменные для отслеживания состояния
-    local isDodging = false
-    local lastForceDetectionTime = 0
-    local forceDetectionCooldown = 0.5
-    local dodgeActivated = false
     
     if enabled then
         MainModule.HNS.Connections.AutoDodge = RunService.Heartbeat:Connect(function()
@@ -590,105 +582,63 @@ function MainModule.ToggleAutoDodge(enabled)
                 local character = GetCharacter()
                 if not character then return end
                 
-                local humanoid = GetHumanoid(character)
                 local rootPart = GetRootPart(character)
+                if not rootPart then return end
                 
-                if not (humanoid and rootPart) then return end
+                -- Сначала проверяем всех игроков в радиусе 9 с ножами
+                local playersWithKnives = {}
                 
-                -- 1. Проверяем физическую силу на персонаже
-                local hasForce = false
-                local forceMagnitude = 0
-                
-                -- Проверяем BodyVelocity и BodyForce на корневой части
-                for _, obj in pairs(rootPart:GetChildren()) do
-                    if obj:IsA("BodyVelocity") then
-                        local velocityMag = obj.Velocity.Magnitude
-                        if velocityMag > 30 then -- Если скорость большая, значит нас толкают
-                            hasForce = true
-                            forceMagnitude = velocityMag
-                            lastForceDetectionTime = currentTime
-                            break
-                        end
-                    elseif obj:IsA("BodyForce") then
-                        local forceMag = obj.Force.Magnitude
-                        if forceMag > 500 then -- Если сила большая
-                            hasForce = true
-                            forceMagnitude = forceMag
-                            lastForceDetectionTime = currentTime
-                            break
-                        end
-                    end
-                end
-                
-                -- 2. Проверяем внезапное изменение скорости
-                if not hasForce then
-                    local currentVelocity = rootPart.Velocity
-                    local horizontalVelocity = Vector3.new(currentVelocity.X, 0, currentVelocity.Z)
-                    local horizontalSpeed = horizontalVelocity.Magnitude
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player == LocalPlayer then continue end
                     
-                    -- Если скорость внезапно изменилась без нашего ввода
-                    if horizontalSpeed > 50 and humanoid.MoveDirection.Magnitude < 0.1 then
-                        hasForce = true
-                        forceMagnitude = horizontalSpeed
-                        lastForceDetectionTime = currentTime
+                    local targetChar = GetCharacter(player)
+                    if not targetChar then continue end
+                    
+                    local targetRoot = GetRootPart(targetChar)
+                    if not targetRoot then continue end
+                    
+                    -- Проверяем расстояние
+                    local distance = GetDistance(rootPart.Position, targetRoot.Position)
+                    if distance > MainModule.HNS.DodgeRange then continue end
+                    
+                    -- Проверяем, есть ли у игрока нож
+                    if playerHasKnife(player) then
+                        table.insert(playersWithKnives, {
+                            player = player,
+                            character = targetChar,
+                            root = targetRoot,
+                            distance = distance
+                        })
                     end
                 end
                 
-                -- 3. Проверяем атаки от игроков с ножами
-                if not hasForce then
-                    for _, player in pairs(Players:GetPlayers()) do
-                        if player ~= LocalPlayer then
-                            local targetChar = player.Character
-                            if targetChar then
-                                local targetHumanoid = GetHumanoid(targetChar)
-                                local targetRoot = GetRootPart(targetChar)
-                                
-                                if targetHumanoid and targetHumanoid.Health > 0 and targetRoot then
-                                    -- Проверяем, есть ли у игрока нож
-                                    local otherHasKnife = playerHasKnife(player)
-                                    if otherHasKnife then
-                                        local distance = GetDistance(rootPart.Position, targetRoot.Position)
-                                        
-                                        -- Если игрок с ножом близко и смотрит на нас
-                                        if distance < 8 then
-                                            -- Проверяем направление взгляда
-                                            local directionToUs = (rootPart.Position - targetRoot.Position).Unit
-                                            local lookVector = targetRoot.CFrame.LookVector
-                                            
-                                            local dotProduct = directionToUs:Dot(lookVector)
-                                            if dotProduct > 0.7 then -- Смотрит на нас
-                                                hasForce = true
-                                                lastForceDetectionTime = currentTime
-                                                break
-                                            end
-                                        end
-                                    end
-                                end
-                            end
+                -- Если рядом есть игроки с ножами, проверяем физическое взаимодействие
+                if #playersWithKnives > 0 then
+                    -- Проверяем наличие BodyVelocity или BodyForce (признак физического воздействия)
+                    local hasPhysicalInteraction = false
+                    
+                    for _, child in pairs(rootPart:GetChildren()) do
+                        if child:IsA("BodyVelocity") or child:IsA("BodyForce") then
+                            hasPhysicalInteraction = true
+                            break
                         end
                     end
-                end
-                
-                -- 4. Активируем додж ТОЛЬКО если обнаружена сила И прошло время с последней активации
-                if hasForce and not isDodging and not dodgeActivated then
-                    -- Проверяем, что сила была недавно обнаружена
-                    if currentTime - lastForceDetectionTime < forceDetectionCooldown then
+                    
+                    -- Если обнаружено физическое взаимодействие - делаем додж
+                    if hasPhysicalInteraction then
                         MainModule.HNS.LastDodgeTime = currentTime
-                        isDodging = true
-                        dodgeActivated = true
                         
-                        -- Активируем додж ОДИН РАЗ
+                        -- Выполняем додж
                         task.spawn(function()
                             pcall(function()
-                                -- Сначала проверяем, есть ли у нас способность доджа
+                                -- Ищем инструмент доджа
                                 local backpack = LocalPlayer:FindFirstChild("Backpack")
-                                local character = GetCharacter()
+                                local char = GetCharacter()
                                 
-                                if backpack and character then
-                                    -- Ищем инструмент доджа (обычно это первый слот)
+                                if backpack and char then
                                     local dodgeTool = nil
                                     
-                                    -- Проверяем по имени
+                                    -- Ищем по имени
                                     for _, tool in pairs(backpack:GetChildren()) do
                                         if tool:IsA("Tool") then
                                             local toolName = tool.Name:lower()
@@ -699,7 +649,7 @@ function MainModule.ToggleAutoDodge(enabled)
                                         end
                                     end
                                     
-                                    -- Если не нашли по имени, берем первый инструмент
+                                    -- Если не нашли, берем первый инструмент
                                     if not dodgeTool then
                                         for _, tool in pairs(backpack:GetChildren()) do
                                             if tool:IsA("Tool") then
@@ -710,23 +660,20 @@ function MainModule.ToggleAutoDodge(enabled)
                                     end
                                     
                                     if dodgeTool then
-                                        -- Активируем додж
                                         if UserInputService.TouchEnabled then
-                                            -- Для мобильных устройств
-                                            dodgeTool.Parent = character
+                                            -- Мобильные: используем 1 слот
+                                            dodgeTool.Parent = char
                                             task.wait(0.1)
                                             dodgeTool.Parent = backpack
                                         else
-                                            -- Для ПК - нажимаем клавишу 1 ОДИН РАЗ
+                                            -- ПК: нажимаем клавишу 1
                                             local virtualInput = game:GetService("VirtualInputManager")
-                                            
-                                            -- Нажимаем клавишу 1
                                             virtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
                                             task.wait(0.05)
                                             virtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
                                         end
                                         
-                                        -- Визуальная обратная связь
+                                        -- Визуальный эффект
                                         local effect = Instance.new("Part")
                                         effect.Size = Vector3.new(5, 0.2, 5)
                                         effect.Position = rootPart.Position - Vector3.new(0, 3, 0)
@@ -735,35 +682,18 @@ function MainModule.ToggleAutoDodge(enabled)
                                         effect.Anchored = true
                                         effect.CanCollide = false
                                         effect.Transparency = 0.7
-                                        effect.Parent = Workspace
+                                        effect.Name = "DodgeEffect"
+                                        effect.Parent = workspace
                                         
-                                        Debris:AddItem(effect, 0.3)
+                                        game:GetService("Debris"):AddItem(effect, 0.3)
                                     end
                                 end
                             end)
-                            
-                            -- Задержка перед сбросом состояния доджа
-                            task.wait(0.5)
-                            isDodging = false
-                            
-                            -- Сбрасываем активацию через 2 секунды
-                            task.wait(1.5)
-                            dodgeActivated = false
                         end)
-                    end
-                elseif not hasForce then
-                    -- Если сила перестала действовать, сбрасываем флаг активации
-                    if currentTime - lastForceDetectionTime > 2 then
-                        dodgeActivated = false
                     end
                 end
             end)
         end)
-    else
-        -- Сбрасываем состояние при выключении
-        isDodging = false
-        dodgeActivated = false
-        lastForceDetectionTime = 0
     end
 end
 
@@ -2174,3 +2104,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
