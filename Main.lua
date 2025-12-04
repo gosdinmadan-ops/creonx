@@ -81,10 +81,14 @@ MainModule.GlassBridge = {
     AntiBreakConnection = nil,
     GlassPlatforms = {},
     GlassAntiFallPlatform = nil,
+    GlassESPEnabled = false,
+    GlassESPConnection = nil,
     
     EndPosition = Vector3.new(-196.372467, 522.192139, -1534.20984),
     BridgeHeight = 520.4,
-    AntiFallYOffset = -3
+    AntiFallYOffset = -3,
+    PlatformSize = Vector3.new(400, 10, 400), -- ОГРОМНАЯ платформа 400%
+    SkySquidPlatformSize = Vector3.new(400, 10, 400) -- ОГРОМНАЯ платформа для Sky Squid
 }
 
 MainModule.TugOfWar = {
@@ -1614,16 +1618,16 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
         return platform
     end
     
-    -- Создаем общую платформу для всего моста
+    -- Создаем ОГРОМНУЮ платформу для всего моста (400%)
     local function createGlobalAntiFallPlatform()
         if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
             return MainModule.GlassBridge.GlassAntiFallPlatform
         end
         
-        -- Создание большой невидимой платформы на высоте моста
+        -- Создание ОГРОМНОЙ невидимой платформы на высоте моста
         local platform = Instance.new("Part")
         platform.Name = "GlassBridgeGlobalAntiFall"
-        platform.Size = Vector3.new(200, 2, 200) -- Большая платформа
+        platform.Size = MainModule.GlassBridge.PlatformSize -- ОГРОМНАЯ платформа 400x10x400
         platform.Anchored = true
         platform.CanCollide = true
         platform.Transparency = 1 -- Полностью невидимая
@@ -1709,17 +1713,80 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
     end)
 end
 
--- Anti Fall для Glass Bridge (кликабельная кнопка)
+-- Glass Bridge ESP функция
+function MainModule.RevealGlassBridge()
+    local Effects = ReplicatedStorage:FindFirstChild("Modules") and 
+                   ReplicatedStorage.Modules:FindFirstChild("Effects")
+    
+    local glassHolder = workspace:FindFirstChild("GlassBridge") and workspace.GlassBridge:FindFirstChild("GlassHolder")
+    if not glassHolder then
+        warn("GlassHolder not found in workspace.GlassBridge")
+        return
+    end
+
+    for _, tilePair in pairs(glassHolder:GetChildren()) do
+        for _, tileModel in pairs(tilePair:GetChildren()) do
+            if tileModel:IsA("Model") and tileModel.PrimaryPart then
+                local primaryPart = tileModel.PrimaryPart
+                for _, child in ipairs(tileModel:GetChildren()) do
+                    if child:IsA("Highlight") then
+                        child:Destroy()
+                    end
+                end
+                local isBreakable = primaryPart:GetAttribute("exploitingisevil") == true
+
+                local targetColor = isBreakable and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
+                local transparency = 0.5
+
+                for _, part in pairs(tileModel:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        TweenService:Create(part, TweenInfo.new(0.5, Enum.EasingStyle.Linear), {
+                            Transparency = transparency,
+                            Color = targetColor
+                        }):Play()
+                    end
+                end
+
+                local highlight = Instance.new("Highlight")
+                highlight.FillColor = targetColor
+                highlight.FillTransparency = 0.7
+                highlight.OutlineTransparency = 0.5
+                highlight.Parent = tileModel
+            end
+        end
+    end
+
+    -- Создаем уведомление
+    if Effects then
+        local success, result = pcall(function()
+            return require(Effects)
+        end)
+        
+        if success and result and result.AnnouncementTween then
+            result.AnnouncementTween({
+                AnnouncementOneLine = true,
+                FasterTween = true,
+                DisplayTime = 10,
+                AnnouncementDisplayText = "[CreonHub]: Safe tiles are green, breakable tiles are red!"
+            })
+        end
+    end
+    
+    -- Также создаем текстовое уведомление
+    print("[CreonHub]: Safe tiles are green, breakable tiles are red!")
+end
+
+-- Anti Fall для Glass Bridge (кликабельная кнопка) - ОГРОМНАЯ платформа
 function MainModule.CreateGlassBridgeAntiFall()
     -- Удаляем старую платформу если она есть
     if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
         MainModule.GlassBridge.GlassAntiFallPlatform:Destroy()
     end
     
-    -- Создание новой платформы
+    -- Создание ОГРОМНОЙ платформы 400%
     local platform = Instance.new("Part")
     platform.Name = "GlassBridgeAntiFall"
-    platform.Size = Vector3.new(200, 2, 200) -- Большая платформа
+    platform.Size = MainModule.GlassBridge.PlatformSize -- ОГРОМНАЯ платформа 400x10x400
     platform.Anchored = true
     platform.CanCollide = true
     platform.Transparency = 1 -- Полностью невидимая
@@ -1738,7 +1805,7 @@ function MainModule.TeleportToGlassBridgeEnd()
     SafeTeleport(MainModule.GlassBridge.EndPosition)
 end
 
--- Sky Squid Anti Fall функция (кликабельная кнопка)
+-- Sky Squid Anti Fall функция (кликабельная кнопка) - ОГРОМНАЯ платформа
 function MainModule.CreateSkySquidAntiFall()
     -- Удаляем старую платформу если она есть
     if MainModule.SkySquid.AntiFallPlatform and MainModule.SkySquid.AntiFallPlatform.Parent then
@@ -1753,10 +1820,10 @@ function MainModule.CreateSkySquidAntiFall()
     
     local currentPosition = rootPart.Position
     
-    -- Создание платформы
+    -- Создание ОГРОМНОЙ платформы 400%
     local platform = Instance.new("Part")
     platform.Name = "SkySquidAntiFall"
-    platform.Size = Vector3.new(100, 2, 100) -- Большая платформа
+    platform.Size = MainModule.GlassBridge.SkySquidPlatformSize -- ОГРОМНАЯ платформа 400x10x400
     platform.Anchored = true
     platform.CanCollide = true
     platform.Transparency = 1 -- Полностью невидимая
@@ -1910,6 +1977,12 @@ function MainModule.Cleanup()
         MainModule.GlassBridge.AntiBreakConnection = nil
     end
     
+    -- Отключаем Glass ESP соединения
+    if MainModule.GlassBridge.GlassESPConnection then
+        MainModule.GlassBridge.GlassESPConnection:Disconnect()
+        MainModule.GlassBridge.GlassESPConnection = nil
+    end
+    
     -- Отключаем Jump Rope соединения
     if MainModule.JumpRope.Connection then
         MainModule.JumpRope.Connection:Disconnect()
@@ -2008,6 +2081,7 @@ function MainModule.Cleanup()
     MainModule.Dalgona.CompleteEnabled = false
     MainModule.Dalgona.FreeLighterEnabled = false
     MainModule.GlassBridge.AntiBreakEnabled = false
+    MainModule.GlassBridge.GlassESPEnabled = false
     
     print("Creon X cleanup complete")
 end
