@@ -90,7 +90,6 @@ MainModule.HNS = {
     CurrentTargetName = nil,
     TargetDistance = 0,
     
-    AutoDodgeEnabled = false,
     LastDodgeTime = 0,
     DodgeCooldown = 1.0,
     DodgeRange = 9,
@@ -2099,6 +2098,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
