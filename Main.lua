@@ -127,6 +127,22 @@ MainModule.Hitbox = {
     ModifiedParts = {}
 }
 
+-- HNS System
+MainModule.HNS = {
+    InfinityStaminaEnabled = false,
+    InfinityStaminaConnection = nil,
+    SpikesKillEnabled = false,
+    SpikesKillConnection = nil,
+    AnimationTeleportConnection = nil,
+    CharacterAddedConnection = nil,
+    AnimationStoppedConnections = {},
+    AutoDodgeEnabled = false,
+    AutoDodgeConnection = nil,
+    LastDodgeTime = 0,
+    DodgeCooldown = 1,
+    DodgeKey = Enum.KeyCode.One
+}
+
 -- Misc System
 MainModule.Misc = {
     InstaInteract = false,
@@ -154,12 +170,6 @@ MainModule.Misc = {
     UnlockPhantomStepEnabled = false,
     LastInjuredNotify = 0,
     LastESPUpdate = 0
-}
-
--- HNS System
-MainModule.HNS = {
-    InfinityStaminaEnabled = false,
-    InfinityStaminaConnection = nil
 }
 
 -- ESP System
@@ -257,156 +267,343 @@ local function SafeTeleport(position)
     if not character then return false end
     
     local rootPart = GetRootPart(character)
+    if rootPart then
+        rootPart.CFrame = CFrame.new(position)
+        return true
+    end
+    
+    return false
+end
+
+-- Функция для доджа (нажатие клавиши 1)
+local function PerformDodge()
+    if tick() - MainModule.HNS.LastDodgeTime < MainModule.HNS.DodgeCooldown then return end
+    
+    -- Симуляция нажатия клавиши доджа (клавиша 1)
+    pcall(function()
+        -- Отправляем событие нажатия клавиши
+        local inputObject = Instance.new("InputObject")
+        inputObject.KeyCode = MainModule.HNS.DodgeKey
+        inputObject.UserInputType = Enum.UserInputType.Keyboard
+        
+        -- Ищем инпут для доджа в UI
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            for _, gui in pairs(playerGui:GetDescendants()) do
+                if gui:IsA("TextButton") and (gui.Name:lower():find("dodge") or gui.Name:lower():find("dash")) then
+                    pcall(function() gui:Activate() end)
+                    break
+                end
+            end
+        end
+        
+        -- Пытаемся использовать слот 1
+        local character = GetCharacter()
+        if character then
+            for _, tool in pairs(character:GetChildren()) do
+                if tool:IsA("Tool") and (tool.Name:lower():find("dodge") or tool.Name:lower():find("dash") or tool.Name == "1") then
+                    local oldPos = character:GetPrimaryPartCFrame()
+                    pcall(function() tool:Activate() end)
+                    task.wait(0.1)
+                    character:SetPrimaryPartCFrame(oldPos)
+                    break
+                end
+            end
+        end
+    end)
+    
+    MainModule.HNS.LastDodgeTime = tick()
+end
+
+-- Функция для проверки, используется ли нож рядом с нами
+local function IsKnifeBeingUsedNearby()
+    local character = GetCharacter()
+    if not character then return false end
+    
+    local rootPart = GetRootPart(character)
     if not rootPart then return false end
     
-    -- Сохраняем текущую позицию
-    local currentPosition = rootPart.Position
-    local currentCFrame = rootPart.CFrame
+    local ourPosition = rootPart.Position
     
-    -- Создаем временную невидимую часть для обхода
-    local tempPart = Instance.new("Part")
-    tempPart.Size = Vector3.new(1, 1, 1)
-    tempPart.Transparency = 1
-    tempPart.Anchored = true
-    tempPart.CanCollide = false
-    tempPart.Position = currentPosition
-    tempPart.Parent = workspace
-    Debris:AddItem(tempPart, 0.1)
-    
-    -- Создаем фейковую анимацию
-    local fakeVelocity = Instance.new("BodyVelocity")
-    fakeVelocity.Velocity = (position - currentPosition).Unit * 100
-    fakeVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
-    fakeVelocity.Parent = rootPart
-    Debris:AddItem(fakeVelocity, 0.1)
-    
-    -- Мгновенная телепортация
-    rootPart.CFrame = CFrame.new(position)
-    
-    -- Удаляем фейковую скорость
-    task.delay(0.05, function()
-        if fakeVelocity and fakeVelocity.Parent then
-            fakeVelocity:Destroy()
+    -- Проверяем всех игроков в радиусе 9
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+            if playerRoot then
+                local distance = GetDistance(playerRoot.Position, ourPosition)
+                if distance <= 9 then
+                    -- Проверяем, есть ли у игрока нож
+                    local hasKnife, knife = playerHasKnife(player)
+                    if hasKnife then
+                        -- Проверяем, активен ли нож
+                        if knife then
+                            -- Проверяем анимации удара
+                            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+                            if humanoid then
+                                -- Проверяем текущие анимации
+                                for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do
+                                    local animName = track.Animation.AnimationId:lower()
+                                    if animName:find("slash") or animName:find("stab") or animName:find("attack") or animName:find("hit") then
+                                        return true
+                                    end
+                                end
+                            end
+                            
+                            -- Проверяем визуальные эффекты атаки
+                            for _, effect in pairs(player.Character:GetChildren()) do
+                                if effect.Name:find("Slash") or effect.Name:find("Attack") or effect.Name:find("Hit") then
+                                    return true
+                                end
+                            end
+                            
+                            -- Проверяем события использования инструмента
+                            if knife:GetAttribute("LastUsed") then
+                                local lastUsed = knife:GetAttribute("LastUsed")
+                                if tick() - lastUsed < 1 then -- Если нож использовался в последнюю секунду
+                                    return true
+                                end
+                            end
+                        end
+                    end
+                end
+            end
         end
-    end)
-    
-    return true
-end
-
--- Функция для получения безопасной позиции выше
-local function GetSafePositionAbove(currentPosition, height)
-    local rayOrigin = currentPosition + Vector3.new(0, 5, 0)
-    local rayDirection = Vector3.new(0, -1, 0)
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
-    
-    local result = workspace:Raycast(rayOrigin, rayDirection * 100, raycastParams)
-    
-    if result and result.Position then
-        return result.Position + Vector3.new(0, height, 0)
-    else
-        return currentPosition + Vector3.new(0, height, 0)
     end
+    
+    return false
 end
 
--- Функция для получения оружия игрока
-local function GetPlayerGun()
+-- Функция для проверки физических атак
+local function IsPhysicalAttackNearby()
     local character = GetCharacter()
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if not character then return false end
     
-    if character then
-        for _, tool in pairs(character:GetChildren()) do
-            if tool:IsA("Tool") and tool:GetAttribute("Gun") then
-                return tool
-            end
-        end
-    end
+    local rootPart = GetRootPart(character)
+    if not rootPart then return false end
     
-    if backpack then
-        for _, tool in pairs(backpack:GetChildren()) do
-            if tool:IsA("Tool") and tool:GetAttribute("Gun") then
-                return tool
-            end
-        end
-    end
+    local ourPosition = rootPart.Position
     
-    return nil
-end
-
--- Функция для получения врагов (NPC с тегом "Enemy")
-local function GetEnemies()
-    local enemies = {}
-    local liveFolder = Workspace:FindFirstChild("Live")
-    
-    if not liveFolder then return enemies end
-    
-    for _, model in pairs(liveFolder:GetChildren()) do
-        if model:IsA("Model") then
-            local enemyTag = model:FindFirstChild("Enemy")
-            local deadTag = model:FindFirstChild("Dead")
-            
-            if enemyTag and not deadTag then
-                -- Проверяем, что это не игрок
-                local isPlayer = false
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player.Name == model.Name then
-                        isPlayer = true
-                        break
-                    end
-                end
-                
-                if not isPlayer then
-                    table.insert(enemies, model.Name)
-                    if #enemies >= 5 then
-                        break
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+            if playerRoot then
+                local distance = GetDistance(playerRoot.Position, ourPosition)
+                if distance <= 9 then
+                    -- Проверяем, есть ли у игрока нож
+                    local hasKnife = playerHasKnife(player)
+                    if hasKnife then
+                        -- Проверяем скорость движения игрока (возможно, он бежит к нам)
+                        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+                        if humanoid then
+                            -- Если игрок быстро движется к нам
+                            local velocity = playerRoot.Velocity
+                            local directionToUs = (ourPosition - playerRoot.Position).Unit
+                            local speedTowardsUs = velocity:Dot(directionToUs)
+                            
+                            if speedTowardsUs > 20 then -- Быстро движется к нам
+                                return true
+                            end
+                            
+                            -- Проверяем анимации рукопашного боя
+                            for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do
+                                local animName = track.Animation.AnimationId:lower()
+                                if animName:find("punch") or animName:find("kick") or animName:find("melee") then
+                                    return true
+                                end
+                            end
+                        end
                     end
                 end
             end
         end
     end
     
-    return enemies
+    return false
 end
 
--- Функция для мгновенного убийства врага
-local function KillEnemy(enemyName)
-    pcall(function()
-        local liveFolder = Workspace:FindFirstChild("Live")
-        if not liveFolder then return end
+-- Функция для удаления шипов
+local function RemoveSpikes()
+    if workspace:FindFirstChild("HideAndSeekMap") and workspace.HideAndSeekMap:FindFirstChild("KillingParts") then
+        workspace.HideAndSeekMap.KillingParts:ClearAllChildren()
+        print("[CreonX] Spikes removed successfully!")
+        return true
+    elseif workspace:FindFirstChild("Spikes") then
+        workspace.Spikes:ClearAllChildren()
+        print("[CreonX] Spikes removed successfully!")
+        return true
+    else
+        -- Поиск шипов по всем workspace
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj.Name:lower():find("spike") or obj.Name:lower():find("kill") then
+                if obj:IsA("BasePart") or obj:IsA("Model") then
+                    obj:Destroy()
+                end
+            end
+        end
+        print("[CreonX] Spikes removed!")
+        return true
+    end
+    print("[CreonX] HideAndSeekMap or KillingParts not found!")
+    return false
+end
+
+-- Spikes Kill функция
+function MainModule.ToggleSpikesKill(enabled)
+    MainModule.HNS.SpikesKillEnabled = enabled
+    
+    -- Очищаем существующие соединения
+    if MainModule.HNS.SpikesKillConnection then
+        MainModule.HNS.SpikesKillConnection:Disconnect()
+        MainModule.HNS.SpikesKillConnection = nil
+    end
+    
+    if MainModule.HNS.AnimationTeleportConnection then
+        MainModule.HNS.AnimationTeleportConnection:Disconnect()
+        MainModule.HNS.AnimationTeleportConnection = nil
+    end
+    
+    if MainModule.HNS.CharacterAddedConnection then
+        MainModule.HNS.CharacterAddedConnection:Disconnect()
+        MainModule.HNS.CharacterAddedConnection = nil
+    end
+    
+    for _, conn in ipairs(MainModule.HNS.AnimationStoppedConnections) do
+        conn:Disconnect()
+    end
+    MainModule.HNS.AnimationStoppedConnections = {}
+    
+    if enabled then
+        -- Сначала удаляем шипы
+        RemoveSpikes()
         
-        local enemy = liveFolder:FindFirstChild(enemyName)
-        if not enemy then return end
-        
-        local enemyTag = enemy:FindFirstChild("Enemy")
-        local deadTag = enemy:FindFirstChild("Dead")
-        
-        if not enemyTag or deadTag then return end
-        
-        local gun = GetPlayerGun()
-        if not gun then return end
-        
-        local args = {
-            gun,
-            {
-                ["ClientRayNormal"] = Vector3.new(-1.1920928955078125e-7, 1.0000001192092896, 0),
-                ["FiredGun"] = true,
-                ["SecondaryHitTargets"] = {},
-                ["ClientRayInstance"] = Workspace:WaitForChild("StairWalkWay"):WaitForChild("Part"),
-                ["ClientRayPosition"] = Vector3.new(-220.17489624023438, 183.2957763671875, 301.07257080078125),
-                ["bulletCF"] = CFrame.new(-220.5039825439453, 185.22506713867188, 302.133544921875, 0.9551116228103638, 0.2567310333251953, -0.14782091975212097, 7.450581485102248e-9, 0.4989798665046692, 0.8666135668754578, 0.2962462604045868, -0.8277127146720886, 0.4765814542770386),
-                ["HitTargets"] = {
-                    [enemyName] = "Head"
-                },
-                ["bulletSizeC"] = Vector3.new(0.009999999776482582, 0.009999999776482582, 4.452499866485596),
-                ["NoMuzzleFX"] = false,
-                ["FirePosition"] = Vector3.new(-72.88850402832031, -679.4803466796875, -173.31005859375)
+        -- Функция для настройки телепортации при анимации
+        local function setupCharacterTeleport(char)
+            local humanoid = char:WaitForChild("Humanoid")
+            local targetAnimations = {
+                ["rbxassetid://107989020363293"] = true
             }
-        }
+            
+            -- Позиция шипов (если они еще есть) или любая позиция для телепортации
+            local spikesPosition = Vector3.new(64.45010375976562, 960.6300048828125, -41.144325256347656)
+            local platform
+            local savedCFrame
+            local activeAnimation = false
+
+            local function createPlatform()
+                if platform then return end
+                platform = Instance.new("Part")
+                platform.Size = Vector3.new(20, 2, 20)
+                platform.Anchored = true
+                platform.Transparency = 1
+                platform.CanCollide = true
+                platform.CFrame = CFrame.new(spikesPosition)
+                platform.Parent = workspace
+            end
+
+            local function removePlatform()
+                if platform then
+                    platform:Destroy()
+                    platform = nil
+                end
+            end
+
+            local function onAnimationStart(animTrack)
+                local id = animTrack.Animation.AnimationId
+                if not targetAnimations[id] then return end
+                if activeAnimation then return end
+                
+                activeAnimation = true
+                createPlatform()
+                savedCFrame = char:GetPrimaryPartCFrame()
+                
+                -- Телепортируем в шипы
+                char:SetPrimaryPartCFrame(CFrame.new(spikesPosition + Vector3.new(0, 5, 0)))
+                print("[CreonX] Teleported to spikes position")
+            end
+
+            local function onAnimationEnd(animTrack)
+                local id = animTrack.Animation.AnimationId
+                if not targetAnimations[id] then return end
+                activeAnimation = false
+                
+                -- Возвращаем через 4 секунды
+                task.delay(4, function()
+                    if savedCFrame and char and char.Parent then
+                        char:SetPrimaryPartCFrame(savedCFrame)
+                        print("[CreonX] Returned to original position")
+                        savedCFrame = nil
+                    end
+                    removePlatform()
+                end)
+            end
+
+            -- Слушаем анимации
+            MainModule.HNS.AnimationTeleportConnection = humanoid.AnimationPlayed:Connect(function(track)
+                local stoppedConn = track.Stopped:Connect(function()
+                    onAnimationEnd(track)
+                end)
+                table.insert(MainModule.HNS.AnimationStoppedConnections, stoppedConn)
+                onAnimationStart(track)
+            end)
+        end
         
-        local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("FiredGunClient")
-        remote:FireServer(unpack(args))
-    end)
+        -- Настраиваем для текущего персонажа
+        local char = GetCharacter()
+        if char then
+            setupCharacterTeleport(char)
+        end
+        
+        -- Настраиваем для новых персонажей
+        MainModule.HNS.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
+            task.wait(1)
+            setupCharacterTeleport(newChar)
+        end)
+        
+        -- Постоянно проверяем и удаляем шипы
+        MainModule.HNS.SpikesKillConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.HNS.SpikesKillEnabled then return end
+            RemoveSpikes()
+        end)
+        
+        print("[CreonX] Spikes Kill enabled")
+    else
+        print("[CreonX] Spikes Kill disabled")
+    end
+end
+
+-- Auto Dodge функция
+function MainModule.ToggleAutoDodge(enabled)
+    MainModule.HNS.AutoDodgeEnabled = enabled
+    
+    if MainModule.HNS.AutoDodgeConnection then
+        MainModule.HNS.AutoDodgeConnection:Disconnect()
+        MainModule.HNS.AutoDodgeConnection = nil
+    end
+    
+    if enabled then
+        MainModule.HNS.AutoDodgeConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.HNS.AutoDodgeEnabled then return end
+            
+            -- Проверяем оба условия
+            local knifeUsed = IsKnifeBeingUsedNearby()
+            local physicalAttack = IsPhysicalAttackNearby()
+            
+            -- Если одно из условий выполнено, делаем додж
+            if knifeUsed or physicalAttack then
+                PerformDodge()
+                if knifeUsed then
+                    print("[CreonX] Dodged from knife attack")
+                end
+                if physicalAttack then
+                    print("[CreonX] Dodged from physical attack")
+                end
+            end
+        end)
+        
+        print("[CreonX] Auto Dodge enabled")
+    else
+        print("[CreonX] Auto Dodge disabled")
+    end
 end
 
 -- Anti Time Stop функция
@@ -2235,6 +2432,105 @@ function MainModule.GetPlayerPosition()
     return "Не доступно"
 end
 
+-- Функция для получения оружия игрока
+local function GetPlayerGun()
+    local character = GetCharacter()
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    
+    if character then
+        for _, tool in pairs(character:GetChildren()) do
+            if tool:IsA("Tool") and tool:GetAttribute("Gun") then
+                return tool
+            end
+        end
+    end
+    
+    if backpack then
+        for _, tool in pairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") and tool:GetAttribute("Gun") then
+                return tool
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- Функция для получения врагов (NPC с тегом "Enemy")
+local function GetEnemies()
+    local enemies = {}
+    local liveFolder = Workspace:FindFirstChild("Live")
+    
+    if not liveFolder then return enemies end
+    
+    for _, model in pairs(liveFolder:GetChildren()) do
+        if model:IsA("Model") then
+            local enemyTag = model:FindFirstChild("Enemy")
+            local deadTag = model:FindFirstChild("Dead")
+            
+            if enemyTag and not deadTag then
+                -- Проверяем, что это не игрок
+                local isPlayer = false
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player.Name == model.Name then
+                        isPlayer = true
+                        break
+                    end
+                end
+                
+                if not isPlayer then
+                    table.insert(enemies, model.Name)
+                    if #enemies >= 5 then
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    return enemies
+end
+
+-- Функция для мгновенного убийства врага
+local function KillEnemy(enemyName)
+    pcall(function()
+        local liveFolder = Workspace:FindFirstChild("Live")
+        if not liveFolder then return end
+        
+        local enemy = liveFolder:FindFirstChild(enemyName)
+        if not enemy then return end
+        
+        local enemyTag = enemy:FindFirstChild("Enemy")
+        local deadTag = enemy:FindFirstChild("Dead")
+        
+        if not enemyTag or deadTag then return end
+        
+        local gun = GetPlayerGun()
+        if not gun then return end
+        
+        local args = {
+            gun,
+            {
+                ["ClientRayNormal"] = Vector3.new(-1.1920928955078125e-7, 1.0000001192092896, 0),
+                ["FiredGun"] = true,
+                ["SecondaryHitTargets"] = {},
+                ["ClientRayInstance"] = Workspace:WaitForChild("StairWalkWay"):WaitForChild("Part"),
+                ["ClientRayPosition"] = Vector3.new(-220.17489624023438, 183.2957763671875, 301.07257080078125),
+                ["bulletCF"] = CFrame.new(-220.5039825439453, 185.22506713867188, 302.133544921875, 0.9551116228103638, 0.2567310333251953, -0.14782091975212097, 7.450581485102248e-9, 0.4989798665046692, 0.8666135668754578, 0.2962462604045868, -0.8277127146720886, 0.4765814542770386),
+                ["HitTargets"] = {
+                    [enemyName] = "Head"
+                },
+                ["bulletSizeC"] = Vector3.new(0.009999999776482582, 0.009999999776482582, 4.452499866485596),
+                ["NoMuzzleFX"] = false,
+                ["FirePosition"] = Vector3.new(-72.88850402832031, -679.4803466796875, -173.31005859375)
+            }
+        }
+        
+        local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("FiredGunClient")
+        remote:FireServer(unpack(args))
+    end)
+end
+
 -- Очистка при закрытии
 function MainModule.Cleanup()
     -- Отключаем все соединения
@@ -2270,6 +2566,32 @@ function MainModule.Cleanup()
         MainModule.HNS.InfinityStaminaConnection:Disconnect()
         MainModule.HNS.InfinityStaminaConnection = nil
     end
+    
+    if MainModule.HNS.SpikesKillConnection then
+        MainModule.HNS.SpikesKillConnection:Disconnect()
+        MainModule.HNS.SpikesKillConnection = nil
+    end
+    
+    if MainModule.HNS.AnimationTeleportConnection then
+        MainModule.HNS.AnimationTeleportConnection:Disconnect()
+        MainModule.HNS.AnimationTeleportConnection = nil
+    end
+    
+    if MainModule.HNS.CharacterAddedConnection then
+        MainModule.HNS.CharacterAddedConnection:Disconnect()
+        MainModule.HNS.CharacterAddedConnection = nil
+    end
+    
+    if MainModule.HNS.AutoDodgeConnection then
+        MainModule.HNS.AutoDodgeConnection:Disconnect()
+        MainModule.HNS.AutoDodgeConnection = nil
+    end
+    
+    -- Очищаем AnimationStoppedConnections
+    for _, conn in ipairs(MainModule.HNS.AnimationStoppedConnections) do
+        conn:Disconnect()
+    end
+    MainModule.HNS.AnimationStoppedConnections = {}
     
     -- Отключаем Glass Bridge соединения
     if MainModule.GlassBridge.AntiBreakConnection then
@@ -2394,6 +2716,8 @@ function MainModule.Cleanup()
     MainModule.Hitbox.Enabled = false
     MainModule.AntiTimeStop.Enabled = false
     MainModule.HNS.InfinityStaminaEnabled = false
+    MainModule.HNS.SpikesKillEnabled = false
+    MainModule.HNS.AutoDodgeEnabled = false
     MainModule.Misc.ESPEnabled = false
     MainModule.Misc.InstaInteract = false
     MainModule.Misc.NoCooldownProximity = false
