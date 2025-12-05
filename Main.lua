@@ -87,9 +87,7 @@ MainModule.GlassBridge = {
     
     EndPosition = Vector3.new(-196.372467, 522.192139, -1534.20984),
     BridgeHeight = 520.4,
-    PlatformSize = Vector3.new(10000, 1, 10000),
-    PlatformColor = Color3.fromRGB(0, 255, 0),
-    PlatformTransparency = 0.3
+    PlatformSize = Vector3.new(10000, 1, 10000)
 }
 
 -- Tug of War System
@@ -103,9 +101,7 @@ MainModule.JumpRope = {
     TeleportToEnd = false,
     AntiFallPlatform = nil,
     Connection = nil,
-    PlatformSize = Vector3.new(10000, 1, 10000),
-    PlatformColor = Color3.fromRGB(0, 255, 0),
-    PlatformTransparency = 0.3
+    PlatformSize = Vector3.new(10000, 1, 10000)
 }
 
 -- Sky Squid System
@@ -113,9 +109,7 @@ MainModule.SkySquid = {
     AntiFallPlatform = nil,
     SafePlatform = nil,
     Connection = nil,
-    PlatformSize = Vector3.new(10000, 1, 10000),
-    PlatformColor = Color3.fromRGB(0, 255, 0),
-    PlatformTransparency = 0.3
+    PlatformSize = Vector3.new(10000, 1, 10000)
 }
 
 -- Misc System
@@ -168,7 +162,8 @@ MainModule.Hitbox = {
     Size = 100,
     Enabled = false,
     Connection = nil,
-    ModifiedParts = {}
+    ModifiedParts = {},
+    PlayerConnections = {}
 }
 
 -- Постоянные соединения
@@ -1419,7 +1414,7 @@ function MainModule.ToggleInfiniteAmmo(enabled)
     end
 end
 
--- Hitbox Expander функция (исправленная по вашему примеру)
+-- Hitbox Expander функция (исправленная - хитбоксы не толкают)
 function MainModule.ToggleHitboxExpander(enabled)
     MainModule.Hitbox.Enabled = enabled
     
@@ -1428,13 +1423,19 @@ function MainModule.ToggleHitboxExpander(enabled)
         MainModule.Hitbox.Connection = nil
     end
     
+    -- Очищаем все соединения
+    for _, conn in pairs(MainModule.Hitbox.PlayerConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    MainModule.Hitbox.PlayerConnections = {}
+    
     -- Очистка кэша при отключении
     if not enabled then
         for player in pairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
                 local root = player.Character:FindFirstChild("HumanoidRootPart")
                 if root and MainModule.Hitbox.ModifiedParts[root] then
-                    -- Восстанавливаем оригинальный размер
+                    -- Восстанавливаем оригинальный размер и коллизию
                     root.Size = MainModule.Hitbox.ModifiedParts[root]
                     root.CanCollide = true
                     MainModule.Hitbox.ModifiedParts[root] = nil
@@ -1445,36 +1446,43 @@ function MainModule.ToggleHitboxExpander(enabled)
         return
     end
     
-    -- Функция для изменения части
+    -- Функция для изменения части (без изменения для нашего персонажа)
     local function modifyPart(part)
         if not MainModule.Hitbox.ModifiedParts[part] then
+            -- Сохраняем оригинальный размер
             MainModule.Hitbox.ModifiedParts[part] = part.Size
+            
+            -- Устанавливаем новый размер хитбокса
             part.Size = Vector3.new(MainModule.Hitbox.Size, MainModule.Hitbox.Size, MainModule.Hitbox.Size)
+            
+            -- Отключаем коллизию с частями нашего персонажа
             part.CanCollide = false
         end
     end
     
     -- Обработчик для новых игроков
     local function onPlayerAdded(player)
-        player.CharacterAdded:Connect(function(character)
-            if MainModule.Hitbox.Enabled then
-                local root = character:WaitForChild("HumanoidRootPart", 5)
+        local connection = player.CharacterAdded:Connect(function(character)
+            if MainModule.Hitbox.Enabled and player ~= LocalPlayer then
+                task.wait(1) -- Ждем полной загрузки персонажа
+                local root = character:FindFirstChild("HumanoidRootPart")
                 if root then
                     modifyPart(root)
                 end
             end
         end)
+        MainModule.Hitbox.PlayerConnections[player] = connection
     end
     
     -- Обработчик для существующих игроков
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local root = player.Character:FindFirstChild("HumanoidRootPart")
-            if root then
-                modifyPart(root)
-            end
-        end
         if player ~= LocalPlayer then
+            if player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                if root then
+                    modifyPart(root)
+                end
+            end
             onPlayerAdded(player)
         end
     end
@@ -1489,12 +1497,33 @@ function MainModule.ToggleHitboxExpander(enabled)
                 if root and not MainModule.Hitbox.ModifiedParts[root] then
                     pcall(modifyPart, root)
                 end
+                
+                -- Дополнительная защита: делаем так, чтобы хитбокс не влиял на коллизию
+                if root then
+                    -- Отключаем коллизию с нашим персонажем
+                    local myCharacter = GetCharacter()
+                    if myCharacter then
+                        for _, part in pairs(myCharacter:GetChildren()) do
+                            if part:IsA("BasePart") then
+                                -- Устанавливаем, что части нашего персонажа могут проходить сквозь хитбоксы
+                                pcall(function()
+                                    part.CanCollide = false
+                                end)
+                            end
+                        end
+                    end
+                end
             end
         end
     end)
     
     -- Очистка при выходе игрока
-    Players.PlayerRemoving:Connect(function(player)
+    local removeConnection = Players.PlayerRemoving:Connect(function(player)
+        if MainModule.Hitbox.PlayerConnections[player] then
+            MainModule.Hitbox.PlayerConnections[player]:Disconnect()
+            MainModule.Hitbox.PlayerConnections[player] = nil
+        end
+        
         if player.Character then
             local root = player.Character:FindFirstChild("HumanoidRootPart")
             if root then
@@ -1503,12 +1532,16 @@ function MainModule.ToggleHitboxExpander(enabled)
         end
     end)
     
+    -- Добавляем соединение в таблицу
+    MainModule.Hitbox.PlayerConnections["PlayerRemoving"] = removeConnection
+    
     -- Слушатель для новых игроков
-    Players.PlayerAdded:Connect(function(player)
+    local addedConnection = Players.PlayerAdded:Connect(function(player)
         if player ~= LocalPlayer then
             onPlayerAdded(player)
         end
     end)
+    MainModule.Hitbox.PlayerConnections["PlayerAdded"] = addedConnection
 end
 
 -- Функция для установки размера хитбокса
@@ -1517,7 +1550,7 @@ function MainModule.SetHitboxSize(size)
     
     -- Обновляем существующие хитбоксы
     if MainModule.Hitbox.Enabled then
-        for player in pairs(Players:GetPlayers()) do
+        for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
                 local root = player.Character:FindFirstChild("HumanoidRootPart")
                 if root and MainModule.Hitbox.ModifiedParts[root] then
@@ -1666,9 +1699,9 @@ function MainModule.CreateGlassBridgeAntiFall()
     platform.Anchored = true
     platform.CanCollide = true
     platform.Transparency = 1 -- ПОЛНАЯ НЕВИДИМОСТЬ
-    platform.Color = Color3.fromRGB(0, 255, 0)
     platform.Material = Enum.Material.Plastic
     platform.CastShadow = false
+    platform.CanQuery = false -- Отключаем запросы
     
     -- Позиция на 5 единиц ниже игрока
     platform.Position = Vector3.new(
@@ -1681,7 +1714,7 @@ function MainModule.CreateGlassBridgeAntiFall()
     MainModule.GlassBridge.GlassAntiFallPlatform = platform
     MainModule.GlassBridge.AntiFallEnabled = true
     
-    print("[CreonX] Glass Bridge AntiFall создан (невидимый) на высоте Y -5")
+    print("[CreonX] Glass Bridge AntiFall создан (полностью невидимый) на высоте Y -5")
     
     return platform
 end
@@ -1721,9 +1754,9 @@ function MainModule.CreateSkySquidAntiFall()
     platform.Anchored = true
     platform.CanCollide = true
     platform.Transparency = 1 -- ПОЛНАЯ НЕВИДИМОСТЬ
-    platform.Color = MainModule.SkySquid.PlatformColor
     platform.Material = Enum.Material.Plastic
     platform.CastShadow = false
+    platform.CanQuery = false -- Отключаем запросы
     
     -- Позиция на 5 единиц ниже игрока
     platform.Position = Vector3.new(
@@ -1735,7 +1768,7 @@ function MainModule.CreateSkySquidAntiFall()
     
     MainModule.SkySquid.AntiFallPlatform = platform
     
-    print("[CreonX] Sky Squid AntiFall создан (невидимый) на высоте Y -5")
+    print("[CreonX] Sky Squid AntiFall создан (полностью невидимый) на высоте Y -5")
     
     return platform
 end
@@ -1774,9 +1807,9 @@ function MainModule.CreateJumpRopeAntiFall()
     platform.Anchored = true
     platform.CanCollide = true
     platform.Transparency = 1 -- ПОЛНАЯ НЕВИДИМОСТЬ
-    platform.Color = MainModule.JumpRope.PlatformColor
     platform.Material = Enum.Material.Plastic
     platform.CastShadow = false
+    platform.CanQuery = false -- Отключаем запросы
     
     -- Позиция на 5 единиц ниже игрока
     platform.Position = Vector3.new(
@@ -1788,7 +1821,7 @@ function MainModule.CreateJumpRopeAntiFall()
     
     MainModule.JumpRope.AntiFallPlatform = platform
     
-    print("[CreonX] Jump Rope AntiFall создан (невидимый) на высоте Y -5")
+    print("[CreonX] Jump Rope AntiFall создан (полностью невидимый) на высоте Y -5")
     
     return platform
 end
@@ -2177,12 +2210,18 @@ function MainModule.Cleanup()
         MainModule.Hitbox.Connection = nil
     end
     
+    -- Отключаем соединения игроков Hitbox Expander
+    for _, conn in pairs(MainModule.Hitbox.PlayerConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    MainModule.Hitbox.PlayerConnections = {}
+    
     -- Отключаем дополнительные защиты
     MainModule.StopEnhancedProtection()
     MainModule.StopJointCleaning()
     
     -- Восстанавливаем хитбоксы
-    for player in pairs(Players:GetPlayers()) do
+    for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             local root = player.Character:FindFirstChild("HumanoidRootPart")
             if root and MainModule.Hitbox.ModifiedParts[root] then
