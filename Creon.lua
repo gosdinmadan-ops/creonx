@@ -1056,7 +1056,7 @@ local function CreateDalgonaContent()
     end)
 end
 
--- HNS TAB
+-- HNS TAB (ДОБАВЛЕНО Spikes Kill и AutoDodge)
 local function CreateHNSContent()
     ClearContent()
     
@@ -1069,6 +1069,80 @@ local function CreateHNSContent()
         end
     end)
     staminaToggle.LayoutOrder = 1
+    
+    -- Spikes Kill (Teleport hiders to spikes)
+    local spikesKillToggle, updateSpikesKillToggle = CreateToggle("Spikes Kill (TP hiders to spikes)", MainModule.HNS.SpikesKillEnabled, function(enabled)
+        if MainModule.ToggleSpikesKill then
+            MainModule.ToggleSpikesKill(enabled)
+        else
+            MainModule.HNS.SpikesKillEnabled = enabled
+        end
+    end)
+    spikesKillToggle.LayoutOrder = 2
+    
+    -- Auto Dodge (Dodge from knife attacks)
+    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge (Dodge from knife attacks)", MainModule.HNS.AutoDodgeEnabled, function(enabled)
+        if MainModule.ToggleAutoDodge then
+            MainModule.ToggleAutoDodge(enabled)
+        else
+            MainModule.HNS.AutoDodgeEnabled = enabled
+        end
+    end)
+    autoDodgeToggle.LayoutOrder = 3
+    
+    -- Remove Spikes (кликабельная кнопка)
+    local removeSpikesBtn = CreateButton("Remove Spikes")
+    removeSpikesBtn.LayoutOrder = 4
+    removeSpikesBtn.MouseButton1Click:Connect(function()
+        -- Функция для удаления шипов
+        local function RemoveSpikes()
+            if workspace:FindFirstChild("HideAndSeekMap") and workspace.HideAndSeekMap:FindFirstChild("KillingParts") then
+                workspace.HideAndSeekMap.KillingParts:ClearAllChildren()
+                removeSpikesBtn.Text = "Spikes Removed!"
+                removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+                task.wait(1)
+                removeSpikesBtn.Text = "Remove Spikes"
+                removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+                return true
+            elseif workspace:FindFirstChild("Spikes") then
+                workspace.Spikes:ClearAllChildren()
+                removeSpikesBtn.Text = "Spikes Removed!"
+                removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+                task.wait(1)
+                removeSpikesBtn.Text = "Remove Spikes"
+                removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+                return true
+            else
+                -- Поиск шипов по всем workspace
+                local found = false
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if obj.Name:lower():find("spike") or obj.Name:lower():find("kill") then
+                        if obj:IsA("BasePart") or obj:IsA("Model") then
+                            obj:Destroy()
+                            found = true
+                        end
+                    end
+                end
+                if found then
+                    removeSpikesBtn.Text = "Spikes Removed!"
+                    removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+                    task.wait(1)
+                    removeSpikesBtn.Text = "Remove Spikes"
+                    removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+                    return true
+                else
+                    removeSpikesBtn.Text = "No Spikes Found"
+                    removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+                    task.wait(1)
+                    removeSpikesBtn.Text = "Remove Spikes"
+                    removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+                    return false
+                end
+            end
+        end
+        
+        RemoveSpikes()
+    end)
 end
 
 -- Функция для GLASS BRIDGE с автоматическим AntiFall при включении
