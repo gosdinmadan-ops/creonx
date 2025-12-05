@@ -43,6 +43,10 @@ local GlassBridgeAntiFallEnabled = false
 local JumpRopeAntiFallEnabled = false
 local SkySquidAntiFallEnabled = false
 
+-- Переменные для HNS
+local HNSSpikesKillEnabled = false
+local HNSAutoDodgeEnabled = false
+
 -- Переменные для горячей клавиши
 local menuHotkey = Enum.KeyCode.M
 local isChoosingKey = false
@@ -763,12 +767,32 @@ local function CreateMainContent()
     end)
     speedToggle.LayoutOrder = 1
     
-    -- Anti Time Stop (NEW)
-    local antiTimeStopToggle, updateAntiTimeStopToggle = CreateToggle("Anti Time Stop", MainModule.AntiTimeStop.Enabled, function(enabled)
-        if MainModule.ToggleAntiTimeStop then
-            MainModule.ToggleAntiTimeStop(enabled)
-        else
-            MainModule.AntiTimeStop.Enabled = enabled
+    -- Anti Time Stop (DISABLED - Dont work)
+    local antiTimeStopToggle, updateAntiTimeStopToggle = CreateToggle("Anti Time Stop (Dont work)", false, function(enabled)
+        -- Функция отключена, показываем сообщение
+        local notification = Instance.new("TextLabel")
+        notification.Size = UDim2.new(0, 200, 0, 50)
+        notification.Position = UDim2.new(0.5, -100, 0.5, -25)
+        notification.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+        notification.BorderSizePixel = 0
+        notification.Text = "Anti Time Stop временно не работает"
+        notification.TextColor3 = Color3.fromRGB(255, 255, 255)
+        notification.TextSize = 12
+        notification.Font = Enum.Font.Gotham
+        notification.Parent = ScreenGui
+        
+        local notifCorner = Instance.new("UICorner")
+        notifCorner.CornerRadius = UDim.new(0, 6)
+        notifCorner.Parent = notification
+        
+        -- Автоматически возвращаем переключатель в false
+        task.wait(0.5)
+        updateAntiTimeStopToggle(false)
+        
+        -- Удаляем уведомление через 2 секунды
+        task.wait(2)
+        if notification.Parent then
+            notification:Destroy()
         end
     end)
     antiTimeStopToggle.LayoutOrder = 2
@@ -1056,7 +1080,7 @@ local function CreateDalgonaContent()
     end)
 end
 
--- HNS TAB (ДОБАВЛЕНО Spikes Kill и AutoDodge)
+-- HNS TAB (ОБНОВЛЕННАЯ)
 local function CreateHNSContent()
     ClearContent()
     
@@ -1070,78 +1094,102 @@ local function CreateHNSContent()
     end)
     staminaToggle.LayoutOrder = 1
     
-    -- Spikes Kill (Teleport hiders to spikes)
-    local spikesKillToggle, updateSpikesKillToggle = CreateToggle("Spikes Kill (TP hiders to spikes)", MainModule.HNS.SpikesKillEnabled, function(enabled)
-        if MainModule.ToggleSpikesKill then
-            MainModule.ToggleSpikesKill(enabled)
+    -- Spikes Kill (NEW)
+    local spikesKillToggle, updateSpikesKillToggle = CreateToggle("Spikes Kill", HNSSpikesKillEnabled, function(enabled)
+        HNSSpikesKillEnabled = enabled
+        if MainModule.ToggleHNSSpikesKill then
+            MainModule.ToggleHNSSpikesKill(enabled)
         else
-            MainModule.HNS.SpikesKillEnabled = enabled
+            -- Если функция недоступна, показываем сообщение
+            if enabled then
+                local notification = Instance.new("TextLabel")
+                notification.Size = UDim2.new(0, 200, 0, 50)
+                notification.Position = UDim2.new(0.5, -100, 0.5, -25)
+                notification.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+                notification.BorderSizePixel = 0
+                notification.Text = "Spikes Kill недоступен"
+                notification.TextColor3 = Color3.fromRGB(255, 255, 255)
+                notification.TextSize = 12
+                notification.Font = Enum.Font.Gotham
+                notification.Parent = ScreenGui
+                
+                local notifCorner = Instance.new("UICorner")
+                notifCorner.CornerRadius = UDim.new(0, 6)
+                notifCorner.Parent = notification
+                
+                task.wait(0.5)
+                updateSpikesKillToggle(false)
+                
+                task.wait(2)
+                if notification.Parent then
+                    notification:Destroy()
+                end
+            end
         end
     end)
     spikesKillToggle.LayoutOrder = 2
     
-    -- Auto Dodge (Dodge from knife attacks)
-    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge (Dodge from knife attacks)", MainModule.HNS.AutoDodgeEnabled, function(enabled)
-        if MainModule.ToggleAutoDodge then
-            MainModule.ToggleAutoDodge(enabled)
+    -- Auto Dodge (NEW)
+    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", HNSAutoDodgeEnabled, function(enabled)
+        HNSAutoDodgeEnabled = enabled
+        if MainModule.ToggleHNSAutoDodge then
+            MainModule.ToggleHNSAutoDodge(enabled)
         else
-            MainModule.HNS.AutoDodgeEnabled = enabled
+            -- Если функция недоступна, показываем сообщение
+            if enabled then
+                local notification = Instance.new("TextLabel")
+                notification.Size = UDim2.new(0, 200, 0, 50)
+                notification.Position = UDim2.new(0.5, -100, 0.5, -25)
+                notification.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+                notification.BorderSizePixel = 0
+                notification.Text = "Auto Dodge недоступен"
+                notification.TextColor3 = Color3.fromRGB(255, 255, 255)
+                notification.TextSize = 12
+                notification.Font = Enum.Font.Gotham
+                notification.Parent = ScreenGui
+                
+                local notifCorner = Instance.new("UICorner")
+                notifCorner.CornerRadius = UDim.new(0, 6)
+                notifCorner.Parent = notification
+                
+                task.wait(0.5)
+                updateAutoDodgeToggle(false)
+                
+                task.wait(2)
+                if notification.Parent then
+                    notification:Destroy()
+                end
+            end
         end
     end)
     autoDodgeToggle.LayoutOrder = 3
     
-    -- Remove Spikes (кликабельная кнопка)
+    -- Remove Spikes Button
     local removeSpikesBtn = CreateButton("Remove Spikes")
     removeSpikesBtn.LayoutOrder = 4
     removeSpikesBtn.MouseButton1Click:Connect(function()
-        -- Функция для удаления шипов
-        local function RemoveSpikes()
-            if workspace:FindFirstChild("HideAndSeekMap") and workspace.HideAndSeekMap:FindFirstChild("KillingParts") then
-                workspace.HideAndSeekMap.KillingParts:ClearAllChildren()
+        if MainModule.RemoveHNSSpikes then
+            local success = MainModule.RemoveHNSSpikes()
+            if success then
                 removeSpikesBtn.Text = "Spikes Removed!"
                 removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
                 task.wait(1)
                 removeSpikesBtn.Text = "Remove Spikes"
                 removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-                return true
-            elseif workspace:FindFirstChild("Spikes") then
-                workspace.Spikes:ClearAllChildren()
-                removeSpikesBtn.Text = "Spikes Removed!"
-                removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-                task.wait(1)
-                removeSpikesBtn.Text = "Remove Spikes"
-                removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-                return true
             else
-                -- Поиск шипов по всем workspace
-                local found = false
-                for _, obj in pairs(workspace:GetDescendants()) do
-                    if obj.Name:lower():find("spike") or obj.Name:lower():find("kill") then
-                        if obj:IsA("BasePart") or obj:IsA("Model") then
-                            obj:Destroy()
-                            found = true
-                        end
-                    end
-                end
-                if found then
-                    removeSpikesBtn.Text = "Spikes Removed!"
-                    removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-                    task.wait(1)
-                    removeSpikesBtn.Text = "Remove Spikes"
-                    removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-                    return true
-                else
-                    removeSpikesBtn.Text = "No Spikes Found"
-                    removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
-                    task.wait(1)
-                    removeSpikesBtn.Text = "Remove Spikes"
-                    removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-                    return false
-                end
+                removeSpikesBtn.Text = "Failed to Remove"
+                removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+                task.wait(1)
+                removeSpikesBtn.Text = "Remove Spikes"
+                removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
             end
+        else
+            removeSpikesBtn.Text = "Function Not Available"
+            removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+            task.wait(1)
+            removeSpikesBtn.Text = "Remove Spikes"
+            removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
         end
-        
-        RemoveSpikes()
     end)
 end
 
