@@ -1,4 +1,4 @@
--- Creon X v2.4 (исправленная версия для ПК и Delta Mobile) с Anti Time Stop
+-- Creon X v2.4 (исправленная версия для ПК и Delta Mobile) с HNS функциями
 -- Проверка исполнителя
 local executorName = "Unknown"
 if identifyexecutor then
@@ -746,7 +746,7 @@ local function ClearContent()
     end
 end
 
--- MAIN TAB
+-- MAIN TAB (без Anti Time Stop)
 local function CreateMainContent()
     ClearContent()
     
@@ -763,16 +763,6 @@ local function CreateMainContent()
     end)
     speedToggle.LayoutOrder = 1
     
-    -- Anti Time Stop (NEW)
-    local antiTimeStopToggle, updateAntiTimeStopToggle = CreateToggle("Anti Time Stop", MainModule.AntiTimeStop.Enabled, function(enabled)
-        if MainModule.ToggleAntiTimeStop then
-            MainModule.ToggleAntiTimeStop(enabled)
-        else
-            MainModule.AntiTimeStop.Enabled = enabled
-        end
-    end)
-    antiTimeStopToggle.LayoutOrder = 2
-    
     -- Anti Stun QTE
     local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun QTE", MainModule.AutoQTE.AntiStunEnabled, function(enabled)
         if MainModule.ToggleAntiStunQTE then
@@ -781,7 +771,7 @@ local function CreateMainContent()
             MainModule.AutoQTE.AntiStunEnabled = enabled
         end
     end)
-    antiStunToggle.LayoutOrder = 3
+    antiStunToggle.LayoutOrder = 2
     
     -- Anti Stun + Anti Ragdoll
     local bypassRagdollToggle, updateBypassRagdollToggle = CreateToggle("Anti Stun + Anti Ragdoll", MainModule.Misc.BypassRagdollEnabled, function(enabled)
@@ -791,7 +781,7 @@ local function CreateMainContent()
             MainModule.Misc.BypassRagdollEnabled = enabled
         end
     end)
-    bypassRagdollToggle.LayoutOrder = 4
+    bypassRagdollToggle.LayoutOrder = 3
     
     -- Instance Interact
     local instaInteractToggle, updateInstaInteractToggle = CreateToggle("Instance Interact", MainModule.Misc.InstaInteract, function(enabled)
@@ -801,7 +791,7 @@ local function CreateMainContent()
             MainModule.Misc.InstaInteract = enabled
         end
     end)
-    instaInteractToggle.LayoutOrder = 5
+    instaInteractToggle.LayoutOrder = 4
     
     -- No Cooldown Proximity
     local noCooldownToggle, updateNoCooldownToggle = CreateToggle("No Cooldown Proximity", MainModule.Misc.NoCooldownProximity, function(enabled)
@@ -811,11 +801,11 @@ local function CreateMainContent()
             MainModule.Misc.NoCooldownProximity = enabled
         end
     end)
-    noCooldownToggle.LayoutOrder = 6
+    noCooldownToggle.LayoutOrder = 5
     
     -- Teleport Buttons
     local tpUpBtn = CreateButton("TP 100 blocks up")
-    tpUpBtn.LayoutOrder = 7
+    tpUpBtn.LayoutOrder = 6
     tpUpBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportUp100 then
             MainModule.TeleportUp100()
@@ -823,7 +813,7 @@ local function CreateMainContent()
     end)
     
     local tpDownBtn = CreateButton("TP 40 blocks down")
-    tpDownBtn.LayoutOrder = 8
+    tpDownBtn.LayoutOrder = 7
     tpDownBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportDown40 then
             MainModule.TeleportDown40()
@@ -832,7 +822,7 @@ local function CreateMainContent()
     
     -- Position display
     local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
-    positionLabel.LayoutOrder = 9
+    positionLabel.LayoutOrder = 8
     positionLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     positionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
     
@@ -1056,7 +1046,7 @@ local function CreateDalgonaContent()
     end)
 end
 
--- HNS TAB
+-- HNS TAB (с добавленными функциями)
 local function CreateHNSContent()
     ClearContent()
     
@@ -1069,6 +1059,45 @@ local function CreateHNSContent()
         end
     end)
     staminaToggle.LayoutOrder = 1
+    
+    -- Spikes Kill
+    local spikesKillToggle, updateSpikesKillToggle = CreateToggle("Spikes Kill", MainModule.HNS.SpikesKillEnabled, function(enabled)
+        if MainModule.ToggleSpikesKill then
+            MainModule.ToggleSpikesKill(enabled)
+        else
+            MainModule.HNS.SpikesKillEnabled = enabled
+        end
+    end)
+    spikesKillToggle.LayoutOrder = 2
+    
+    -- Auto Dodge
+    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", MainModule.HNS.AutoDodgeEnabled, function(enabled)
+        if MainModule.ToggleAutoDodge then
+            MainModule.ToggleAutoDodge(enabled)
+        else
+            MainModule.HNS.AutoDodgeEnabled = enabled
+        end
+    end)
+    autoDodgeToggle.LayoutOrder = 3
+    
+    -- Remove Spikes Button
+    local removeSpikesBtn = CreateButton("Remove Spikes")
+    removeSpikesBtn.LayoutOrder = 4
+    removeSpikesBtn.MouseButton1Click:Connect(function()
+        if MainModule.RemoveSpikes then
+            local success, message = MainModule.RemoveSpikes()
+            if success then
+                removeSpikesBtn.Text = "Spikes Removed!"
+                removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+            else
+                removeSpikesBtn.Text = "Failed: " .. message
+                removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+            end
+            task.wait(2)
+            removeSpikesBtn.Text = "Remove Spikes"
+            removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+        end
+    end)
 end
 
 -- Функция для GLASS BRIDGE с автоматическим AntiFall при включении
