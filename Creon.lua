@@ -1,4 +1,4 @@
--- Creon X v2.4 (исправленная версия для ПК и Delta Mobile)
+-- Creon X v2.4 (исправленная версия для ПК и Delta Mobile) с Anti Time Stop
 -- Проверка исполнителя
 local executorName = "Unknown"
 if identifyexecutor then
@@ -25,10 +25,6 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
--- Переменная для горячей клавиши
-local hotkey = Enum.KeyCode.M
-local selectingHotkey = false
-
 -- Загрузка Main модуля
 local MainModule
 local success, err = pcall(function()
@@ -47,10 +43,10 @@ local GlassBridgeAntiFallEnabled = false
 local JumpRopeAntiFallEnabled = false
 local SkySquidAntiFallEnabled = false
 
--- Независимая мышь GUI
-local GuiMouseEnabled = false
-local OriginalMouseIconEnabled = true
-local GuiCursor = nil
+-- Переменные для горячей клавиши
+local menuHotkey = Enum.KeyCode.M
+local isChoosingKey = false
+local keyChangeButton = nil
 
 -- GUI Creon X v2.4
 local ScreenGui = Instance.new("ScreenGui")
@@ -136,7 +132,6 @@ MinimizeButton.MouseButton1Click:Connect(function()
     if UIS.TouchEnabled then
         MobileOpenButton.Visible = true
     end
-    DisableGuiMouse()
 end)
 
 -- Табы
@@ -217,7 +212,6 @@ if UIS.TouchEnabled then
         MainFrame.Visible = true
         MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
         MobileOpenButton.Visible = false
-        EnableGuiMouse()
     end)
     
     local mobileDragging = false
@@ -257,84 +251,6 @@ if UIS.TouchEnabled then
     MainFrame.Visible = false
 else
     MainFrame.Visible = true
-end
-
--- Независимая мышь GUI
-local function EnableGuiMouse()
-    if GuiMouseEnabled then return end
-    
-    GuiMouseEnabled = true
-    
-    -- Сохраняем оригинальное состояние мыши
-    OriginalMouseIconEnabled = UIS.MouseIconEnabled
-    
-    -- Скрываем стандартный курсор Roblox
-    UIS.MouseIconEnabled = false
-    
-    -- Создаем свой курсор
-    GuiCursor = Instance.new("ImageLabel")
-    GuiCursor.Name = "GuiCursor"
-    GuiCursor.Size = UDim2.new(0, 24, 0, 24)
-    GuiCursor.BackgroundTransparency = 1
-    GuiCursor.Image = "rbxassetid://4468791792" -- Белый курсор
-    GuiCursor.ImageColor3 = Color3.fromRGB(255, 255, 255)
-    GuiCursor.ImageTransparency = 0.1
-    GuiCursor.ZIndex = 10000
-    GuiCursor.AnchorPoint = Vector2.new(0.5, 0.5)
-    GuiCursor.Parent = ScreenGui
-    
-    -- Тень курсора для лучшей видимости
-    local cursorShadow = Instance.new("ImageLabel")
-    cursorShadow.Name = "CursorShadow"
-    cursorShadow.Size = UDim2.new(0, 24, 0, 24)
-    cursorShadow.BackgroundTransparency = 1
-    cursorShadow.Image = "rbxassetid://4468791792"
-    cursorShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-    cursorShadow.ImageTransparency = 0.3
-    cursorShadow.ZIndex = 9999
-    cursorShadow.AnchorPoint = Vector2.new(0.5, 0.5)
-    cursorShadow.Position = UDim2.new(0, 1, 0, 1)
-    cursorShadow.Parent = GuiCursor
-    
-    -- Обновление позиции курсора
-    local mouse = player:GetMouse()
-    local connection = RunService.RenderStepped:Connect(function()
-        if GuiMouseEnabled and GuiCursor and GuiCursor.Parent then
-            GuiCursor.Position = UDim2.new(0, mouse.X, 0, mouse.Y)
-        end
-    end)
-    
-    -- Запоминаем соединение для очистки
-    GuiCursor:SetAttribute("Connection", connection)
-    
-    -- Устанавливаем поведение мыши для GUI
-    UIS.MouseBehavior = Enum.MouseBehavior.Default
-    
-    print("GUI Mouse Enabled")
-end
-
-local function DisableGuiMouse()
-    if not GuiMouseEnabled then return end
-    
-    GuiMouseEnabled = false
-    
-    -- Восстанавливаем оригинальный курсор Roblox
-    UIS.MouseIconEnabled = OriginalMouseIconEnabled
-    
-    -- Удаляем наш курсор и его соединение
-    if GuiCursor then
-        local connection = GuiCursor:GetAttribute("Connection")
-        if connection then
-            connection:Disconnect()
-        end
-        GuiCursor:Destroy()
-        GuiCursor = nil
-    end
-    
-    -- Восстанавливаем нормальное поведение мыши
-    UIS.MouseBehavior = Enum.MouseBehavior.Default
-    
-    print("GUI Mouse Disabled")
 end
 
 -- Функция для перемещения GUI
@@ -582,6 +498,146 @@ local function CreateSpeedSlider()
     return speedLabel
 end
 
+-- Функция для создания кнопки изменения горячей клавиши
+local function CreateKeybindButton()
+    local keybindContainer = Instance.new("Frame")
+    keybindContainer.Size = UDim2.new(1, -10, 0, 32)
+    keybindContainer.BackgroundTransparency = 1
+    keybindContainer.Parent = ContentScrolling
+    
+    local keybindFrame = Instance.new("Frame")
+    keybindFrame.Size = UDim2.new(1, 0, 1, 0)
+    keybindFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+    keybindFrame.BorderSizePixel = 0
+    keybindFrame.Parent = keybindContainer
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = keybindFrame
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(80, 80, 100)
+    stroke.Thickness = 1.2
+    stroke.Parent = keybindFrame
+    
+    -- Текст
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = "Menu Hotkey: M"
+    label.TextColor3 = Color3.fromRGB(240, 240, 255)
+    label.TextSize = 12
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = keybindFrame
+    
+    -- Кнопка изменения
+    local changeBtn = Instance.new("TextButton")
+    changeBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
+    changeBtn.Position = UDim2.new(0.72, 0, 0.15, 0)
+    changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+    changeBtn.BorderSizePixel = 0
+    changeBtn.Text = "Change"
+    changeBtn.TextColor3 = Color3.fromRGB(240, 240, 255)
+    changeBtn.TextSize = 11
+    changeBtn.Font = Enum.Font.Gotham
+    changeBtn.AutoButtonColor = false
+    changeBtn.Parent = keybindFrame
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 4)
+    btnCorner.Parent = changeBtn
+    
+    local btnStroke = Instance.new("UIStroke")
+    btnStroke.Color = Color3.fromRGB(80, 80, 100)
+    btnStroke.Thickness = 1
+    btnStroke.Parent = changeBtn
+    
+    -- Анимации для кнопки
+    changeBtn.MouseEnter:Connect(function()
+        if not isChoosingKey then
+            TweenService:Create(changeBtn, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(75, 75, 95),
+                TextColor3 = Color3.fromRGB(255, 255, 255)
+            }):Play()
+        end
+    end)
+    
+    changeBtn.MouseLeave:Connect(function()
+        if not isChoosingKey then
+            TweenService:Create(changeBtn, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(60, 60, 75),
+                TextColor3 = Color3.fromRGB(240, 240, 255)
+            }):Play()
+        end
+    end)
+    
+    -- Функция обновления текста
+    local function updateKeyText()
+        label.Text = "Menu Hotkey: " .. menuHotkey.Name
+    end
+    
+    -- Функция изменения клавиши
+    local function startKeyChange()
+        isChoosingKey = true
+        changeBtn.Text = "Press any key..."
+        changeBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+        
+        local connection
+        connection = UIS.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                -- Сохраняем новую клавишу
+                menuHotkey = input.KeyCode
+                updateKeyText()
+                
+                -- Останавливаем выбор
+                isChoosingKey = false
+                changeBtn.Text = "Change"
+                changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+                
+                if connection then
+                    connection:Disconnect()
+                end
+            elseif input.UserInputType == Enum.UserInputType.MouseButton1 or 
+                   input.UserInputType == Enum.UserInputType.MouseButton2 or
+                   input.UserInputType == Enum.UserInputType.MouseButton3 then
+                -- Можно добавить поддержку мыши, если нужно
+                isChoosingKey = false
+                changeBtn.Text = "Change"
+                changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+                
+                if connection then
+                    connection:Disconnect()
+                end
+            end
+        end)
+        
+        -- Если 5 секунд не выбрали клавишу - отменяем
+        task.delay(5, function()
+            if isChoosingKey then
+                isChoosingKey = false
+                changeBtn.Text = "Change"
+                changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+                
+                if connection then
+                    connection:Disconnect()
+                end
+            end
+        end)
+    end
+    
+    changeBtn.MouseButton1Click:Connect(function()
+        if not isChoosingKey then
+            startKeyChange()
+        end
+    end)
+    
+    updateKeyText()
+    keyChangeButton = changeBtn
+    
+    return keybindContainer
+end
+
 -- Простая кнопка выбора Guard типа
 local function CreateGuardTypeSelector()
     local selectorContainer = Instance.new("Frame")
@@ -707,6 +763,16 @@ local function CreateMainContent()
     end)
     speedToggle.LayoutOrder = 1
     
+    -- Anti Time Stop (NEW)
+    local antiTimeStopToggle, updateAntiTimeStopToggle = CreateToggle("Anti Time Stop", MainModule.AntiTimeStop.Enabled, function(enabled)
+        if MainModule.ToggleAntiTimeStop then
+            MainModule.ToggleAntiTimeStop(enabled)
+        else
+            MainModule.AntiTimeStop.Enabled = enabled
+        end
+    end)
+    antiTimeStopToggle.LayoutOrder = 2
+    
     -- Anti Stun QTE
     local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun QTE", MainModule.AutoQTE.AntiStunEnabled, function(enabled)
         if MainModule.ToggleAntiStunQTE then
@@ -715,7 +781,7 @@ local function CreateMainContent()
             MainModule.AutoQTE.AntiStunEnabled = enabled
         end
     end)
-    antiStunToggle.LayoutOrder = 2
+    antiStunToggle.LayoutOrder = 3
     
     -- Anti Stun + Anti Ragdoll
     local bypassRagdollToggle, updateBypassRagdollToggle = CreateToggle("Anti Stun + Anti Ragdoll", MainModule.Misc.BypassRagdollEnabled, function(enabled)
@@ -725,7 +791,7 @@ local function CreateMainContent()
             MainModule.Misc.BypassRagdollEnabled = enabled
         end
     end)
-    bypassRagdollToggle.LayoutOrder = 3
+    bypassRagdollToggle.LayoutOrder = 4
     
     -- Instance Interact
     local instaInteractToggle, updateInstaInteractToggle = CreateToggle("Instance Interact", MainModule.Misc.InstaInteract, function(enabled)
@@ -735,7 +801,7 @@ local function CreateMainContent()
             MainModule.Misc.InstaInteract = enabled
         end
     end)
-    instaInteractToggle.LayoutOrder = 4
+    instaInteractToggle.LayoutOrder = 5
     
     -- No Cooldown Proximity
     local noCooldownToggle, updateNoCooldownToggle = CreateToggle("No Cooldown Proximity", MainModule.Misc.NoCooldownProximity, function(enabled)
@@ -745,17 +811,7 @@ local function CreateMainContent()
             MainModule.Misc.NoCooldownProximity = enabled
         end
     end)
-    noCooldownToggle.LayoutOrder = 5
-    
-    -- Anti Time Stop
-    local antiTimeStopToggle, updateAntiTimeStopToggle = CreateToggle("Anti Time Stop", MainModule.AntiTimeStop and MainModule.AntiTimeStop.Enabled or false, function(enabled)
-        if MainModule.ToggleAntiTimeStop then
-            MainModule.ToggleAntiTimeStop(enabled)
-        elseif MainModule.AntiTimeStop then
-            MainModule.AntiTimeStop.Enabled = enabled
-        end
-    end)
-    antiTimeStopToggle.LayoutOrder = 6
+    noCooldownToggle.LayoutOrder = 6
     
     -- Teleport Buttons
     local tpUpBtn = CreateButton("TP 100 blocks up")
@@ -1177,38 +1233,6 @@ local function CreateSkySquidContent()
     antiFallToggle.LayoutOrder = 1
 end
 
--- Функция для выбора горячей клавиши
-local function SelectHotkey(keyCode, hotkeyLabel, changeHotkeyBtn)
-    hotkeyLabel.Text = "Hotkey: " .. keyCode.Name
-    hotkey = keyCode
-    selectingHotkey = false
-    changeHotkeyBtn.Text = "Change Hotkey"
-    changeHotkeyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
-    
-    -- Сохраняем в настройках
-    pcall(function()
-        writefile("creon_hotkey.txt", keyCode.Name)
-    end)
-end
-
--- Функция для загрузки сохраненной горячей клавиши
-local function LoadSavedHotkey()
-    pcall(function()
-        if isfile("creon_hotkey.txt") then
-            local savedKeyName = readfile("creon_hotkey.txt")
-            for _, key in pairs(Enum.KeyCode:GetEnumItems()) do
-                if key.Name == savedKeyName then
-                    hotkey = key
-                    return
-                end
-            end
-        end
-    end)
-end
-
--- Загружаем сохраненную горячую клавишу при запуске
-LoadSavedHotkey()
-
 -- SETTINGS TAB
 local function CreateSettingsContent()
     ClearContent()
@@ -1229,107 +1253,9 @@ local function CreateSettingsContent()
     supportedLabel.TextXAlignment = Enum.TextXAlignment.Left
     supportedLabel.LayoutOrder = 4
     
-    -- Hotkey Display and Change
-    local hotkeyContainer = Instance.new("Frame")
-    hotkeyContainer.Size = UDim2.new(1, -10, 0, 32)
-    hotkeyContainer.BackgroundTransparency = 1
-    hotkeyContainer.LayoutOrder = 5
-    hotkeyContainer.Parent = ContentScrolling
-    
-    local hotkeyFrame = Instance.new("Frame")
-    hotkeyFrame.Size = UDim2.new(1, 0, 1, 0)
-    hotkeyFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-    hotkeyFrame.BorderSizePixel = 0
-    hotkeyFrame.Parent = hotkeyContainer
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = hotkeyFrame
-    
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(80, 80, 100)
-    stroke.Thickness = 1.2
-    stroke.Parent = hotkeyFrame
-    
-    local hotkeyLabel = Instance.new("TextLabel")
-    hotkeyLabel.Size = UDim2.new(0.7, 0, 1, 0)
-    hotkeyLabel.BackgroundTransparency = 1
-    hotkeyLabel.Text = "Hotkey: " .. hotkey.Name
-    hotkeyLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
-    hotkeyLabel.TextSize = 12
-    hotkeyLabel.Font = Enum.Font.Gotham
-    hotkeyLabel.TextXAlignment = Enum.TextXAlignment.Left
-    hotkeyLabel.Parent = hotkeyFrame
-    
-    local changeHotkeyBtn = Instance.new("TextButton")
-    changeHotkeyBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
-    changeHotkeyBtn.Position = UDim2.new(0.72, 0, 0.15, 0)
-    changeHotkeyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
-    changeHotkeyBtn.BorderSizePixel = 0
-    changeHotkeyBtn.Text = selectingHotkey and "Press any key..." or "Change Hotkey"
-    changeHotkeyBtn.TextColor3 = selectingHotkey and Color3.fromRGB(255, 200, 100) or Color3.fromRGB(240, 240, 255)
-    changeHotkeyBtn.TextSize = 11
-    changeHotkeyBtn.Font = Enum.Font.Gotham
-    changeHotkeyBtn.AutoButtonColor = false
-    changeHotkeyBtn.Parent = hotkeyFrame
-    
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = changeHotkeyBtn
-    
-    local btnStroke = Instance.new("UIStroke")
-    btnStroke.Color = Color3.fromRGB(80, 80, 100)
-    btnStroke.Thickness = 1
-    btnStroke.Parent = changeHotkeyBtn
-    
-    -- Анимации для кнопки изменения горячей клавиши
-    changeHotkeyBtn.MouseEnter:Connect(function()
-        if not selectingHotkey then
-            TweenService:Create(changeHotkeyBtn, TweenInfo.new(0.2), {
-                BackgroundColor3 = Color3.fromRGB(75, 75, 95),
-                TextColor3 = Color3.fromRGB(255, 255, 255)
-            }):Play()
-        end
-    end)
-    
-    changeHotkeyBtn.MouseLeave:Connect(function()
-        if not selectingHotkey then
-            TweenService:Create(changeHotkeyBtn, TweenInfo.new(0.2), {
-                BackgroundColor3 = Color3.fromRGB(60, 60, 75),
-                TextColor3 = Color3.fromRGB(240, 240, 255)
-            }):Play()
-        end
-    end)
-    
-    -- Обработчик изменения горячей клавиши
-    changeHotkeyBtn.MouseButton1Click:Connect(function()
-        if selectingHotkey then return end
-        
-        selectingHotkey = true
-        changeHotkeyBtn.Text = "Press any key..."
-        changeHotkeyBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
-        changeHotkeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        
-        -- Временный обработчик для выбора клавиши
-        local connection
-        connection = UIS.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Keyboard then
-                SelectHotkey(input.KeyCode, hotkeyLabel, changeHotkeyBtn)
-                if connection then connection:Disconnect() end
-            end
-        end)
-        
-        -- Отмена через 5 секунд
-        task.delay(5, function()
-            if selectingHotkey then
-                selectingHotkey = false
-                changeHotkeyBtn.Text = "Change Hotkey"
-                changeHotkeyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
-                changeHotkeyBtn.TextColor3 = Color3.fromRGB(240, 240, 255)
-                if connection then connection:Disconnect() end
-            end
-        end)
-    end)
+    -- Кнопка для изменения горячей клавиши меню
+    local keybindButton = CreateKeybindButton()
+    keybindButton.LayoutOrder = 5
     
     local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
     positionLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1338,7 +1264,6 @@ local function CreateSettingsContent()
     local cleanupBtn = CreateButton("Cleanup Script")
     cleanupBtn.LayoutOrder = 7
     cleanupBtn.MouseButton1Click:Connect(function()
-        DisableGuiMouse()
         if MainModule.Cleanup then
             MainModule.Cleanup()
         end
@@ -1441,33 +1366,38 @@ for i, name in pairs(tabs) do
     button.MouseButton1Click:Connect(ActivateTab)
 end
 
--- Функция для открытия/закрытия меню
-local function ToggleMenu()
-    MainFrame.Visible = not MainFrame.Visible
-    if MainFrame.Visible then
-        MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
-        EnableGuiMouse()
-        if UIS.TouchEnabled then
-            MobileOpenButton.Visible = false
-        end
-    else
-        DisableGuiMouse()
-        if UIS.TouchEnabled then
-            MobileOpenButton.Visible = true
-        end
-    end
-end
-
--- Управление для ПК с настраиваемой горячей клавишей
-UIS.InputBegan:Connect(function(input)
-    if input.KeyCode == hotkey and not selectingHotkey then
-        ToggleMenu()
+-- Обновленная функция управления горячими клавишами
+local hotkeyConnection
+local function setupHotkeyListener()
+    if hotkeyConnection then
+        hotkeyConnection:Disconnect()
+        hotkeyConnection = nil
     end
     
-    -- Закрытие при нажатии ESC (только если меню открыто)
+    hotkeyConnection = UIS.InputBegan:Connect(function(input)
+        if input.KeyCode == menuHotkey then
+            MainFrame.Visible = not MainFrame.Visible
+            if MainFrame.Visible then
+                MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
+                if UIS.TouchEnabled then
+                    MobileOpenButton.Visible = false
+                end
+            else
+                if UIS.TouchEnabled then
+                    MobileOpenButton.Visible = true
+                end
+            end
+        end
+    end)
+end
+
+-- Установка начального слушателя
+setupHotkeyListener()
+
+-- Закрытие при нажатии ESC
+UIS.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.Escape and MainFrame.Visible then
         MainFrame.Visible = false
-        DisableGuiMouse()
         if UIS.TouchEnabled then
             MobileOpenButton.Visible = true
         end
@@ -1481,24 +1411,31 @@ if tabButtons["Main"] then
 end
 CreateMainContent()
 
--- Включаем независимую мышь при первом открытии
-if MainFrame.Visible then
-    EnableGuiMouse()
-end
-
 -- Очистка при удалении GUI
 ScreenGui.AncestryChanged:Connect(function()
     if not ScreenGui.Parent then
-        DisableGuiMouse()
         if MainModule.Cleanup then
             MainModule.Cleanup()
+        end
+        if hotkeyConnection then
+            hotkeyConnection:Disconnect()
         end
     end
 end)
 
+-- Функция для обновления слушателя горячей клавиши при изменении
+local function updateHotkeyListener()
+    setupHotkeyListener()
+end
+
+-- Создаем связь между кнопкой изменения и обновлением слушателя
+if keyChangeButton then
+    keyChangeButton.MouseButton1Click:Connect(updateHotkeyListener)
+end
+
 -- Отображение сообщения о загрузке
 print("Creon X v2.4 loaded successfully")
-print("Hotkey: " .. hotkey.Name)
+print("Menu Hotkey: " .. menuHotkey.Name)
 if not isSupported then
     warn("Warning: Executor " .. executorName .. " is not officially supported")
 else
