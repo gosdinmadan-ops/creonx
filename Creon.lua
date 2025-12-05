@@ -25,6 +25,10 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
+-- Переменная для горячей клавиши
+local hotkey = Enum.KeyCode.M
+local selectingHotkey = false
+
 -- Загрузка Main модуля
 local MainModule
 local success, err = pcall(function()
@@ -42,6 +46,11 @@ end
 local GlassBridgeAntiFallEnabled = false
 local JumpRopeAntiFallEnabled = false
 local SkySquidAntiFallEnabled = false
+
+-- Независимая мышь GUI
+local GuiMouseEnabled = false
+local OriginalMouseIcon = ""
+local OriginalMouseBehavior = nil
 
 -- GUI Creon X v2.4
 local ScreenGui = Instance.new("ScreenGui")
@@ -127,6 +136,7 @@ MinimizeButton.MouseButton1Click:Connect(function()
     if UIS.TouchEnabled then
         MobileOpenButton.Visible = true
     end
+    DisableGuiMouse()
 end)
 
 -- Табы
@@ -246,6 +256,74 @@ if UIS.TouchEnabled then
     MainFrame.Visible = false
 else
     MainFrame.Visible = true
+end
+
+-- Независимая мышь GUI
+local function EnableGuiMouse()
+    if GuiMouseEnabled then return end
+    
+    GuiMouseEnabled = true
+    
+    -- Сохраняем оригинальные настройки мыши
+    if game:GetService("Players").LocalPlayer:FindFirstChild("PlayerMouse") then
+        OriginalMouseIcon = game:GetService("Players").LocalPlayer.PlayerMouse.Icon
+        game:GetService("Players").LocalPlayer.PlayerMouse.Icon = ""
+    end
+    
+    -- Скрываем курсор Roblox
+    if game:GetService("UserInputService").MouseIconEnabled then
+        OriginalMouseBehavior = true
+        game:GetService("UserInputService").MouseIconEnabled = false
+    end
+    
+    -- Создаем свой курсор
+    local guiCursor = Instance.new("ImageLabel")
+    guiCursor.Name = "GuiCursor"
+    guiCursor.Size = UDim2.new(0, 32, 0, 32)
+    guiCursor.BackgroundTransparency = 1
+    guiCursor.Image = "rbxassetid://4468791792" -- Белый курсор
+    guiCursor.ImageColor3 = Color3.fromRGB(255, 255, 255)
+    guiCursor.ZIndex = 10000
+    guiCursor.Parent = ScreenGui
+    
+    -- Обновление позиции курсора
+    RunService.RenderStepped:Connect(function()
+        if GuiMouseEnabled and guiCursor and guiCursor.Parent then
+            local mouse = game:GetService("Players").LocalPlayer:GetMouse()
+            guiCursor.Position = UDim2.new(0, mouse.X, 0, mouse.Y)
+        end
+    end)
+    
+    -- Убираем захват мыши для игровых взаимодействий
+    UIS.MouseBehavior = Enum.MouseBehavior.Default
+    
+    print("GUI Mouse Enabled")
+end
+
+local function DisableGuiMouse()
+    if not GuiMouseEnabled then return end
+    
+    GuiMouseEnabled = false
+    
+    -- Восстанавливаем оригинальный курсор
+    if OriginalMouseIcon ~= "" then
+        pcall(function()
+            game:GetService("Players").LocalPlayer.PlayerMouse.Icon = OriginalMouseIcon
+        end)
+    end
+    
+    -- Восстанавливаем видимость курсора Roblox
+    if OriginalMouseBehavior ~= nil then
+        game:GetService("UserInputService").MouseIconEnabled = OriginalMouseBehavior
+    end
+    
+    -- Удаляем наш курсор
+    local guiCursor = ScreenGui:FindFirstChild("GuiCursor")
+    if guiCursor then
+        guiCursor:Destroy()
+    end
+    
+    print("GUI Mouse Disabled")
 end
 
 -- Функция для перемещения GUI
@@ -658,9 +736,19 @@ local function CreateMainContent()
     end)
     noCooldownToggle.LayoutOrder = 5
     
+    -- Anti Time Stop
+    local antiTimeStopToggle, updateAntiTimeStopToggle = CreateToggle("Anti Time Stop", MainModule.AntiTimeStop and MainModule.AntiTimeStop.Enabled or false, function(enabled)
+        if MainModule.ToggleAntiTimeStop then
+            MainModule.ToggleAntiTimeStop(enabled)
+        elseif MainModule.AntiTimeStop then
+            MainModule.AntiTimeStop.Enabled = enabled
+        end
+    end)
+    antiTimeStopToggle.LayoutOrder = 6
+    
     -- Teleport Buttons
     local tpUpBtn = CreateButton("TP 100 blocks up")
-    tpUpBtn.LayoutOrder = 6
+    tpUpBtn.LayoutOrder = 7
     tpUpBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportUp100 then
             MainModule.TeleportUp100()
@@ -668,7 +756,7 @@ local function CreateMainContent()
     end)
     
     local tpDownBtn = CreateButton("TP 40 blocks down")
-    tpDownBtn.LayoutOrder = 7
+    tpDownBtn.LayoutOrder = 8
     tpDownBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportDown40 then
             MainModule.TeleportDown40()
@@ -677,7 +765,7 @@ local function CreateMainContent()
     
     -- Position display
     local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
-    positionLabel.LayoutOrder = 8
+    positionLabel.LayoutOrder = 9
     positionLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     positionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
     
@@ -1078,6 +1166,38 @@ local function CreateSkySquidContent()
     antiFallToggle.LayoutOrder = 1
 end
 
+-- Функция для выбора горячей клавиши
+local function SelectHotkey(keyCode, hotkeyLabel, changeHotkeyBtn)
+    hotkeyLabel.Text = "Hotkey: " .. keyCode.Name
+    hotkey = keyCode
+    selectingHotkey = false
+    changeHotkeyBtn.Text = "Change Hotkey"
+    changeHotkeyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+    
+    -- Сохраняем в настройках
+    pcall(function()
+        writefile("creon_hotkey.txt", keyCode.Name)
+    end)
+end
+
+-- Функция для загрузки сохраненной горячей клавиши
+local function LoadSavedHotkey()
+    pcall(function()
+        if isfile("creon_hotkey.txt") then
+            local savedKeyName = readfile("creon_hotkey.txt")
+            for _, key in pairs(Enum.KeyCode:GetEnumItems()) do
+                if key.Name == savedKeyName then
+                    hotkey = key
+                    return
+                end
+            end
+        end
+    end)
+end
+
+-- Загружаем сохраненную горячую клавишу при запуске
+LoadSavedHotkey()
+
 -- SETTINGS TAB
 local function CreateSettingsContent()
     ClearContent()
@@ -1098,13 +1218,116 @@ local function CreateSettingsContent()
     supportedLabel.TextXAlignment = Enum.TextXAlignment.Left
     supportedLabel.LayoutOrder = 4
     
+    -- Hotkey Display and Change
+    local hotkeyContainer = Instance.new("Frame")
+    hotkeyContainer.Size = UDim2.new(1, -10, 0, 32)
+    hotkeyContainer.BackgroundTransparency = 1
+    hotkeyContainer.LayoutOrder = 5
+    hotkeyContainer.Parent = ContentScrolling
+    
+    local hotkeyFrame = Instance.new("Frame")
+    hotkeyFrame.Size = UDim2.new(1, 0, 1, 0)
+    hotkeyFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+    hotkeyFrame.BorderSizePixel = 0
+    hotkeyFrame.Parent = hotkeyContainer
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = hotkeyFrame
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(80, 80, 100)
+    stroke.Thickness = 1.2
+    stroke.Parent = hotkeyFrame
+    
+    local hotkeyLabel = Instance.new("TextLabel")
+    hotkeyLabel.Size = UDim2.new(0.7, 0, 1, 0)
+    hotkeyLabel.BackgroundTransparency = 1
+    hotkeyLabel.Text = "Hotkey: " .. hotkey.Name
+    hotkeyLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
+    hotkeyLabel.TextSize = 12
+    hotkeyLabel.Font = Enum.Font.Gotham
+    hotkeyLabel.TextXAlignment = Enum.TextXAlignment.Left
+    hotkeyLabel.Parent = hotkeyFrame
+    
+    local changeHotkeyBtn = Instance.new("TextButton")
+    changeHotkeyBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
+    changeHotkeyBtn.Position = UDim2.new(0.72, 0, 0.15, 0)
+    changeHotkeyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+    changeHotkeyBtn.BorderSizePixel = 0
+    changeHotkeyBtn.Text = selectingHotkey and "Press any key..." or "Change Hotkey"
+    changeHotkeyBtn.TextColor3 = selectingHotkey and Color3.fromRGB(255, 200, 100) or Color3.fromRGB(240, 240, 255)
+    changeHotkeyBtn.TextSize = 11
+    changeHotkeyBtn.Font = Enum.Font.Gotham
+    changeHotkeyBtn.AutoButtonColor = false
+    changeHotkeyBtn.Parent = hotkeyFrame
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 4)
+    btnCorner.Parent = changeHotkeyBtn
+    
+    local btnStroke = Instance.new("UIStroke")
+    btnStroke.Color = Color3.fromRGB(80, 80, 100)
+    btnStroke.Thickness = 1
+    btnStroke.Parent = changeHotkeyBtn
+    
+    -- Анимации для кнопки изменения горячей клавиши
+    changeHotkeyBtn.MouseEnter:Connect(function()
+        if not selectingHotkey then
+            TweenService:Create(changeHotkeyBtn, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(75, 75, 95),
+                TextColor3 = Color3.fromRGB(255, 255, 255)
+            }):Play()
+        end
+    end)
+    
+    changeHotkeyBtn.MouseLeave:Connect(function()
+        if not selectingHotkey then
+            TweenService:Create(changeHotkeyBtn, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(60, 60, 75),
+                TextColor3 = Color3.fromRGB(240, 240, 255)
+            }):Play()
+        end
+    end)
+    
+    -- Обработчик изменения горячей клавиши
+    changeHotkeyBtn.MouseButton1Click:Connect(function()
+        if selectingHotkey then return end
+        
+        selectingHotkey = true
+        changeHotkeyBtn.Text = "Press any key..."
+        changeHotkeyBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+        changeHotkeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        
+        -- Временный обработчик для выбора клавиши
+        local connection
+        connection = UIS.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                SelectHotkey(input.KeyCode, hotkeyLabel, changeHotkeyBtn)
+                if connection then connection:Disconnect() end
+            end
+        end)
+        
+        -- Отмена через 5 секунд
+        task.delay(5, function()
+            if selectingHotkey then
+                selectingHotkey = false
+                changeHotkeyBtn.Text = "Change Hotkey"
+                changeHotkeyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+                changeHotkeyBtn.TextColor3 = Color3.fromRGB(240, 240, 255)
+                if connection then connection:Disconnect() end
+            end
+        end)
+    end)
+    
     local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
     positionLabel.TextXAlignment = Enum.TextXAlignment.Left
-    positionLabel.LayoutOrder = 5
+    positionLabel.LayoutOrder = 6
     
     local cleanupBtn = CreateButton("Cleanup Script")
-    cleanupBtn.LayoutOrder = 6
+    cleanupBtn.LayoutOrder = 7
     cleanupBtn.MouseButton1Click:Connect(function()
+        DisableGuiMouse()
         if MainModule.Cleanup then
             MainModule.Cleanup()
         end
@@ -1207,27 +1430,33 @@ for i, name in pairs(tabs) do
     button.MouseButton1Click:Connect(ActivateTab)
 end
 
--- Управление для ПК
-UIS.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.M then
-        MainFrame.Visible = not MainFrame.Visible
-        if MainFrame.Visible then
-            MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
-            if UIS.TouchEnabled then
-                MobileOpenButton.Visible = false
-            end
-        else
-            if UIS.TouchEnabled then
-                MobileOpenButton.Visible = true
-            end
+-- Функция для открытия/закрытия меню
+local function ToggleMenu()
+    MainFrame.Visible = not MainFrame.Visible
+    if MainFrame.Visible then
+        MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
+        EnableGuiMouse()
+        if UIS.TouchEnabled then
+            MobileOpenButton.Visible = false
+        end
+    else
+        DisableGuiMouse()
+        if UIS.TouchEnabled then
+            MobileOpenButton.Visible = true
         end
     end
-end)
+end
 
--- Закрытие при нажатии ESC
+-- Управление для ПК с настраиваемой горячей клавишей
 UIS.InputBegan:Connect(function(input)
+    if input.KeyCode == hotkey and not selectingHotkey then
+        ToggleMenu()
+    end
+    
+    -- Закрытие при нажатии ESC (только если меню открыто)
     if input.KeyCode == Enum.KeyCode.Escape and MainFrame.Visible then
         MainFrame.Visible = false
+        DisableGuiMouse()
         if UIS.TouchEnabled then
             MobileOpenButton.Visible = true
         end
@@ -1241,9 +1470,15 @@ if tabButtons["Main"] then
 end
 CreateMainContent()
 
+-- Включаем независимую мышь при первом открытии
+if MainFrame.Visible then
+    EnableGuiMouse()
+end
+
 -- Очистка при удалении GUI
 ScreenGui.AncestryChanged:Connect(function()
     if not ScreenGui.Parent then
+        DisableGuiMouse()
         if MainModule.Cleanup then
             MainModule.Cleanup()
         end
@@ -1252,6 +1487,7 @@ end)
 
 -- Отображение сообщения о загрузке
 print("Creon X v2.4 loaded successfully")
+print("Hotkey: " .. hotkey.Name)
 if not isSupported then
     warn("Warning: Executor " .. executorName .. " is not officially supported")
 else
