@@ -1,4 +1,4 @@
--- Main.lua - Creon X v2.4 (Обновленная версия с новым AntiFall)
+-- Main.lua - Creon X v2.4 (Обновленная версия с новым AntiFall -5 Y)
 local MainModule = {}
 
 -- Services
@@ -75,7 +75,7 @@ MainModule.Dalgona = {
     FreeLighterEnabled = false
 }
 
--- Glass Bridge System (обновленная с новым AntiFall)
+-- Glass Bridge System (обновленная с новым AntiFall -5 Y)
 MainModule.GlassBridge = {
     AntiBreakEnabled = false,
     AntiBreakConnection = nil,
@@ -87,7 +87,7 @@ MainModule.GlassBridge = {
     
     EndPosition = Vector3.new(-196.372467, 522.192139, -1534.20984),
     BridgeHeight = 520.4,
-    AntiFallYOffset = -7,
+    AntiFallYOffset = -5, -- ИЗМЕНЕНО: с -3 на -5
     PlatformSize = Vector3.new(10000, 1, 10000), -- ОГРОМНАЯ платформа 500%
     PlatformColor = Color3.fromRGB(0, 255, 0),
     PlatformTransparency = 0.3
@@ -99,7 +99,7 @@ MainModule.TugOfWar = {
     Connection = nil
 }
 
--- Jump Rope System (с новым AntiFall)
+-- Jump Rope System (с новым AntiFall -5 Y)
 MainModule.JumpRope = {
     TeleportToEnd = false,
     AntiFallPlatform = nil,
@@ -109,7 +109,7 @@ MainModule.JumpRope = {
     PlatformTransparency = 0.3
 }
 
--- Sky Squid System (с новым AntiFall)
+-- Sky Squid System (с новым AntiFall -5 Y)
 MainModule.SkySquid = {
     AntiFallPlatform = nil,
     SafePlatform = nil,
@@ -1560,7 +1560,7 @@ function MainModule.TeleportToJumpRopeStart()
     end
 end
 
--- НОВАЯ Функция для создания AntiFall платформы Glass Bridge (500% зеленая)
+-- НОВАЯ Функция для создания AntiFall платформы Glass Bridge (-5 Y с фантомным режимом)
 function MainModule.CreateGlassBridgeAntiFall()
     -- Удаляем старую платформу если она есть
     if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
@@ -1576,7 +1576,7 @@ function MainModule.CreateGlassBridgeAntiFall()
     
     local currentPosition = rootPart.Position
     
-    -- Создание ОГРОМНОЙ зеленой платформы 500%
+    -- Создание ОГРОМНОЙ зеленой платформы 500% с фантомным режимом
     local platform = Instance.new("Part")
     platform.Name = "GlassBridgeAntiFall"
     platform.Size = MainModule.GlassBridge.PlatformSize -- ОГРОМНАЯ платформа 10000x1x10000 (500%)
@@ -1584,23 +1584,61 @@ function MainModule.CreateGlassBridgeAntiFall()
     platform.CanCollide = true
     platform.Transparency = MainModule.GlassBridge.PlatformTransparency
     platform.Color = MainModule.GlassBridge.PlatformColor
-    platform.Material = Enum.Material.Plastic
+    platform.Material = Enum.Material.Neon
+    
+    -- Устанавливаем свойства для фантомного режима (проходит через все блоки)
+    platform.CanTouch = true -- Игрок может стоять на ней
+    platform.CanQuery = true -- Можно взаимодействовать
     platform.CastShadow = false
     
-    -- Устанавливаем свойства для прохождения через блоки
-    platform.CanTouch = false
-    platform.CanQuery = false
+    -- Важные свойства для прохождения через другие блоки
+    platform.CollisionGroupId = 0 -- Устанавливаем в стандартную группу коллизий
     
-    -- Позиция на 3 единицы ниже игрока
+    -- Позиция на 5 единиц ниже игрока (ИЗМЕНЕНО: -5)
     platform.Position = Vector3.new(
         currentPosition.X,
-        currentPosition.Y - 3,
+        currentPosition.Y + MainModule.GlassBridge.AntiFallYOffset, -- -5
         currentPosition.Z
     )
     platform.Parent = workspace
     
+    -- Создаем специальный CollisionGroup для нашей платформы
+    local collisionGroups = workspace:GetCollisionGroups()
+    local exists = false
+    for _, groupName in ipairs(collisionGroups) do
+        if groupName == "CreonAntiFall" then
+            exists = true
+            break
+        end
+    end
+    
+    if not exists then
+        workspace:CreateCollisionGroup("CreonAntiFall")
+    end
+    
+    -- Устанавливаем платформу в свою группу коллизий
+    workspace:SetPartCollisionGroup(platform, "CreonAntiFall")
+    
+    -- Делаем платформу коллизией только с игроком
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj ~= platform then
+            if obj.Name == "HumanoidRootPart" or obj.Parent == character then
+                -- Игрок может стоять на платформе
+                workspace:CollisionGroupSetCollidable("CreonAntiFall", "Default", true)
+            else
+                -- Все остальные объекты проходят через платформу
+                workspace:CollisionGroupSetCollidable("CreonAntiFall", "Default", false)
+            end
+        end
+    end
+    
     MainModule.GlassBridge.GlassAntiFallPlatform = platform
     MainModule.GlassBridge.AntiFallEnabled = true
+    
+    -- Информационное сообщение
+    print("[CreonX] Glass Bridge AntiFall создан на высоте Y -5")
+    print("[CreonX] Платформа в фантомном режиме - проходит через блоки")
+    
     return platform
 end
 
@@ -1611,6 +1649,12 @@ function MainModule.RemoveGlassBridgeAntiFall()
         MainModule.GlassBridge.GlassAntiFallPlatform = nil
     end
     MainModule.GlassBridge.AntiFallEnabled = false
+    
+    -- Удаляем группу коллизий если она существует
+    pcall(function()
+        workspace:RemoveCollisionGroup("CreonAntiFall")
+    end)
+    
     return true
 end
 
@@ -1804,7 +1848,7 @@ function MainModule.TeleportToGlassBridgeEnd()
     SafeTeleport(MainModule.GlassBridge.EndPosition)
 end
 
--- НОВАЯ Функция для создания Sky Squid AntiFall платформы (500% зеленая)
+-- НОВАЯ Функция для создания Sky Squid AntiFall платформы (-5 Y с фантомным режимом)
 function MainModule.CreateSkySquidAntiFall()
     -- Удаляем старую платформу если она есть
     if MainModule.SkySquid.AntiFallPlatform and MainModule.SkySquid.AntiFallPlatform.Parent then
@@ -1820,7 +1864,7 @@ function MainModule.CreateSkySquidAntiFall()
     
     local currentPosition = rootPart.Position
     
-    -- Создание ОГРОМНОЙ зеленой платформы 500%
+    -- Создание ОГРОМНОЙ зеленой платформы 500% с фантомным режимом
     local platform = Instance.new("Part")
     platform.Name = "SkySquidAntiFall"
     platform.Size = MainModule.SkySquid.PlatformSize -- ОГРОМНАЯ платформа 10000x1x10000 (500%)
@@ -1828,22 +1872,60 @@ function MainModule.CreateSkySquidAntiFall()
     platform.CanCollide = true
     platform.Transparency = MainModule.SkySquid.PlatformTransparency
     platform.Color = MainModule.SkySquid.PlatformColor
-    platform.Material = Enum.Material.Plastic
+    platform.Material = Enum.Material.Neon
+    
+    -- Устанавливаем свойства для фантомного режима (проходит через все блоки)
+    platform.CanTouch = true -- Игрок может стоять на ней
+    platform.CanQuery = true -- Можно взаимодействовать
     platform.CastShadow = false
     
-    -- Устанавливаем свойства для прохождения через блоки
-    platform.CanTouch = false
-    platform.CanQuery = false
+    -- Важные свойства для прохождения через другие блоки
+    platform.CollisionGroupId = 0 -- Устанавливаем в стандартную группу коллизий
     
-    -- Позиция на 3 единицы ниже игрока
+    -- Позиция на 5 единиц ниже игрока (ИЗМЕНЕНО: -5)
     platform.Position = Vector3.new(
         currentPosition.X,
-        currentPosition.Y - 3,
+        currentPosition.Y - 5, -- ИЗМЕНЕНО: -5
         currentPosition.Z
     )
     platform.Parent = workspace
     
+    -- Создаем специальный CollisionGroup для нашей платформы
+    local collisionGroups = workspace:GetCollisionGroups()
+    local exists = false
+    for _, groupName in ipairs(collisionGroups) do
+        if groupName == "CreonAntiFall" then
+            exists = true
+            break
+        end
+    end
+    
+    if not exists then
+        workspace:CreateCollisionGroup("CreonAntiFall")
+    end
+    
+    -- Устанавливаем платформу в свою группу коллизий
+    workspace:SetPartCollisionGroup(platform, "CreonAntiFall")
+    
+    -- Делаем платформу коллизией только с игроком
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj ~= platform then
+            if obj.Name == "HumanoidRootPart" or obj.Parent == character then
+                -- Игрок может стоять на платформе
+                workspace:CollisionGroupSetCollidable("CreonAntiFall", "Default", true)
+            else
+                -- Все остальные объекты проходят через платформу
+                workspace:CollisionGroupSetCollidable("CreonAntiFall", "Default", false)
+            end
+        end
+    end
+    
     MainModule.SkySquid.AntiFallPlatform = platform
+    
+    -- Информационное сообщение
+    print("[CreonX] Sky Squid AntiFall создан на высоте Y -5")
+    print("[CreonX] Платформа в фантомном режиме - проходит через блоки")
+    
     return platform
 end
 
@@ -1853,6 +1935,12 @@ function MainModule.RemoveSkySquidAntiFall()
         MainModule.SkySquid.AntiFallPlatform:Destroy()
         MainModule.SkySquid.AntiFallPlatform = nil
     end
+    
+    -- Удаляем группу коллизий если она существует
+    pcall(function()
+        workspace:RemoveCollisionGroup("CreonAntiFall")
+    end)
+    
     return true
 end
 
@@ -1865,7 +1953,7 @@ function MainModule.ToggleSkySquidAntiFall(enabled)
     end
 end
 
--- НОВАЯ Функция для создания Jump Rope AntiFall платформы (500% зеленая)
+-- НОВАЯ Функция для создания Jump Rope AntiFall платформы (-5 Y с фантомным режимом)
 function MainModule.CreateJumpRopeAntiFall()
     -- Удаляем старую платформу если она есть
     if MainModule.JumpRope.AntiFallPlatform and MainModule.JumpRope.AntiFallPlatform.Parent then
@@ -1881,7 +1969,7 @@ function MainModule.CreateJumpRopeAntiFall()
     
     local currentPosition = rootPart.Position
     
-    -- Создание ОГРОМНОЙ зеленой платформы 500%
+    -- Создание ОГРОМНОЙ зеленой платформы 500% с фантомным режимом
     local platform = Instance.new("Part")
     platform.Name = "JumpRopeAntiFall"
     platform.Size = MainModule.JumpRope.PlatformSize -- ОГРОМНАЯ платформа 10000x1x10000 (500%)
@@ -1889,22 +1977,60 @@ function MainModule.CreateJumpRopeAntiFall()
     platform.CanCollide = true
     platform.Transparency = MainModule.JumpRope.PlatformTransparency
     platform.Color = MainModule.JumpRope.PlatformColor
-    platform.Material = Enum.Material.Plastic
+    platform.Material = Enum.Material.Neon
+    
+    -- Устанавливаем свойства для фантомного режима (проходит через все блоки)
+    platform.CanTouch = true -- Игрок может стоять на ней
+    platform.CanQuery = true -- Можно взаимодействовать
     platform.CastShadow = false
     
-    -- Устанавливаем свойства для прохождения через блоки
-    platform.CanTouch = false
-    platform.CanQuery = false
+    -- Важные свойства для прохождения через другие блоки
+    platform.CollisionGroupId = 0 -- Устанавливаем в стандартную группу коллизий
     
-    -- Позиция на 3 единицы ниже игрока
+    -- Позиция на 5 единиц ниже игрока (ИЗМЕНЕНО: -5)
     platform.Position = Vector3.new(
         currentPosition.X,
-        currentPosition.Y - 3,
+        currentPosition.Y - 5, -- ИЗМЕНЕНО: -5
         currentPosition.Z
     )
     platform.Parent = workspace
     
+    -- Создаем специальный CollisionGroup для нашей платформы
+    local collisionGroups = workspace:GetCollisionGroups()
+    local exists = false
+    for _, groupName in ipairs(collisionGroups) do
+        if groupName == "CreonAntiFall" then
+            exists = true
+            break
+        end
+    end
+    
+    if not exists then
+        workspace:CreateCollisionGroup("CreonAntiFall")
+    end
+    
+    -- Устанавливаем платформу в свою группу коллизий
+    workspace:SetPartCollisionGroup(platform, "CreonAntiFall")
+    
+    -- Делаем платформу коллизией только с игроком
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj ~= platform then
+            if obj.Name == "HumanoidRootPart" or obj.Parent == character then
+                -- Игрок может стоять на платформе
+                workspace:CollisionGroupSetCollidable("CreonAntiFall", "Default", true)
+            else
+                -- Все остальные объекты проходят через платформу
+                workspace:CollisionGroupSetCollidable("CreonAntiFall", "Default", false)
+            end
+        end
+    end
+    
     MainModule.JumpRope.AntiFallPlatform = platform
+    
+    -- Информационное сообщение
+    print("[CreonX] Jump Rope AntiFall создан на высоте Y -5")
+    print("[CreonX] Платформа в фантомном режиме - проходит через блоки")
+    
     return platform
 end
 
@@ -1914,6 +2040,12 @@ function MainModule.RemoveJumpRopeAntiFall()
         MainModule.JumpRope.AntiFallPlatform:Destroy()
         MainModule.JumpRope.AntiFallPlatform = nil
     end
+    
+    -- Удаляем группу коллизий если она существует
+    pcall(function()
+        workspace:RemoveCollisionGroup("CreonAntiFall")
+    end)
+    
     return true
 end
 
@@ -2145,6 +2277,11 @@ function MainModule.Cleanup()
         MainModule.JumpRope.AntiFallPlatform = nil
     end
     
+    -- Удаляем группы коллизий
+    pcall(function()
+        workspace:RemoveCollisionGroup("CreonAntiFall")
+    end)
+    
     -- Восстанавливаем скорость
     if MainModule.SpeedHack.Enabled then
         MainModule.ToggleSpeedHack(false)
@@ -2184,4 +2321,3 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
-
