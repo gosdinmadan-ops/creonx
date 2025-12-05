@@ -112,6 +112,21 @@ MainModule.SkySquid = {
     PlatformSize = Vector3.new(10000, 1, 10000)
 }
 
+-- Anti Time Stop System
+MainModule.AntiTimeStop = {
+    Enabled = false,
+    Connection = nil,
+    OriginalProperties = {}
+}
+
+-- Hitbox Expander System
+MainModule.Hitbox = {
+    Size = 150,  -- По умолчанию 150 как в примере
+    Enabled = false,
+    Connection = nil,
+    ModifiedParts = {}
+}
+
 -- Misc System
 MainModule.Misc = {
     InstaInteract = false,
@@ -155,15 +170,6 @@ MainModule.ESP = {
     Folder = nil,
     MainConnection = nil,
     UpdateRate = 0.1
-}
-
--- Hitbox Expander System
-MainModule.Hitbox = {
-    Size = 100,
-    Enabled = false,
-    Connection = nil,
-    ModifiedParts = {},
-    PlayerConnections = {}
 }
 
 -- Постоянные соединения
@@ -401,6 +407,133 @@ local function KillEnemy(enemyName)
         local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("FiredGunClient")
         remote:FireServer(unpack(args))
     end)
+end
+
+-- Anti Time Stop функция
+function MainModule.ToggleAntiTimeStop(enabled)
+    MainModule.AntiTimeStop.Enabled = enabled
+    
+    if MainModule.AntiTimeStop.Connection then
+        MainModule.AntiTimeStop.Connection:Disconnect()
+        MainModule.AntiTimeStop.Connection = nil
+    end
+    
+    if enabled then
+        MainModule.AntiTimeStop.Connection = RunService.Heartbeat:Connect(function()
+            if not MainModule.AntiTimeStop.Enabled then return end
+            
+            pcall(function()
+                local character = GetCharacter()
+                if not character then return end
+                
+                local humanoid = GetHumanoid(character)
+                if not humanoid then return end
+                
+                -- Сохраняем оригинальные свойства
+                if not MainModule.AntiTimeStop.OriginalProperties[humanoid] then
+                    MainModule.AntiTimeStop.OriginalProperties[humanoid] = {
+                        WalkSpeed = humanoid.WalkSpeed,
+                        JumpPower = humanoid.JumpPower
+                    }
+                end
+                
+                -- Проверяем, не заморожены ли мы
+                local isFrozen = false
+                
+                -- Проверяем различные эффекты заморозки
+                local frozenEffects = {
+                    "TimeStop", "TimeStopEffect", "TimeStopDebuff", "Frozen", "Freeze", 
+                    "Stopped", "TimeLock", "TimeFreeze", "ZaWarudo"
+                }
+                
+                for _, effectName in ipairs(frozenEffects) do
+                    local effect = character:FindFirstChild(effectName)
+                    if effect then
+                        isFrozen = true
+                        break
+                    end
+                end
+                
+                -- Проверяем атрибуты
+                if humanoid:GetAttribute("TimeStopped") or 
+                   humanoid:GetAttribute("Frozen") or 
+                   humanoid:GetAttribute("Stopped") then
+                    isFrozen = true
+                end
+                
+                -- Если мы заморожены, восстанавливаем движение
+                if isFrozen then
+                    -- Восстанавливаем скорость
+                    humanoid.WalkSpeed = MainModule.AntiTimeStop.OriginalProperties[humanoid].WalkSpeed
+                    humanoid.JumpPower = MainModule.AntiTimeStop.OriginalProperties[humanoid].JumpPower
+                    
+                    -- Удаляем эффекты заморозки
+                    for _, effectName in ipairs(frozenEffects) do
+                        local effect = character:FindFirstChild(effectName)
+                        if effect then
+                            effect:Destroy()
+                        end
+                    end
+                    
+                    -- Сбрасываем атрибуты
+                    humanoid:SetAttribute("TimeStopped", false)
+                    humanoid:SetAttribute("Frozen", false)
+                    humanoid:SetAttribute("Stopped", false)
+                    
+                    -- Выходим из состояний заморозки
+                    humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                    humanoid.PlatformStand = false
+                end
+                
+                -- Также проверяем общие эффекты в workspace
+                local timeStopEffects = workspace:FindFirstChild("TimeStopEffects")
+                if timeStopEffects then
+                    for _, effect in ipairs(timeStopEffects:GetChildren()) do
+                        if effect:IsA("BasePart") and effect.Transparency < 1 then
+                            -- Делаем эффекты невидимыми для нас
+                            effect.Transparency = 1
+                            effect.CanCollide = false
+                        end
+                    end
+                end
+                
+                -- Отключаем любые BodyMovers, которые могли быть добавлены
+                for _, part in pairs(character:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        for _, mover in pairs(part:GetChildren()) do
+                            if mover:IsA("BodyVelocity") or mover:IsA("BodyForce") then
+                                if mover:GetAttribute("TimeStop") or mover.Name:find("TimeStop") then
+                                    mover:Destroy()
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        end)
+        
+        -- Также слушаем добавление новых эффектов
+        local character = GetCharacter()
+        if character then
+            character.ChildAdded:Connect(function(child)
+                if not MainModule.AntiTimeStop.Enabled then return end
+                
+                if child.Name:find("TimeStop") or child.Name:find("Freeze") then
+                    task.wait(0.1)
+                    pcall(function() child:Destroy() end)
+                end
+            end)
+        end
+    else
+        -- Восстанавливаем оригинальные свойства
+        for humanoid, properties in pairs(MainModule.AntiTimeStop.OriginalProperties) do
+            if humanoid and humanoid.Parent then
+                humanoid.WalkSpeed = properties.WalkSpeed
+                humanoid.JumpPower = properties.JumpPower
+            end
+        end
+        MainModule.AntiTimeStop.OriginalProperties = {}
+    end
 end
 
 -- Instant REBEL функция (исправленная и безопасная)
@@ -1414,7 +1547,7 @@ function MainModule.ToggleInfiniteAmmo(enabled)
     end
 end
 
--- Hitbox Expander функция (исправленная - хитбоксы не толкают)
+-- Hitbox Expander функция (исправленная по вашему примеру)
 function MainModule.ToggleHitboxExpander(enabled)
     MainModule.Hitbox.Enabled = enabled
     
@@ -1423,19 +1556,13 @@ function MainModule.ToggleHitboxExpander(enabled)
         MainModule.Hitbox.Connection = nil
     end
     
-    -- Очищаем все соединения
-    for _, conn in pairs(MainModule.Hitbox.PlayerConnections) do
-        pcall(function() conn:Disconnect() end)
-    end
-    MainModule.Hitbox.PlayerConnections = {}
-    
     -- Очистка кэша при отключении
     if not enabled then
-        for player in pairs(Players:GetPlayers()) do
+        for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
                 local root = player.Character:FindFirstChild("HumanoidRootPart")
                 if root and MainModule.Hitbox.ModifiedParts[root] then
-                    -- Восстанавливаем оригинальный размер и коллизию
+                    -- Восстанавливаем оригинальный размер
                     root.Size = MainModule.Hitbox.ModifiedParts[root]
                     root.CanCollide = true
                     MainModule.Hitbox.ModifiedParts[root] = nil
@@ -1446,43 +1573,38 @@ function MainModule.ToggleHitboxExpander(enabled)
         return
     end
     
-    -- Функция для изменения части (без изменения для нашего персонажа)
+    -- Функция для изменения части
     local function modifyPart(part)
         if not MainModule.Hitbox.ModifiedParts[part] then
             -- Сохраняем оригинальный размер
             MainModule.Hitbox.ModifiedParts[part] = part.Size
-            
             -- Устанавливаем новый размер хитбокса
             part.Size = Vector3.new(MainModule.Hitbox.Size, MainModule.Hitbox.Size, MainModule.Hitbox.Size)
-            
-            -- Отключаем коллизию с частями нашего персонажа
             part.CanCollide = false
         end
     end
     
     -- Обработчик для новых игроков
     local function onPlayerAdded(player)
-        local connection = player.CharacterAdded:Connect(function(character)
-            if MainModule.Hitbox.Enabled and player ~= LocalPlayer then
-                task.wait(1) -- Ждем полной загрузки персонажа
-                local root = character:FindFirstChild("HumanoidRootPart")
+        player.CharacterAdded:Connect(function(character)
+            if MainModule.Hitbox.Enabled then
+                local root = character:WaitForChild("HumanoidRootPart", 5)
                 if root then
                     modifyPart(root)
                 end
             end
         end)
-        MainModule.Hitbox.PlayerConnections[player] = connection
     end
     
     -- Обработчик для существующих игроков
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            if player.Character then
-                local root = player.Character:FindFirstChild("HumanoidRootPart")
-                if root then
-                    modifyPart(root)
-                end
+        if player ~= LocalPlayer and player.Character then
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                modifyPart(root)
             end
+        end
+        if player ~= LocalPlayer then
             onPlayerAdded(player)
         end
     end
@@ -1497,33 +1619,12 @@ function MainModule.ToggleHitboxExpander(enabled)
                 if root and not MainModule.Hitbox.ModifiedParts[root] then
                     pcall(modifyPart, root)
                 end
-                
-                -- Дополнительная защита: делаем так, чтобы хитбокс не влиял на коллизию
-                if root then
-                    -- Отключаем коллизию с нашим персонажем
-                    local myCharacter = GetCharacter()
-                    if myCharacter then
-                        for _, part in pairs(myCharacter:GetChildren()) do
-                            if part:IsA("BasePart") then
-                                -- Устанавливаем, что части нашего персонажа могут проходить сквозь хитбоксы
-                                pcall(function()
-                                    part.CanCollide = false
-                                end)
-                            end
-                        end
-                    end
-                end
             end
         end
     end)
     
     -- Очистка при выходе игрока
-    local removeConnection = Players.PlayerRemoving:Connect(function(player)
-        if MainModule.Hitbox.PlayerConnections[player] then
-            MainModule.Hitbox.PlayerConnections[player]:Disconnect()
-            MainModule.Hitbox.PlayerConnections[player] = nil
-        end
-        
+    Players.PlayerRemoving:Connect(function(player)
         if player.Character then
             local root = player.Character:FindFirstChild("HumanoidRootPart")
             if root then
@@ -1532,16 +1633,12 @@ function MainModule.ToggleHitboxExpander(enabled)
         end
     end)
     
-    -- Добавляем соединение в таблицу
-    MainModule.Hitbox.PlayerConnections["PlayerRemoving"] = removeConnection
-    
     -- Слушатель для новых игроков
-    local addedConnection = Players.PlayerAdded:Connect(function(player)
+    Players.PlayerAdded:Connect(function(player)
         if player ~= LocalPlayer then
             onPlayerAdded(player)
         end
     end)
-    MainModule.Hitbox.PlayerConnections["PlayerAdded"] = addedConnection
 end
 
 -- Функция для установки размера хитбокса
@@ -2210,11 +2307,11 @@ function MainModule.Cleanup()
         MainModule.Hitbox.Connection = nil
     end
     
-    -- Отключаем соединения игроков Hitbox Expander
-    for _, conn in pairs(MainModule.Hitbox.PlayerConnections) do
-        pcall(function() conn:Disconnect() end)
+    -- Отключаем Anti Time Stop
+    if MainModule.AntiTimeStop.Connection then
+        MainModule.AntiTimeStop.Connection:Disconnect()
+        MainModule.AntiTimeStop.Connection = nil
     end
-    MainModule.Hitbox.PlayerConnections = {}
     
     -- Отключаем дополнительные защиты
     MainModule.StopEnhancedProtection()
@@ -2247,6 +2344,15 @@ function MainModule.Cleanup()
         end
     end
     MainModule.Guards.OriginalFireRates = {}
+    
+    -- Восстанавливаем Anti Time Stop свойства
+    for humanoid, properties in pairs(MainModule.AntiTimeStop.OriginalProperties) do
+        if humanoid and humanoid.Parent then
+            humanoid.WalkSpeed = properties.WalkSpeed
+            humanoid.JumpPower = properties.JumpPower
+        end
+    end
+    MainModule.AntiTimeStop.OriginalProperties = {}
     
     -- Удаляем платформы Glass Bridge
     for _, platform in pairs(MainModule.GlassBridge.GlassPlatforms) do
@@ -2286,6 +2392,7 @@ function MainModule.Cleanup()
     MainModule.Guards.InfiniteAmmo = false
     MainModule.Guards.HitboxExpander = false
     MainModule.Hitbox.Enabled = false
+    MainModule.AntiTimeStop.Enabled = false
     MainModule.HNS.InfinityStaminaEnabled = false
     MainModule.Misc.ESPEnabled = false
     MainModule.Misc.InstaInteract = false
