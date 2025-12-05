@@ -776,7 +776,7 @@ function MainModule.ToggleRebel(enabled)
     end
 end
 
--- Исправленный GodMode для RLGL с моментальной телепортацией
+-- Исправленный GodMode для RLGL с однократной телепортацией
 function MainModule.ToggleGodMode(enabled)
     MainModule.RLGL.GodMode = enabled
     
@@ -796,7 +796,7 @@ function MainModule.ToggleGodMode(enabled)
             end
         end
         
-        -- Моментальная телепортация вверх
+        -- Однократная телепортация вверх при включении
         local character = GetCharacter()
         if character and character.HumanoidRootPart then
             local currentPos = character.HumanoidRootPart.Position
@@ -804,13 +804,13 @@ function MainModule.ToggleGodMode(enabled)
             local targetPos = Vector3.new(currentPos.X, targetHeight, currentPos.Z)
             
             SafeTeleport(targetPos)
+            print("[CreonX] GodMode: Teleported up to safe height")
         end
         
         MainModule.RLGL.Connection = RunService.Heartbeat:Connect(function()
             if not MainModule.RLGL.GodMode then return end
             
             local currentTime = tick()
-            if currentTime - MainModule.RLGL.LastDamageTime < MainModule.RLGL.DamageCheckRate then return end
             
             pcall(function()
                 local character = GetCharacter()
@@ -823,32 +823,40 @@ function MainModule.ToggleGodMode(enabled)
                 
                 -- Проверяем, получили ли мы урон
                 if humanoid.Health < MainModule.RLGL.LastHealth then
-                    MainModule.RLGL.LastDamageTime = currentTime
-                    
-                    -- Телепортируем на указанные координаты
-                    SafeTeleport(MainModule.RLGL.DamageTeleportPosition)
-                    
-                    -- Восстанавливаем здоровье
-                    humanoid.Health = MainModule.RLGL.LastHealth
-                    
-                    -- Отключаем GodMode после телепортации
-                    task.wait(0.1)
-                    MainModule.ToggleGodMode(false)
+                    if currentTime - MainModule.RLGL.LastDamageTime >= MainModule.RLGL.DamageCheckRate then
+                        MainModule.RLGL.LastDamageTime = currentTime
+                        
+                        -- Телепортируем на указанные координаты при получении урона
+                        SafeTeleport(MainModule.RLGL.DamageTeleportPosition)
+                        print("[CreonX] GodMode: Damage detected! Teleported to safe position")
+                        
+                        -- Восстанавливаем здоровье
+                        humanoid.Health = MainModule.RLGL.LastHealth
+                        
+                        -- Отключаем GodMode после телепортации
+                        task.wait(0.1)
+                        MainModule.ToggleGodMode(false)
+                        print("[CreonX] GodMode: Disabled after damage")
+                    end
                 else
                     -- Обновляем запомненное здоровье
                     MainModule.RLGL.LastHealth = humanoid.Health
                     
-                    -- Поддерживаем высоту GodMode
-                    if rootPart.Position.Y < (MainModule.RLGL.OriginalHeight + MainModule.RLGL.GodModeHeight - 10) then
+                    -- Удалена постоянная проверка высоты - только при необходимости
+                    -- Если игрок упал ниже безопасной высоты, поднимаем его
+                    if rootPart.Position.Y < (MainModule.RLGL.OriginalHeight + MainModule.RLGL.GodModeHeight - 50) then
                         local currentPos = rootPart.Position
                         local targetPos = Vector3.new(currentPos.X, MainModule.RLGL.OriginalHeight + MainModule.RLGL.GodModeHeight, currentPos.Z)
                         SafeTeleport(targetPos)
+                        print("[CreonX] GodMode: Player fell too low, teleported back up")
                     end
                 end
             end)
         end)
+        
+        print("[CreonX] GodMode: Enabled")
     else
-        -- Моментальная телепортация вниз при выключении
+        -- Однократная телепортация вниз при выключении
         local character = GetCharacter()
         if character then
             local rootPart = GetRootPart(character)
@@ -858,12 +866,15 @@ function MainModule.ToggleGodMode(enabled)
                 local targetPos = Vector3.new(currentPos.X, targetHeight, currentPos.Z)
                 
                 SafeTeleport(targetPos)
+                print("[CreonX] GodMode: Teleported down to normal height")
             end
         end
         
         -- Сбрасываем значения
         MainModule.RLGL.LastHealth = 100
         MainModule.RLGL.OriginalHeight = nil
+        
+        print("[CreonX] GodMode: Disabled")
     end
 end
 
@@ -2740,3 +2751,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
