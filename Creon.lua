@@ -49,8 +49,8 @@ local SkySquidAntiFallEnabled = false
 
 -- Независимая мышь GUI
 local GuiMouseEnabled = false
-local OriginalMouseIcon = ""
-local OriginalMouseBehavior = nil
+local OriginalMouseIconEnabled = true
+local GuiCursor = nil
 
 -- GUI Creon X v2.4
 local ScreenGui = Instance.new("ScreenGui")
@@ -217,6 +217,7 @@ if UIS.TouchEnabled then
         MainFrame.Visible = true
         MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
         MobileOpenButton.Visible = false
+        EnableGuiMouse()
     end)
     
     local mobileDragging = false
@@ -264,37 +265,49 @@ local function EnableGuiMouse()
     
     GuiMouseEnabled = true
     
-    -- Сохраняем оригинальные настройки мыши
-    if game:GetService("Players").LocalPlayer:FindFirstChild("PlayerMouse") then
-        OriginalMouseIcon = game:GetService("Players").LocalPlayer.PlayerMouse.Icon
-        game:GetService("Players").LocalPlayer.PlayerMouse.Icon = ""
-    end
+    -- Сохраняем оригинальное состояние мыши
+    OriginalMouseIconEnabled = UIS.MouseIconEnabled
     
-    -- Скрываем курсор Roblox
-    if game:GetService("UserInputService").MouseIconEnabled then
-        OriginalMouseBehavior = true
-        game:GetService("UserInputService").MouseIconEnabled = false
-    end
+    -- Скрываем стандартный курсор Roblox
+    UIS.MouseIconEnabled = false
     
     -- Создаем свой курсор
-    local guiCursor = Instance.new("ImageLabel")
-    guiCursor.Name = "GuiCursor"
-    guiCursor.Size = UDim2.new(0, 32, 0, 32)
-    guiCursor.BackgroundTransparency = 1
-    guiCursor.Image = "rbxassetid://4468791792" -- Белый курсор
-    guiCursor.ImageColor3 = Color3.fromRGB(255, 255, 255)
-    guiCursor.ZIndex = 10000
-    guiCursor.Parent = ScreenGui
+    GuiCursor = Instance.new("ImageLabel")
+    GuiCursor.Name = "GuiCursor"
+    GuiCursor.Size = UDim2.new(0, 24, 0, 24)
+    GuiCursor.BackgroundTransparency = 1
+    GuiCursor.Image = "rbxassetid://4468791792" -- Белый курсор
+    GuiCursor.ImageColor3 = Color3.fromRGB(255, 255, 255)
+    GuiCursor.ImageTransparency = 0.1
+    GuiCursor.ZIndex = 10000
+    GuiCursor.AnchorPoint = Vector2.new(0.5, 0.5)
+    GuiCursor.Parent = ScreenGui
+    
+    -- Тень курсора для лучшей видимости
+    local cursorShadow = Instance.new("ImageLabel")
+    cursorShadow.Name = "CursorShadow"
+    cursorShadow.Size = UDim2.new(0, 24, 0, 24)
+    cursorShadow.BackgroundTransparency = 1
+    cursorShadow.Image = "rbxassetid://4468791792"
+    cursorShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+    cursorShadow.ImageTransparency = 0.3
+    cursorShadow.ZIndex = 9999
+    cursorShadow.AnchorPoint = Vector2.new(0.5, 0.5)
+    cursorShadow.Position = UDim2.new(0, 1, 0, 1)
+    cursorShadow.Parent = GuiCursor
     
     -- Обновление позиции курсора
-    RunService.RenderStepped:Connect(function()
-        if GuiMouseEnabled and guiCursor and guiCursor.Parent then
-            local mouse = game:GetService("Players").LocalPlayer:GetMouse()
-            guiCursor.Position = UDim2.new(0, mouse.X, 0, mouse.Y)
+    local mouse = player:GetMouse()
+    local connection = RunService.RenderStepped:Connect(function()
+        if GuiMouseEnabled and GuiCursor and GuiCursor.Parent then
+            GuiCursor.Position = UDim2.new(0, mouse.X, 0, mouse.Y)
         end
     end)
     
-    -- Убираем захват мыши для игровых взаимодействий
+    -- Запоминаем соединение для очистки
+    GuiCursor:SetAttribute("Connection", connection)
+    
+    -- Устанавливаем поведение мыши для GUI
     UIS.MouseBehavior = Enum.MouseBehavior.Default
     
     print("GUI Mouse Enabled")
@@ -305,23 +318,21 @@ local function DisableGuiMouse()
     
     GuiMouseEnabled = false
     
-    -- Восстанавливаем оригинальный курсор
-    if OriginalMouseIcon ~= "" then
-        pcall(function()
-            game:GetService("Players").LocalPlayer.PlayerMouse.Icon = OriginalMouseIcon
-        end)
+    -- Восстанавливаем оригинальный курсор Roblox
+    UIS.MouseIconEnabled = OriginalMouseIconEnabled
+    
+    -- Удаляем наш курсор и его соединение
+    if GuiCursor then
+        local connection = GuiCursor:GetAttribute("Connection")
+        if connection then
+            connection:Disconnect()
+        end
+        GuiCursor:Destroy()
+        GuiCursor = nil
     end
     
-    -- Восстанавливаем видимость курсора Roblox
-    if OriginalMouseBehavior ~= nil then
-        game:GetService("UserInputService").MouseIconEnabled = OriginalMouseBehavior
-    end
-    
-    -- Удаляем наш курсор
-    local guiCursor = ScreenGui:FindFirstChild("GuiCursor")
-    if guiCursor then
-        guiCursor:Destroy()
-    end
+    -- Восстанавливаем нормальное поведение мыши
+    UIS.MouseBehavior = Enum.MouseBehavior.Default
     
     print("GUI Mouse Disabled")
 end
