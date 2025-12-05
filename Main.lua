@@ -87,7 +87,7 @@ MainModule.GlassBridge = {
     
     EndPosition = Vector3.new(-196.372467, 522.192139, -1534.20984),
     BridgeHeight = 520.4,
-    AntiFallYOffset = -3,
+    AntiFallYOffset = -7,
     PlatformSize = Vector3.new(10000, 1, 10000), -- ОГРОМНАЯ платформа 500%
     PlatformColor = Color3.fromRGB(0, 255, 0),
     PlatformTransparency = 0.3
@@ -2184,3 +2184,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
