@@ -163,6 +163,14 @@ MainModule.ESP = {
     UpdateRate = 0.1
 }
 
+-- Hitbox Expander System
+MainModule.Hitbox = {
+    Size = 100,
+    Enabled = false,
+    Connection = nil,
+    ModifiedParts = {}
+}
+
 -- Постоянные соединения
 local speedConnection = nil
 local autoFarmConnection = nil
@@ -1329,7 +1337,7 @@ function MainModule.ToggleRapidFire(enabled)
     end
 end
 
--- Infinite Ammo функция
+-- Infinite Ammo функция (исправленная)
 function MainModule.ToggleInfiniteAmmo(enabled)
     MainModule.Guards.InfiniteAmmo = enabled
     
@@ -1342,25 +1350,62 @@ function MainModule.ToggleInfiniteAmmo(enabled)
         infiniteAmmoConnection = RunService.Heartbeat:Connect(function()
             if not MainModule.Guards.InfiniteAmmo then return end
             
-            local character = GetCharacter()
-            if character then
-                for _, tool in pairs(character:GetChildren()) do
-                    if tool:IsA("Tool") then
-                        for _, obj in pairs(tool:GetDescendants()) do
-                            if obj:IsA("NumberValue") then
-                                if obj.Name:lower():find("ammo") or 
-                                   obj.Name:lower():find("bullet") or
-                                   obj.Name:lower():find("clip") then
-                                    if not MainModule.Guards.OriginalAmmo[obj] then
-                                        MainModule.Guards.OriginalAmmo[obj] = obj.Value
+            task.spawn(function()
+                local character = GetCharacter()
+                if character then
+                    for _, tool in pairs(character:GetChildren()) do
+                        if tool:IsA("Tool") then
+                            for _, obj in pairs(tool:GetDescendants()) do
+                                if obj:IsA("NumberValue") or obj:IsA("IntValue") then
+                                    -- Ищем значения патронов
+                                    local nameLower = obj.Name:lower()
+                                    if nameLower:find("ammo") or 
+                                       nameLower:find("bullet") or
+                                       nameLower:find("clip") or
+                                       nameLower:find("munition") then
+                                        
+                                        -- Сохраняем оригинальное значение
+                                        if not MainModule.Guards.OriginalAmmo[obj] then
+                                            MainModule.Guards.OriginalAmmo[obj] = obj.Value
+                                        end
+                                        
+                                        -- Устанавливаем значение в math.huge (бесконечность)
+                                        if obj.Value < 999 then  -- Если значение изменилось на что-то меньшее
+                                            obj.Value = math.huge
+                                        end
                                     end
-                                    obj.Value = 9999
                                 end
                             end
                         end
                     end
                 end
-            end
+                
+                -- Проверяем бэкпак
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                if backpack then
+                    for _, tool in pairs(backpack:GetChildren()) do
+                        if tool:IsA("Tool") then
+                            for _, obj in pairs(tool:GetDescendants()) do
+                                if obj:IsA("NumberValue") or obj:IsA("IntValue") then
+                                    local nameLower = obj.Name:lower()
+                                    if nameLower:find("ammo") or 
+                                       nameLower:find("bullet") or
+                                       nameLower:find("clip") then
+                                        
+                                        if not MainModule.Guards.OriginalAmmo[obj] then
+                                            MainModule.Guards.OriginalAmmo[obj] = obj.Value
+                                        end
+                                        
+                                        if obj.Value < 999 then
+                                            obj.Value = math.huge
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
         end)
     else
         pcall(function()
@@ -1374,73 +1419,112 @@ function MainModule.ToggleInfiniteAmmo(enabled)
     end
 end
 
--- Hitbox Expander функция (ИЗМЕНЕНО: размер хитбокса 40 вместо 10)
+-- Hitbox Expander функция (исправленная по вашему примеру)
 function MainModule.ToggleHitboxExpander(enabled)
-    MainModule.Guards.HitboxExpander = enabled
+    MainModule.Hitbox.Enabled = enabled
     
-    if hitboxConnection then
-        hitboxConnection:Disconnect()
-        hitboxConnection = nil
+    if MainModule.Hitbox.Connection then
+        MainModule.Hitbox.Connection:Disconnect()
+        MainModule.Hitbox.Connection = nil
     end
     
-    if enabled then
-        local HITBOX_SIZE = 40 -- ИЗМЕНЕНО: с 10 на 40
+    -- Очистка кэша при отключении
+    if not enabled then
+        for player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                if root and MainModule.Hitbox.ModifiedParts[root] then
+                    -- Восстанавливаем оригинальный размер
+                    root.Size = MainModule.Hitbox.ModifiedParts[root]
+                    root.CanCollide = true
+                    MainModule.Hitbox.ModifiedParts[root] = nil
+                end
+            end
+        end
+        MainModule.Hitbox.ModifiedParts = {}
+        return
+    end
+    
+    -- Функция для изменения части
+    local function modifyPart(part)
+        if not MainModule.Hitbox.ModifiedParts[part] then
+            MainModule.Hitbox.ModifiedParts[part] = part.Size
+            part.Size = Vector3.new(MainModule.Hitbox.Size, MainModule.Hitbox.Size, MainModule.Hitbox.Size)
+            part.CanCollide = false
+        end
+    end
+    
+    -- Обработчик для новых игроков
+    local function onPlayerAdded(player)
+        player.CharacterAdded:Connect(function(character)
+            if MainModule.Hitbox.Enabled then
+                local root = character:WaitForChild("HumanoidRootPart", 5)
+                if root then
+                    modifyPart(root)
+                end
+            end
+        end)
+    end
+    
+    -- Обработчик для существующих игроков
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                modifyPart(root)
+            end
+        end
+        if player ~= LocalPlayer then
+            onPlayerAdded(player)
+        end
+    end
+    
+    -- Основной цикл с оптимизацией
+    MainModule.Hitbox.Connection = RunService.RenderStepped:Connect(function()
+        if not MainModule.Hitbox.Enabled then return end
         
-        hitboxConnection = RunService.Stepped:Connect(function()
-            if not MainModule.Guards.HitboxExpander then 
-                for player, originalSizes in pairs(MainModule.Guards.OriginalHitboxes) do
-                    if player and player.Character then
-                        for partName, originalSize in pairs(originalSizes) do
-                            local part = player.Character:FindFirstChild(partName)
-                            if part and part:IsA("BasePart") then
-                                part.Size = originalSize
-                                part.CanCollide = true
-                            end
-                        end
-                    end
-                end
-                MainModule.Guards.OriginalHitboxes = {}
-                return 
-            end
-            
-            pcall(function()
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player ~= LocalPlayer and player.Character then
-                        if not MainModule.Guards.OriginalHitboxes[player] then
-                            MainModule.Guards.OriginalHitboxes[player] = {}
-                            
-                            local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
-                            if rootPart and rootPart:IsA("BasePart") then
-                                MainModule.Guards.OriginalHitboxes[player]["HumanoidRootPart"] = rootPart.Size
-                            end
-                        end
-                        
-                        local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
-                        if rootPart and rootPart:IsA("BasePart") then
-                            if MainModule.Guards.OriginalHitboxes[player] and MainModule.Guards.OriginalHitboxes[player]["HumanoidRootPart"] then
-                                rootPart.Size = Vector3.new(HITBOX_SIZE, HITBOX_SIZE, HITBOX_SIZE)
-                                rootPart.CanCollide = true
-                            end
-                        end
-                    end
-                end
-            end)
-        end)
-    else
-        pcall(function()
-            for player, originalSizes in pairs(MainModule.Guards.OriginalHitboxes) do
-                if player and player.Character then
-                    for partName, originalSize in pairs(originalSizes) do
-                        local part = player.Character:FindFirstChild(partName)
-                        if part and part:IsA("BasePart") then
-                            part.Size = originalSize
-                            part.CanCollide = true
-                        end
-                    end
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                if root and not MainModule.Hitbox.ModifiedParts[root] then
+                    pcall(modifyPart, root)
                 end
             end
-            MainModule.Guards.OriginalHitboxes = {}
-        end)
+        end
+    end)
+    
+    -- Очистка при выходе игрока
+    Players.PlayerRemoving:Connect(function(player)
+        if player.Character then
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                MainModule.Hitbox.ModifiedParts[root] = nil
+            end
+        end
+    end)
+    
+    -- Слушатель для новых игроков
+    Players.PlayerAdded:Connect(function(player)
+        if player ~= LocalPlayer then
+            onPlayerAdded(player)
+        end
+    end)
+end
+
+-- Функция для установки размера хитбокса
+function MainModule.SetHitboxSize(size)
+    MainModule.Hitbox.Size = size
+    
+    -- Обновляем существующие хитбоксы
+    if MainModule.Hitbox.Enabled then
+        for player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                if root and MainModule.Hitbox.ModifiedParts[root] then
+                    root.Size = Vector3.new(size, size, size)
+                end
+            end
+        end
     end
 end
 
@@ -1559,7 +1643,7 @@ function MainModule.TeleportToJumpRopeStart()
     end
 end
 
--- Функция для создания AntiFall платформы Glass Bridge (-5 Y)
+-- Функция для создания AntiFall платформы Glass Bridge (-5 Y) - ПОЛНОСТЬЮ НЕВИДИМАЯ
 function MainModule.CreateGlassBridgeAntiFall()
     -- Удаляем старую платформу если она есть
     if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
@@ -1575,15 +1659,15 @@ function MainModule.CreateGlassBridgeAntiFall()
     
     local currentPosition = rootPart.Position
     
-    -- Создание ОГРОМНОЙ зеленой платформы 500%
+    -- Создание ПОЛНОСТЬЮ НЕВИДИМОЙ платформы
     local platform = Instance.new("Part")
     platform.Name = "GlassBridgeAntiFall"
     platform.Size = MainModule.GlassBridge.PlatformSize
     platform.Anchored = true
     platform.CanCollide = true
-    platform.Transparency = MainModule.GlassBridge.PlatformTransparency
-    platform.Color = MainModule.GlassBridge.PlatformColor
-    platform.Material = Enum.Material.Neon
+    platform.Transparency = 1 -- ПОЛНАЯ НЕВИДИМОСТЬ
+    platform.Color = Color3.fromRGB(0, 255, 0)
+    platform.Material = Enum.Material.Plastic
     platform.CastShadow = false
     
     -- Позиция на 5 единиц ниже игрока
@@ -1597,7 +1681,7 @@ function MainModule.CreateGlassBridgeAntiFall()
     MainModule.GlassBridge.GlassAntiFallPlatform = platform
     MainModule.GlassBridge.AntiFallEnabled = true
     
-    print("[CreonX] Glass Bridge AntiFall создан на высоте Y -5")
+    print("[CreonX] Glass Bridge AntiFall создан (невидимый) на высоте Y -5")
     
     return platform
 end
@@ -1614,7 +1698,7 @@ function MainModule.RemoveGlassBridgeAntiFall()
     return true
 end
 
--- Функция для создания Sky Squid AntiFall платформы (-5 Y)
+-- Функция для создания Sky Squid AntiFall платформы (-5 Y) - ПОЛНОСТЬЮ НЕВИДИМАЯ
 function MainModule.CreateSkySquidAntiFall()
     -- Удаляем старую платформу если она есть
     if MainModule.SkySquid.AntiFallPlatform and MainModule.SkySquid.AntiFallPlatform.Parent then
@@ -1630,15 +1714,15 @@ function MainModule.CreateSkySquidAntiFall()
     
     local currentPosition = rootPart.Position
     
-    -- Создание ОГРОМНОЙ зеленой платформы 500%
+    -- Создание ПОЛНОСТЬЮ НЕВИДИМОЙ платформы
     local platform = Instance.new("Part")
     platform.Name = "SkySquidAntiFall"
     platform.Size = MainModule.SkySquid.PlatformSize
     platform.Anchored = true
     platform.CanCollide = true
-    platform.Transparency = MainModule.SkySquid.PlatformTransparency
+    platform.Transparency = 1 -- ПОЛНАЯ НЕВИДИМОСТЬ
     platform.Color = MainModule.SkySquid.PlatformColor
-    platform.Material = Enum.Material.Neon
+    platform.Material = Enum.Material.Plastic
     platform.CastShadow = false
     
     -- Позиция на 5 единиц ниже игрока
@@ -1651,7 +1735,7 @@ function MainModule.CreateSkySquidAntiFall()
     
     MainModule.SkySquid.AntiFallPlatform = platform
     
-    print("[CreonX] Sky Squid AntiFall создан на высоте Y -5")
+    print("[CreonX] Sky Squid AntiFall создан (невидимый) на высоте Y -5")
     
     return platform
 end
@@ -1667,7 +1751,7 @@ function MainModule.RemoveSkySquidAntiFall()
     return true
 end
 
--- Функция для создания Jump Rope AntiFall платформы (-5 Y)
+-- Функция для создания Jump Rope AntiFall платформы (-5 Y) - ПОЛНОСТЬЮ НЕВИДИМАЯ
 function MainModule.CreateJumpRopeAntiFall()
     -- Удаляем старую платформу если она есть
     if MainModule.JumpRope.AntiFallPlatform and MainModule.JumpRope.AntiFallPlatform.Parent then
@@ -1683,15 +1767,15 @@ function MainModule.CreateJumpRopeAntiFall()
     
     local currentPosition = rootPart.Position
     
-    -- Создание ОГРОМНОЙ зеленой платформы 500%
+    -- Создание ПОЛНОСТЬЮ НЕВИДИМОЙ платформы
     local platform = Instance.new("Part")
     platform.Name = "JumpRopeAntiFall"
     platform.Size = MainModule.JumpRope.PlatformSize
     platform.Anchored = true
     platform.CanCollide = true
-    platform.Transparency = MainModule.JumpRope.PlatformTransparency
+    platform.Transparency = 1 -- ПОЛНАЯ НЕВИДИМОСТЬ
     platform.Color = MainModule.JumpRope.PlatformColor
-    platform.Material = Enum.Material.Neon
+    platform.Material = Enum.Material.Plastic
     platform.CastShadow = false
     
     -- Позиция на 5 единиц ниже игрока
@@ -1704,7 +1788,7 @@ function MainModule.CreateJumpRopeAntiFall()
     
     MainModule.JumpRope.AntiFallPlatform = platform
     
-    print("[CreonX] Jump Rope AntiFall создан на высоте Y -5")
+    print("[CreonX] Jump Rope AntiFall создан (невидимый) на высоте Y -5")
     
     return platform
 end
@@ -2087,25 +2171,27 @@ function MainModule.Cleanup()
         MainModule.TugOfWar.Connection = nil
     end
     
+    -- Отключаем Hitbox Expander
+    if MainModule.Hitbox.Connection then
+        MainModule.Hitbox.Connection:Disconnect()
+        MainModule.Hitbox.Connection = nil
+    end
+    
     -- Отключаем дополнительные защиты
     MainModule.StopEnhancedProtection()
     MainModule.StopJointCleaning()
     
     -- Восстанавливаем хитбоксы
-    if MainModule.Guards.OriginalHitboxes then
-        for player, originalSizes in pairs(MainModule.Guards.OriginalHitboxes) do
-            if player and player.Character then
-                for partName, originalSize in pairs(originalSizes) do
-                    local part = player.Character:FindFirstChild(partName)
-                    if part and part:IsA("BasePart") then
-                        part.Size = originalSize
-                        part.CanCollide = true
-                    end
-                end
+    for player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if root and MainModule.Hitbox.ModifiedParts[root] then
+                root.Size = MainModule.Hitbox.ModifiedParts[root]
+                root.CanCollide = true
             end
         end
-        MainModule.Guards.OriginalHitboxes = {}
     end
+    MainModule.Hitbox.ModifiedParts = {}
     
     -- Восстанавливаем Infinite Ammo
     for obj, originalValue in pairs(MainModule.Guards.OriginalAmmo) do
@@ -2160,6 +2246,7 @@ function MainModule.Cleanup()
     MainModule.Guards.RapidFire = false
     MainModule.Guards.InfiniteAmmo = false
     MainModule.Guards.HitboxExpander = false
+    MainModule.Hitbox.Enabled = false
     MainModule.HNS.InfinityStaminaEnabled = false
     MainModule.Misc.ESPEnabled = false
     MainModule.Misc.InstaInteract = false
