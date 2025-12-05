@@ -1,4 +1,4 @@
--- Creon X v2.4 (обновленная версия для ПК и Delta Mobile)
+-- Creon X v2.4 (исправленная версия для ПК и Delta Mobile)
 -- Проверка исполнителя
 local executorName = "Unknown"
 if identifyexecutor then
@@ -37,6 +37,11 @@ if not success then
     warn("Failed to load Main.lua: " .. tostring(err))
     return
 end
+
+-- Переменные для отслеживания статуса AntiFall
+local GlassBridgeAntiFallEnabled = false
+local JumpRopeAntiFallEnabled = false
+local SkySquidAntiFallEnabled = false
 
 -- GUI Creon X v2.4
 local ScreenGui = Instance.new("ScreenGui")
@@ -405,7 +410,7 @@ local function CreateToggle(text, enabled, callback)
         updateToggle(not enabled)
     end)
     
-    return toggleContainer, updateToggle
+    return toggleContainer, updateToggle, textLabel
 end
 
 -- Функция для создания слайдера скорости
@@ -912,8 +917,6 @@ local function CreateHNSContent()
 end
 
 -- Функция для GLASS BRIDGE с автоматическим AntiFall при включении
-local GlassBridgeAntiFallEnabled = false
-
 local function GlassBridgeToggleCallback(enabled)
     if MainModule.ToggleGlassBridgeAntiBreak then
         MainModule.ToggleGlassBridgeAntiBreak(enabled)
@@ -945,18 +948,18 @@ local function CreateGlassBridgeContent()
     local antiBreakToggle, updateAntiBreakToggle = CreateToggle("AntiBreak + Auto AntiFall", MainModule.GlassBridge.AntiBreakEnabled, GlassBridgeToggleCallback)
     antiBreakToggle.LayoutOrder = 1
     
-    -- Manual AntiFall Toggle (ON/OFF)
-    local antiFallToggle, updateAntiFallToggle = CreateToggle("AntiFall [" .. (GlassBridgeAntiFallEnabled and "ON" or "OFF") .. "]", GlassBridgeAntiFallEnabled, function(enabled)
+    -- Manual AntiFall Toggle (ON/OFF) с обновлением текста
+    local antiFallToggle, updateAntiFallToggle, antiFallTextLabel = CreateToggle("AntiFall [" .. (GlassBridgeAntiFallEnabled and "ON" or "OFF") .. "]", GlassBridgeAntiFallEnabled, function(enabled)
         GlassBridgeAntiFallEnabled = enabled
         if enabled then
             if MainModule.CreateGlassBridgeAntiFall then
                 MainModule.CreateGlassBridgeAntiFall()
-                antiFallToggle:FindFirstChild("TextLabel").Text = "AntiFall [ON]"
+                antiFallTextLabel.Text = "AntiFall [ON]"
             end
         else
             if MainModule.RemoveGlassBridgeAntiFall then
                 MainModule.RemoveGlassBridgeAntiFall()
-                antiFallToggle:FindFirstChild("TextLabel").Text = "AntiFall [OFF]"
+                antiFallTextLabel.Text = "AntiFall [OFF]"
             end
         end
     end)
@@ -1000,25 +1003,22 @@ local function CreateTugOfWarContent()
     autoPullToggle.LayoutOrder = 1
 end
 
--- Переменные для отслеживания статуса AntiFall
-local JumpRopeAntiFallEnabled = false
-
 -- JUMP ROPE TAB
 local function CreateJumpRopeContent()
     ClearContent()
     
-    -- AntiFall Toggle (ON/OFF)
-    local antiFallToggle, updateAntiFallToggle = CreateToggle("AntiFall [" .. (JumpRopeAntiFallEnabled and "ON" or "OFF") .. "]", JumpRopeAntiFallEnabled, function(enabled)
+    -- AntiFall Toggle (ON/OFF) с обновлением текста
+    local antiFallToggle, updateAntiFallToggle, antiFallTextLabel = CreateToggle("AntiFall [" .. (JumpRopeAntiFallEnabled and "ON" or "OFF") .. "]", JumpRopeAntiFallEnabled, function(enabled)
         JumpRopeAntiFallEnabled = enabled
         if enabled then
             if MainModule.CreateJumpRopeAntiFall then
                 MainModule.CreateJumpRopeAntiFall()
-                antiFallToggle:FindFirstChild("TextLabel").Text = "AntiFall [ON]"
+                antiFallTextLabel.Text = "AntiFall [ON]"
             end
         else
             if MainModule.RemoveJumpRopeAntiFall then
                 MainModule.RemoveJumpRopeAntiFall()
-                antiFallToggle:FindFirstChild("TextLabel").Text = "AntiFall [OFF]"
+                antiFallTextLabel.Text = "AntiFall [OFF]"
             end
         end
     end)
@@ -1056,25 +1056,22 @@ local function CreateJumpRopeContent()
     end)
 end
 
--- Переменные для отслеживания статуса AntiFall
-local SkySquidAntiFallEnabled = false
-
 -- SKY SQUID TAB
 local function CreateSkySquidContent()
     ClearContent()
     
-    -- AntiFall Toggle (ON/OFF)
-    local antiFallToggle, updateAntiFallToggle = CreateToggle("AntiFall [" .. (SkySquidAntiFallEnabled and "ON" or "OFF") .. "]", SkySquidAntiFallEnabled, function(enabled)
+    -- AntiFall Toggle (ON/OFF) с обновлением текста
+    local antiFallToggle, updateAntiFallToggle, antiFallTextLabel = CreateToggle("AntiFall [" .. (SkySquidAntiFallEnabled and "ON" or "OFF") .. "]", SkySquidAntiFallEnabled, function(enabled)
         SkySquidAntiFallEnabled = enabled
         if enabled then
             if MainModule.CreateSkySquidAntiFall then
                 MainModule.CreateSkySquidAntiFall()
-                antiFallToggle:FindFirstChild("TextLabel").Text = "AntiFall [ON]"
+                antiFallTextLabel.Text = "AntiFall [ON]"
             end
         else
             if MainModule.RemoveSkySquidAntiFall then
                 MainModule.RemoveSkySquidAntiFall()
-                antiFallToggle:FindFirstChild("TextLabel").Text = "AntiFall [OFF]"
+                antiFallTextLabel.Text = "AntiFall [OFF]"
             end
         end
     end)
