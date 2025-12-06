@@ -127,7 +127,7 @@ MainModule.Hitbox = {
     ModifiedParts = {}
 }
 
--- HIDE AND SEEK - Spikes Kill System (Обновленная версия)
+-- HIDE AND SEEK - Spikes Kill System (Исправленная версия с постоянным отслеживанием)
 MainModule.SpikesKill = {
     Enabled = false,
     AnimationId = "rbxassetid://107989020363293", -- ID анимации шипов/урона
@@ -146,7 +146,9 @@ MainModule.SpikesKill = {
     AnimationConnection = nil,
     CharacterAddedConnection = nil,
     AnimationStoppedConnections = {},
-    SafetyCheckConnection = nil
+    SafetyCheckConnection = nil,
+    TrackedAnimations = {}, -- Таблица для отслеживания активных анимаций
+    AnimationCheckConnection = nil -- Соединение для постоянной проверки
 }
 
 -- Misc System
@@ -1222,7 +1224,7 @@ function MainModule.ClearESP()
     end
 end
 
--- HIDE AND SEEK - Spikes Kill функция (Обновленная версия)
+-- HIDE AND SEEK - Spikes Kill функция (Исправленная версия с постоянным отслеживанием)
 function MainModule.ToggleSpikesKill(enabled)
     MainModule.SpikesKill.Enabled = enabled
     
@@ -1242,6 +1244,11 @@ function MainModule.ToggleSpikesKill(enabled)
         MainModule.SpikesKill.SafetyCheckConnection = nil
     end
     
+    if MainModule.SpikesKill.AnimationCheckConnection then
+        MainModule.SpikesKill.AnimationCheckConnection:Disconnect()
+        MainModule.SpikesKill.AnimationCheckConnection = nil
+    end
+    
     -- Отключаем все сохраненные соединения
     for _, conn in ipairs(MainModule.SpikesKill.AnimationStoppedConnections) do
         pcall(function() conn:Disconnect() end)
@@ -1252,6 +1259,7 @@ function MainModule.ToggleSpikesKill(enabled)
     MainModule.SpikesKill.SavedCFrame = nil
     MainModule.SpikesKill.ActiveAnimation = false
     MainModule.SpikesKill.AnimationStartTime = 0
+    MainModule.SpikesKill.TrackedAnimations = {}
     
     -- Удаляем платформу при отключении
     if not enabled then
@@ -1263,7 +1271,7 @@ function MainModule.ToggleSpikesKill(enabled)
         return
     end
     
-    print("[Spikes Kill] Включен")
+    print("[Spikes Kill] Включен - поиск анимации rbxassetid://107989020363293")
     
     -- Создаем платформу при включении
     if not MainModule.SpikesKill.Platform then
@@ -1284,83 +1292,124 @@ function MainModule.ToggleSpikesKill(enabled)
         print("[Spikes Kill] Платформа создана на высоте +5 Y")
     end
     
-    -- Функция настройки для персонажа
+    -- Функция для проверки всех активных анимаций в реальном времени
+    local function checkAnimations()
+        local character = GetCharacter()
+        if not character then return end
+        
+        local humanoid = GetHumanoid(character)
+        if not humanoid then return end
+        
+        -- Получаем все активные анимации
+        local activeTracks = humanoid:GetPlayingAnimationTracks()
+        
+        for _, track in pairs(activeTracks) do
+            -- Проверяем ID анимации
+            if track.Animation and track.Animation.AnimationId == MainModule.SpikesKill.AnimationId then
+                -- Проверяем, отслеживается ли уже эта анимация
+                if not MainModule.SpikesKill.TrackedAnimations[track] then
+                    print("[Spikes Kill] НАЙДЕНА ЦЕЛЕВАЯ АНИМАЦИЯ! ID: " .. MainModule.SpikesKill.AnimationId)
+                    
+                    -- Отмечаем как отслеживаемую
+                    MainModule.SpikesKill.TrackedAnimations[track] = true
+                    
+                    -- Если не активна другая анимация, запускаем телепорт
+                    if not MainModule.SpikesKill.ActiveAnimation then
+                        MainModule.SpikesKill.ActiveAnimation = true
+                        MainModule.SpikesKill.AnimationStartTime = tick()
+                        
+                        -- Сохраняем текущую позицию игрока
+                        MainModule.SpikesKill.SavedCFrame = character:GetPrimaryPartCFrame()
+                        
+                        -- Телепортируем игрока на платформу
+                        local targetCFrame = MainModule.SpikesKill.PlatformCFrame + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset + 2, 0)
+                        character:SetPrimaryPartCFrame(targetCFrame)
+                        
+                        print("[Spikes Kill] Телепортирован на платформу, запомнены исходные координаты")
+                        
+                        -- Запускаем таймер для возврата через 5 секунд
+                        task.delay(MainModule.SpikesKill.ReturnDelay, function()
+                            if MainModule.SpikesKill.ActiveAnimation and MainModule.SpikesKill.SavedCFrame then
+                                print("[Spikes Kill] Возвращаем на исходную позицию через 5 секунд")
+                                character:SetPrimaryPartCFrame(MainModule.SpikesKill.SavedCFrame)
+                                MainModule.SpikesKill.SavedCFrame = nil
+                                MainModule.SpikesKill.ActiveAnimation = false
+                                
+                                -- Очищаем треки
+                                for trackKey, _ in pairs(MainModule.SpikesKill.TrackedAnimations) do
+                                    MainModule.SpikesKill.TrackedAnimations[trackKey] = nil
+                                end
+                            end
+                        end)
+                    end
+                    
+                    -- Слушаем окончание этой анимации
+                    local stoppedConn = track.Stopped:Connect(function()
+                        print("[Spikes Kill] Анимация завершилась")
+                        MainModule.SpikesKill.TrackedAnimations[track] = nil
+                    end)
+                    
+                    table.insert(MainModule.SpikesKill.AnimationStoppedConnections, stoppedConn)
+                end
+            end
+        end
+    end
+    
+    -- Также слушаем новые анимации через AnimationPlayed
     local function setupCharacter(char)
         local humanoid = char:WaitForChild("Humanoid")
         
-        -- ID целевой анимации
-        local targetAnimations = {
-            [MainModule.SpikesKill.AnimationId] = true
-        }
-        
-        -- Функция, срабатывающая при начале анимации
-        local function onAnimationStart(animTrack)
-            local id = animTrack.Animation.AnimationId
-            -- Проверяем, это нужная нам анимация?
-            if not targetAnimations[id] then return end
-            if MainModule.SpikesKill.ActiveAnimation then return end  -- Если уже активна, пропускаем
-            
-            MainModule.SpikesKill.ActiveAnimation = true
-            MainModule.SpikesKill.AnimationStartTime = tick()
-            
-            -- Сохраняем текущую позицию игрока
-            MainModule.SpikesKill.SavedCFrame = char:GetPrimaryPartCFrame()
-            
-            -- Телепортируем игрока на платформу
-            local targetCFrame = MainModule.SpikesKill.PlatformCFrame + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset + 2, 0)
-            char:SetPrimaryPartCFrame(targetCFrame)
-            
-            print("[Spikes Kill] Телепортирован на платформу, запомнены исходные координаты")
-            
-            -- Запускаем таймер для возврата через 5 секунд
-            task.delay(MainModule.SpikesKill.ReturnDelay, function()
-                if MainModule.SpikesKill.ActiveAnimation and MainModule.SpikesKill.SavedCFrame then
-                    print("[Spikes Kill] Возвращаем на исходную позицию через 5 секунд")
-                    char:SetPrimaryPartCFrame(MainModule.SpikesKill.SavedCFrame)
-                    MainModule.SpikesKill.SavedCFrame = nil
-                    MainModule.SpikesKill.ActiveAnimation = false
-                end
-            end)
-            
-            -- Запускаем проверку безопасности
-            if MainModule.SpikesKill.SafetyCheckConnection then
-                MainModule.SpikesKill.SafetyCheckConnection:Disconnect()
-            end
-            
-            MainModule.SpikesKill.SafetyCheckConnection = RunService.Heartbeat:Connect(function()
-                if not MainModule.SpikesKill.ActiveAnimation then return end
+        -- Слушатель для новых анимаций
+        MainModule.SpikesKill.AnimationConnection = humanoid.AnimationPlayed:Connect(function(track)
+            if track.Animation and track.Animation.AnimationId == MainModule.SpikesKill.AnimationId then
+                print("[Spikes Kill] НОВАЯ АНИМАЦИЯ ЗАПУЩЕНА! ID: " .. MainModule.SpikesKill.AnimationId)
                 
-                -- Если прошло больше 10 секунд, считаем анимацию оконченной
-                if tick() - MainModule.SpikesKill.AnimationStartTime >= 10 then
-                    MainModule.SpikesKill.ActiveAnimation = false
-                    MainModule.SpikesKill.SafetyCheckConnection:Disconnect()
+                -- Отмечаем как отслеживаемую
+                MainModule.SpikesKill.TrackedAnimations[track] = true
+                
+                -- Если не активна другая анимация, запускаем телепорт
+                if not MainModule.SpikesKill.ActiveAnimation then
+                    MainModule.SpikesKill.ActiveAnimation = true
+                    MainModule.SpikesKill.AnimationStartTime = tick()
+                    
+                    -- Сохраняем текущую позицию игрока
+                    MainModule.SpikesKill.SavedCFrame = char:GetPrimaryPartCFrame()
+                    
+                    -- Телепортируем игрока на платформу
+                    local targetCFrame = MainModule.SpikesKill.PlatformCFrame + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset + 2, 0)
+                    char:SetPrimaryPartCFrame(targetCFrame)
+                    
+                    print("[Spikes Kill] Телепортирован на платформу, запомнены исходные координаты")
+                    
+                    -- Запускаем таймер для возврата через 5 секунд
+                    task.delay(MainModule.SpikesKill.ReturnDelay, function()
+                        if MainModule.SpikesKill.ActiveAnimation and MainModule.SpikesKill.SavedCFrame then
+                            print("[Spikes Kill] Возвращаем на исходную позицию через 5 секунд")
+                            char:SetPrimaryPartCFrame(MainModule.SpikesKill.SavedCFrame)
+                            MainModule.SpikesKill.SavedCFrame = nil
+                            MainModule.SpikesKill.ActiveAnimation = false
+                            
+                            -- Очищаем треки
+                            for trackKey, _ in pairs(MainModule.SpikesKill.TrackedAnimations) do
+                                MainModule.SpikesKill.TrackedAnimations[trackKey] = nil
+                            end
+                        end
+                    end)
                 end
-            end)
-        end
-        
-        -- Функция, срабатывающая при окончании анимации
-        local function onAnimationEnd(animTrack)
-            local id = animTrack.Animation.AnimationId
-            if not targetAnimations[id] then return end
-            
-            MainModule.SpikesKill.ActiveAnimation = false
-        end
-        
-        -- Подключаемся к событию воспроизведения анимации
-        local animationConn = humanoid.AnimationPlayed:Connect(function(track)
-            -- Создаем соединение на окончание анимации
-            local stoppedConn = track.Stopped:Connect(function()
-                onAnimationEnd(track)
-            end)
-            
-            -- Сохраняем соединение для последующего отключения
-            table.insert(MainModule.SpikesKill.AnimationStoppedConnections, stoppedConn)
-            
-            -- Запускаем телепорт при начале анимации
-            onAnimationStart(track)
+                
+                -- Слушаем окончание анимации
+                local stoppedConn = track.Stopped:Connect(function()
+                    print("[Spikes Kill] Анимация завершилась")
+                    MainModule.SpikesKill.TrackedAnimations[track] = nil
+                end)
+                
+                table.insert(MainModule.SpikesKill.AnimationStoppedConnections, stoppedConn)
+            else
+                if track.Animation then
+                    print("[Spikes Kill] Другая анимация: " .. track.Animation.AnimationId)
+                end
+            end
         end)
-        
-        MainModule.SpikesKill.AnimationConnection = animationConn
     end
     
     -- Настраиваем для текущего персонажа
@@ -1373,6 +1422,23 @@ function MainModule.ToggleSpikesKill(enabled)
     MainModule.SpikesKill.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(char)
         task.wait(1)  -- Ждем загрузки персонажа
         setupCharacter(char)
+    end)
+    
+    -- Запускаем постоянную проверку анимаций в реальном времени
+    MainModule.SpikesKill.AnimationCheckConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.SpikesKill.Enabled then return end
+        checkAnimations()
+    end)
+    
+    -- Запускаем проверку безопасности
+    MainModule.SpikesKill.SafetyCheckConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.SpikesKill.ActiveAnimation then return end
+        
+        -- Если прошло больше 10 секунд, считаем анимацию оконченной
+        if tick() - MainModule.SpikesKill.AnimationStartTime >= 10 then
+            MainModule.SpikesKill.ActiveAnimation = false
+            print("[Spikes Kill] Таймаут безопасности - сброс состояния")
+        end
     end)
 end
 
@@ -2466,6 +2532,11 @@ function MainModule.Cleanup()
         MainModule.SpikesKill.SafetyCheckConnection = nil
     end
     
+    if MainModule.SpikesKill.AnimationCheckConnection then
+        MainModule.SpikesKill.AnimationCheckConnection:Disconnect()
+        MainModule.SpikesKill.AnimationCheckConnection = nil
+    end
+    
     for _, conn in ipairs(MainModule.SpikesKill.AnimationStoppedConnections) do
         pcall(function() conn:Disconnect() end)
     end
@@ -2611,6 +2682,7 @@ function MainModule.Cleanup()
     MainModule.GlassBridge.AntiFallEnabled = false
     MainModule.GlassBridge.GlassESPEnabled = false
     MainModule.SpikesKill.Enabled = false
+    MainModule.SpikesKill.TrackedAnimations = {}
     
     print("Creon X cleanup complete")
 end
