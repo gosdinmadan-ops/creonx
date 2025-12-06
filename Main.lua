@@ -2176,7 +2176,6 @@ function MainModule.ToggleAutoDodge(enabled)
         
         -- Функция для поиска Dodge
         local function findDodgeTool()
-            -- Сначала в Character
             local character = GetCharacter()
             if character then
                 for _, tool in pairs(character:GetChildren()) do
@@ -2189,7 +2188,6 @@ function MainModule.ToggleAutoDodge(enabled)
                 end
             end
             
-            -- Затем в Backpack
             local backpack = LocalPlayer:FindFirstChild("Backpack")
             if backpack then
                 for _, tool in pairs(backpack:GetChildren()) do
@@ -2219,14 +2217,12 @@ function MainModule.ToggleAutoDodge(enabled)
             
             -- Если инструмент в Backpack, надеваем его
             if location == "backpack" then
-                pcall(function()
-                    local character = GetCharacter()
-                    if character then
-                        dodgeTool.Parent = character
-                        print("[AutoDodge] Надет на персонажа")
-                        task.wait(0.1) -- Даем время на надевание
-                    end
-                })
+                local character = GetCharacter()
+                if character then
+                    dodgeTool.Parent = character
+                    print("[AutoDodge] Надет на персонажа")
+                    task.wait(0.1)
+                end
             end
             
             -- МЕТОД 1: Активация через Activate()
@@ -2238,7 +2234,7 @@ function MainModule.ToggleAutoDodge(enabled)
                 end
             end)
             
-            -- МЕТОД 2: Если не сработало, пробуем снять и надеть обратно
+            -- МЕТОД 2: Пробуем снять и надеть обратно
             if not success then
                 pcall(function()
                     local character = GetCharacter()
@@ -2255,49 +2251,86 @@ function MainModule.ToggleAutoDodge(enabled)
                 end)
             end
             
-            -- МЕТОД 3: Пробуем MouseButton1Click
+            -- МЕТОД 3: Пробуем MouseButton1Click (с проверкой)
             if not success then
                 pcall(function()
-                    for _, connection in pairs(getconnections(dodgeTool.MouseButton1Click)) do
-                        connection:Function()
-                        print("[AutoDodge] MouseButton1Click отправлен")
-                        success = true
-                        break
+                    local connections = getconnections(dodgeTool.MouseButton1Click)
+                    if connections then
+                        for _, connection in pairs(connections) do
+                            if connection and connection.Function then
+                                connection:Function()
+                                print("[AutoDodge] MouseButton1Click отправлен")
+                                success = true
+                                break
+                            end
+                        end
                     end
                 end)
             end
             
-            -- МЕТОД 4: Пробуем MouseButton1Down
+            -- МЕТОД 4: Пробуем MouseButton1Down (с проверкой)
             if not success then
                 pcall(function()
-                    for _, connection in pairs(getconnections(dodgeTool.MouseButton1Down)) do
-                        connection:Function()
-                        print("[AutoDodge] MouseButton1Down отправлен")
-                        success = true
-                        break
+                    local connections = getconnections(dodgeTool.MouseButton1Down)
+                    if connections then
+                        for _, connection in pairs(connections) do
+                            if connection and connection.Function then
+                                connection:Function()
+                                print("[AutoDodge] MouseButton1Down отправлен")
+                                success = true
+                                break
+                            end
+                        end
                     end
                 end)
             end
             
-            -- МЕТОД 5: Пробуем MouseButton1Up
+            -- МЕТОД 5: Пробуем MouseButton1Up (с проверкой)
             if not success then
                 pcall(function()
-                    for _, connection in pairs(getconnections(dodgeTool.MouseButton1Up)) do
-                        connection:Function()
-                        print("[AutoDodge] MouseButton1Up отправлен")
-                        success = true
-                        break
+                    local connections = getconnections(dodgeTool.MouseButton1Up)
+                    if connections then
+                        for _, connection in pairs(connections) do
+                            if connection and connection.Function then
+                                connection:Function()
+                                print("[AutoDodge] MouseButton1Up отправлен")
+                                success = true
+                                break
+                            end
+                        end
                     end
                 end)
             end
             
-            -- МЕТОД 6: Пробуем Triggered событие
+            -- МЕТОД 6: Пробуем Equipped событие
             if not success then
                 pcall(function()
                     if dodgeTool:IsA("Tool") then
-                        dodgeTool.Triggered:Fire()
-                        print("[AutoDodge] Triggered событие вызвано")
-                        success = true
+                        -- Пробуем вызвать Equipped
+                        for _, connection in pairs(getconnections(dodgeTool.Equipped)) do
+                            if connection and connection.Function then
+                                connection:Function()
+                                print("[AutoDodge] Equipped событие вызвано")
+                                success = true
+                                break
+                            end
+                        end
+                    end
+                end)
+            end
+            
+            -- МЕТОД 7: Пробуем Unequipped событие
+            if not success then
+                pcall(function()
+                    if dodgeTool:IsA("Tool") then
+                        for _, connection in pairs(getconnections(dodgeTool.Unequipped)) do
+                            if connection and connection.Function then
+                                connection:Function()
+                                print("[AutoDodge] Unequipped событие вызвано")
+                                success = true
+                                break
+                            end
+                        end
                     end
                 end)
             end
@@ -2325,7 +2358,7 @@ function MainModule.ToggleAutoDodge(enabled)
             
             local localPosition = localRoot.Position
             
-            -- Проверяем всех игроков в радиусе 10
+            -- Проверяем всех игроков
             for _, player in pairs(Players:GetPlayers()) do
                 if player == LocalPlayer then continue end
                 
@@ -2335,14 +2368,13 @@ function MainModule.ToggleAutoDodge(enabled)
                 local rootPart = GetRootPart(character)
                 if not rootPart then continue end
                 
-                -- Простая проверка расстояния
                 local distance = (localPosition - rootPart.Position).Magnitude
                 if distance > MainModule.AutoDodge.Range then continue end
                 
                 local humanoid = GetHumanoid(character)
                 if not humanoid then continue end
                 
-                -- Проверяем активные анимации
+                -- Проверяем анимации
                 local activeTracks = humanoid:GetPlayingAnimationTracks()
                 local foundAttack = false
                 
@@ -2356,15 +2388,14 @@ function MainModule.ToggleAutoDodge(enabled)
                 if foundAttack then
                     MainModule.AutoDodge.LastDodgeTime = currentTime
                     
-                    print(string.format("[AutoDodge] Атака от %s (дистанция: %.1f)", 
-                          player.Name, distance))
+                    print(string.format("[AutoDodge] Атака от %s (дистанция: %.1f)", player.Name, distance))
                     
-                    -- Запускаем додж
-                    task.spawn(function()
+                    -- Безопасный вызов
+                    pcall(function()
                         useDodge()
                     end)
                     
-                    return -- После первого доджа выходим
+                    return
                 end
             end
         end)
@@ -2605,6 +2636,3 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
-
-
-
