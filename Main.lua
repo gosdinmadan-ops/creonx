@@ -2171,12 +2171,32 @@ function MainModule.ToggleAutoDodge(enabled)
         MainModule.AutoDodge.Connection = nil
     end
     
-    for player, _ in pairs(MainModule.AutoDodge.TrackedPlayers) do
-        MainModule.AutoDodge.TrackedPlayers[player] = nil
-    end
-    
     if enabled then
         print("[AutoDodge] Включен - мониторинг анимации от других игроков в радиусе 10")
+        print("[AutoDodge] Целевая анимация: " .. MainModule.AutoDodge.AnimationId)
+        
+        local function pressKeyOne()
+            -- Используем VirtualInputManager для симуляции нажатия клавиши 1
+            local VirtualInputManager = game:GetService("VirtualInputManager")
+            
+            if VirtualInputManager then
+                -- Нажимаем клавишу 1 (KEY_ONE)
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
+                print("[AutoDodge] Нажата клавиша 1")
+                
+                -- Короткая задержка для имитации реального нажатия
+                task.wait(0.1)
+                
+                -- Отпускаем клавишу 1
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
+                print("[AutoDodge] Отпущена клавиша 1")
+                
+                return true
+            else
+                print("[AutoDodge] Ошибка: VirtualInputManager не найден")
+                return false
+            end
+        end
         
         local function checkPlayersAnimations()
             if not MainModule.AutoDodge.Enabled then return end
@@ -2208,44 +2228,31 @@ function MainModule.ToggleAutoDodge(enabled)
                 if not humanoid then continue end
                 
                 local activeTracks = humanoid:GetPlayingAnimationTracks()
+                local foundTargetAnimation = false
+                
                 for _, track in pairs(activeTracks) do
                     if track.Animation and track.Animation.AnimationId == MainModule.AutoDodge.AnimationId then
-                        if not MainModule.AutoDodge.TrackedPlayers[player] then
-                            MainModule.AutoDodge.TrackedPlayers[player] = true
-                            MainModule.AutoDodge.LastDodgeTime = currentTime
-                            
-                            print("[AutoDodge] Игрок " .. player.Name .. " запустил атаку! Дистанция: " .. math.floor(distance) .. " - ДОДЖИМ!")
-                            
-                            if UserInputService.KeyboardEnabled then
-                                local keyCode = Enum.KeyCode.One
-                                local keys = {keyCode}
-                                pcall(function()
-                                    UserInputService:SetKeysDown(keys)
-                                    print("[AutoDodge] Нажата клавиша 1 для доджа")
-                                    task.wait(0.1)
-                                    UserInputService:SetKeysUp(keys)
-                                    print("[AutoDodge] Отпущена клавиша 1")
-                                end)
-                            end
-                            
-                            return
-                        end
+                        foundTargetAnimation = true
+                        break
                     end
                 end
                 
-                if MainModule.AutoDodge.TrackedPlayers[player] then
-                    local foundAnimation = false
-                    for _, track in pairs(activeTracks) do
-                        if track.Animation and track.Animation.AnimationId == MainModule.AutoDodge.AnimationId then
-                            foundAnimation = true
-                            break
-                        end
+                if foundTargetAnimation then
+                    MainModule.AutoDodge.LastDodgeTime = currentTime
+                    
+                    print("[AutoDodge] Обнаружена анимация атаки у игрока " .. player.Name)
+                    print("[AutoDodge] Дистанция: " .. math.floor(distance))
+                    print("[AutoDodge] Выполняем додж...")
+                    
+                    local success = pressKeyOne()
+                    
+                    if success then
+                        print("[AutoDodge] Додж выполнен! Кулдаун: 1 секунда")
+                    else
+                        print("[AutoDodge] Ошибка при выполнении доджа")
                     end
                     
-                    if not foundAnimation then
-                        MainModule.AutoDodge.TrackedPlayers[player] = nil
-                        print("[AutoDodge] Игрок " .. player.Name .. " завершил анимацию, снимаем с отслеживания")
-                    end
+                    return
                 end
             end
         end
@@ -2255,26 +2262,10 @@ function MainModule.ToggleAutoDodge(enabled)
             pcall(checkPlayersAnimations)
         end)
         
-        Players.PlayerAdded:Connect(function(player)
-            if MainModule.AutoDodge.Enabled then
-                print("[AutoDodge] Новый игрок добавлен: " .. player.Name)
-            end
-        end)
-        
-        Players.PlayerRemoving:Connect(function(player)
-            if MainModule.AutoDodge.Enabled and MainModule.AutoDodge.TrackedPlayers[player] then
-                MainModule.AutoDodge.TrackedPlayers[player] = nil
-                print("[AutoDodge] Игрок " .. player.Name .. " вышел, удаляем из отслеживания")
-            end
-        end)
-        
-        print("[AutoDodge] Начинаем мониторинг игроков. Всего игроков: " .. #Players:GetPlayers())
+        print("[AutoDodge] Начинаем мониторинг. Всего игроков: " .. #Players:GetPlayers())
         
     else
         MainModule.AutoDodge.LastDodgeTime = 0
-        for player, _ in pairs(MainModule.AutoDodge.TrackedPlayers) do
-            MainModule.AutoDodge.TrackedPlayers[player] = nil
-        end
         print("[AutoDodge] Выключен")
     end
 end
@@ -2507,3 +2498,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
