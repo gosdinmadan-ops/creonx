@@ -8,7 +8,7 @@ elseif getexecutorname then
 end
 
 -- Поддерживаемые исполнители (включая Delta)
-local supportedExecutors = {"xeno", "bunnu", "volcano", "potassium", "seliware", "zenith", "bunni", "delta", "hydrogen", "electron"}
+local supportedExecutors = {"bunnu", "volcano", "potassium", "seliware", "zenith", "bunni", "delta", "hydrogen", "electron"}
 local isSupported = false
 
 for _, name in pairs(supportedExecutors) do
@@ -1473,3 +1473,4 @@ if not isSupported then
 else
     print("Executor " .. executorName .. " is supported")
 end
+
