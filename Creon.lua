@@ -1,1443 +1,2343 @@
--- Creon X v2.4 (исправленная версия для ПК и Delta Mobile) с Anti Time Stop
--- Проверка исполнителя
-local executorName = "Unknown"
-if identifyexecutor then
-    executorName = identifyexecutor()
-elseif getexecutorname then
-    executorName = getexecutorname()
-end
-
--- Поддерживаемые исполнители (включая Delta)
-local supportedExecutors = {"xeno", "bunnu", "volcano", "potassium", "seliware", "zenith", "bunni", "delta", "hydrogen", "electron"}
-local isSupported = false
-
-for _, name in pairs(supportedExecutors) do
-    if executorName:lower():find(name:lower()) then
-        isSupported = true
-        break
-    end
-end
+-- Main.lua - Creon X v2.5 (Исправленный AntiFall и Hitbox Size 40)
+local MainModule = {}
 
 -- Services
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local player = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local CoreGui = game:GetService("CoreGui")
+local Debris = game:GetService("Debris")
+local TeleportService = game:GetService("TeleportService")
 
--- Загрузка Main модуля
-local MainModule
-local success, err = pcall(function()
-    local url = "https://raw.githubusercontent.com/gosdinmadan-ops/creonx/main/Main.lua"
-    local content = game:HttpGet(url, true)
-    MainModule = loadstring(content)()
-end)
+-- Локальный игрок
+local LocalPlayer = Players.LocalPlayer
 
-if not success then
-    warn("Failed to load Main.lua: " .. tostring(err))
-    return
-end
+-- Переменные
+MainModule.SpeedHack = {
+    Enabled = false,
+    DefaultSpeed = 16,
+    CurrentSpeed = 16,
+    MaxSpeed = 150,
+    MinSpeed = 16
+}
 
--- Переменные для отслеживания статуса AntiFall
-local GlassBridgeAntiFallEnabled = false
-local JumpRopeAntiFallEnabled = false
-local SkySquidAntiFallEnabled = false
+MainModule.Noclip = {
+    Enabled = false,
+    Status = "Don't work, Disabled"
+}
 
--- Переменные для горячей клавиши
-local menuHotkey = Enum.KeyCode.M
-local isChoosingKey = false
-local keyChangeButton = nil
+MainModule.AutoQTE = {
+    AntiStunEnabled = false
+}
 
--- GUI Creon X v2.4
-local ScreenGui = Instance.new("ScreenGui")
-local MainFrame = Instance.new("Frame")
-local TitleBar = Instance.new("Frame")
-local TitleLabel = Instance.new("TextLabel")
-local MinimizeButton = Instance.new("TextButton")
-local TabButtons = Instance.new("Frame")
-local ContentFrame = Instance.new("Frame")
-local ContentScrolling = Instance.new("ScrollingFrame")
-local ContentLayout = Instance.new("UIListLayout")
+MainModule.Rebel = {
+    Enabled = false,
+    Connection = nil,
+    LastKillTime = 0,
+    KillCooldown = 0.1,
+    LastCheckTime = 0,
+    CheckCooldown = 0.5
+}
 
--- Кнопка для мобильных устройств (Delta Mobile)
-local MobileOpenButton = Instance.new("TextButton")
+-- RLGL System
+MainModule.RLGL = {
+    GodMode = false,
+    OriginalHeight = nil,
+    LastDamageTime = 0,
+    DamageCheckRate = 0.1,
+    LastHealth = 100,
+    GodModeHeight = 160,
+    NormalHeight = 80,
+    DamageTeleportPosition = Vector3.new(-903.4, 1184.9, -556),
+    StartPosition = Vector3.new(-55.3, 1023.1, -545.8),
+    EndPosition = Vector3.new(-214.4, 1023.1, 146.7),
+    Connection = nil
+}
 
-ScreenGui.Parent = game.CoreGui
-ScreenGui.Name = "CreonXv24"
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-ScreenGui.ResetOnSpawn = false
+MainModule.Guards = {
+    SelectedGuard = "Circle",
+    AutoFarm = false,
+    RapidFire = false,
+    InfiniteAmmo = false,
+    HitboxExpander = false,
+    OriginalFireRates = {},
+    OriginalAmmo = {},
+    OriginalHitboxes = {},
+    Connections = {}
+}
 
--- Размеры GUI
-local GUI_WIDTH = 860
-local GUI_HEIGHT = 595
+MainModule.Dalgona = {
+    CompleteEnabled = false,
+    FreeLighterEnabled = false
+}
 
--- Для мобильных устройств уменьшаем размер
-if UIS.TouchEnabled then
-    GUI_WIDTH = 700
-    GUI_HEIGHT = 500
-end
+-- Glass Bridge System
+MainModule.GlassBridge = {
+    AntiBreakEnabled = false,
+    AntiBreakConnection = nil,
+    AntiFallEnabled = false,
+    GlassPlatforms = {},
+    GlassAntiFallPlatform = nil,
+    GlassESPEnabled = false,
+    GlassESPConnection = nil,
+    
+    EndPosition = Vector3.new(-196.372467, 522.192139, -1534.20984),
+    BridgeHeight = 520.4,
+    PlatformSize = Vector3.new(10000, 1, 10000)
+}
 
--- Основной фрейм
-MainFrame.Size = UDim2.new(0, GUI_WIDTH, 0, GUI_HEIGHT)
-MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-MainFrame.BorderSizePixel = 0
-MainFrame.Parent = ScreenGui
+-- Tug of War System
+MainModule.TugOfWar = {
+    AutoPull = false,
+    Connection = nil
+}
 
-local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 8)
-mainCorner.Parent = MainFrame
+-- Jump Rope System
+MainModule.JumpRope = {
+    TeleportToEnd = false,
+    AntiFallPlatform = nil,
+    Connection = nil,
+    PlatformSize = Vector3.new(10000, 1, 10000)
+}
 
-local mainStroke = Instance.new("UIStroke")
-mainStroke.Color = Color3.fromRGB(60, 60, 80)
-mainStroke.Thickness = 2
-mainStroke.Parent = MainFrame
+-- Sky Squid System
+MainModule.SkySquid = {
+    AntiFallPlatform = nil,
+    SafePlatform = nil,
+    Connection = nil,
+    PlatformSize = Vector3.new(10000, 1, 10000)
+}
 
--- TitleBar для перемещения
-TitleBar.Size = UDim2.new(1, 0, 0, 35)
-TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-TitleBar.BorderSizePixel = 0
-TitleBar.Parent = MainFrame
+-- Anti Time Stop System
+MainModule.AntiTimeStop = {
+    Enabled = false,
+    Connection = nil,
+    OriginalProperties = {}
+}
 
-local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 8)
-titleCorner.Parent = TitleBar
+-- Hitbox Expander System
+MainModule.Hitbox = {
+    Size = 150,  -- По умолчанию 150 как в примере
+    Enabled = false,
+    Connection = nil,
+    ModifiedParts = {}
+}
 
-TitleLabel.Size = UDim2.new(0.7, 0, 1, 0)
-TitleLabel.Position = UDim2.new(0.1, 0, 0, 0)
-TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "Creon X v2.4"
-TitleLabel.TextColor3 = Color3.fromRGB(220, 220, 255)
-TitleLabel.TextSize = 14
-TitleLabel.Font = Enum.Font.GothamBold
-TitleLabel.Parent = TitleBar
+-- HIDE AND SEEK - Spikes Kill System (ИСПРАВЛЕННЫЙ)
+MainModule.SpikesKill = {
+    Enabled = false,
+    AnimationId = "rbxassetid://107989020363293", -- ID анимации шипов/урона
+    PlatformHeightOffset = 6, -- На сколько выше шипов телепортируемся
+    MaxAnimationTime = 5, -- Максимальное время ожидания (5 секунд)
+    
+    -- Внутренние переменные
+    SpikesPlatform = nil, -- НЕВИДИМАЯ платформа на месте шипов
+    SavedCFrame = nil, -- Сохраненная позиция до телепортации
+    ActiveAnimation = false,
+    AnimationStartTime = 0,
+    AnimationConnection = nil,
+    CharacterAddedConnection = nil,
+    SpikesRemoved = false,
+    SpikesPosition = nil, -- Позиция найденных шипов
+    
+    -- Параметры платформы
+    PlatformSize = Vector3.new(50, 1, 50), -- Большая платформа
+    PlatformColor = Color3.fromRGB(120, 120, 120),
+    PlatformTransparency = 1, -- ПОЛНАЯ невидимость
+    PlatformCanCollide = false -- Проходит сквозь блоки
+}
 
--- Кнопка сворачивания
-MinimizeButton.Size = UDim2.new(0, 25, 0, 25)
-MinimizeButton.Position = UDim2.new(1, -30, 0.5, -12.5)
-MinimizeButton.BackgroundColor3 = Color3.fromRGB(100, 100, 120)
-MinimizeButton.BorderSizePixel = 0
-MinimizeButton.Text = "_"
-MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinimizeButton.TextSize = 18
-MinimizeButton.Font = Enum.Font.GothamBold
-MinimizeButton.Parent = TitleBar
+-- Misc System
+MainModule.Misc = {
+    InstaInteract = false,
+    NoCooldownProximity = false,
+    ESPEnabled = false,
+    ESPPlayers = true,
+    ESPHiders = true,
+    ESPSeekers = true,
+    ESPCandies = false,
+    ESPKeys = true,
+    ESPDoors = true,
+    ESPEscapeDoors = true,
+    ESPGuards = true,
+    ESPHighlight = true,
+    ESPDistance = true,
+    ESPNames = true,
+    ESPBoxes = true,
+    ESPFillTransparency = 0.7,
+    ESPOutlineTransparency = 0,
+    ESPTextSize = 18,
+    BypassRagdollEnabled = false,
+    RemoveInjuredEnabled = false,
+    RemoveStunEnabled = false,
+    UnlockDashEnabled = false,
+    UnlockPhantomStepEnabled = false,
+    LastInjuredNotify = 0,
+    LastESPUpdate = 0
+}
 
-local minimizeCorner = Instance.new("UICorner")
-minimizeCorner.CornerRadius = UDim.new(0, 6)
-minimizeCorner.Parent = MinimizeButton
+-- HNS System
+MainModule.HNS = {
+    InfinityStaminaEnabled = false,
+    InfinityStaminaConnection = nil
+}
 
-MinimizeButton.MouseButton1Click:Connect(function()
-    MainFrame.Visible = false
-    if UIS.TouchEnabled then
-        MobileOpenButton.Visible = true
+-- ESP System
+MainModule.ESP = {
+    Players = {},
+    Objects = {},
+    Connections = {},
+    Folder = nil,
+    MainConnection = nil,
+    UpdateRate = 0.1
+}
+
+-- Постоянные соединения
+local speedConnection = nil
+local autoFarmConnection = nil
+local godModeConnection = nil
+local instaInteractConnection = nil
+local noCooldownConnection = nil
+local antiStunConnection = nil
+local rapidFireConnection = nil
+local infiniteAmmoConnection = nil
+local hitboxConnection = nil
+local autoPullConnection = nil
+local bypassRagdollConnection = nil
+
+-- Вспомогательные функции
+local function SafeDestroy(obj)
+    if obj and obj.Parent then
+        pcall(function() obj:Destroy() end)
     end
-end)
+end
 
--- Табы
-TabButtons.Size = UDim2.new(0, 150, 1, -35)
-TabButtons.Position = UDim2.new(0, 0, 0, 35)
-TabButtons.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-TabButtons.BorderSizePixel = 0
-TabButtons.Parent = MainFrame
+local function GetCharacter()
+    return LocalPlayer.Character
+end
 
-local tabCorner = Instance.new("UICorner")
-tabCorner.CornerRadius = UDim.new(0, 8)
-tabCorner.Parent = TabButtons
+local function GetHumanoid(character)
+    return character and character:FindFirstChildOfClass("Humanoid")
+end
 
--- Content Frame с прокруткой
-ContentFrame.Size = UDim2.new(1, -150, 1, -35)
-ContentFrame.Position = UDim2.new(0, 150, 0, 35)
-ContentFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-ContentFrame.BorderSizePixel = 0
-ContentFrame.Parent = MainFrame
+local function GetRootPart(character)
+    return character and character:FindFirstChild("HumanoidRootPart")
+end
 
-local contentCorner = Instance.new("UICorner")
-contentCorner.CornerRadius = UDim.new(0, 8)
-contentCorner.Parent = ContentFrame
+local function GetDistance(position1, position2)
+    if not position1 or not position2 then return math.huge end
+    return (position1 - position2).Magnitude
+end
 
--- Scrolling Frame для контента
-ContentScrolling.Size = UDim2.new(1, -10, 1, -10)
-ContentScrolling.Position = UDim2.new(0, 5, 0, 5)
-ContentScrolling.BackgroundTransparency = 1
-ContentScrolling.BorderSizePixel = 0
-ContentScrolling.ScrollBarThickness = 6
-ContentScrolling.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 100)
-ContentScrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
-ContentScrolling.Parent = ContentFrame
+local function IsHider(player)
+    if not player then return false end
+    return player:GetAttribute("IsHider") == true
+end
 
-ContentLayout.Padding = UDim.new(0, 8)
-ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    ContentScrolling.CanvasSize = UDim2.new(0, 0, 0, ContentLayout.AbsoluteContentSize.Y + 20)
-end)
-ContentLayout.Parent = ContentScrolling
+local function IsSeeker(player)
+    if not player then return false end
+    return player:GetAttribute("IsHunter") == true
+end
 
--- Кнопка для мобильных устройств (Delta Mobile)
-if UIS.TouchEnabled then
-    MobileOpenButton.Size = UDim2.new(0, 120, 0, 40)
-    MobileOpenButton.Position = UDim2.new(0.5, -60, 0.2, 0)
-    MobileOpenButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-    MobileOpenButton.BorderSizePixel = 0
-    MobileOpenButton.Text = "OPEN"
-    MobileOpenButton.TextColor3 = Color3.fromRGB(220, 220, 255)
-    MobileOpenButton.TextSize = 14
-    MobileOpenButton.Font = Enum.Font.GothamBold
-    MobileOpenButton.Parent = ScreenGui
+local function SafeTeleport(position)
+    local character = GetCharacter()
+    if not character then return false end
     
-    local mobileCorner = Instance.new("UICorner")
-    mobileCorner.CornerRadius = UDim.new(0, 8)
-    mobileCorner.Parent = MobileOpenButton
+    local rootPart = GetRootPart(character)
+    if not rootPart then return false end
     
-    local mobileStroke = Instance.new("UIStroke")
-    mobileStroke.Color = Color3.fromRGB(60, 60, 80)
-    mobileStroke.Thickness = 2
-    mobileStroke.Parent = MobileOpenButton
+    rootPart.CFrame = CFrame.new(position)
+    return true
+end
+
+local function GetSafePositionAbove(currentPosition, height)
+    local rayOrigin = currentPosition + Vector3.new(0, 5, 0)
+    local rayDirection = Vector3.new(0, -1, 0)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
     
-    MobileOpenButton.MouseEnter:Connect(function()
-        TweenService:Create(MobileOpenButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(45, 45, 60),
-            TextColor3 = Color3.fromRGB(255, 255, 255)
-        }):Play()
+    local result = workspace:Raycast(rayOrigin, rayDirection * 100, raycastParams)
+    
+    if result and result.Position then
+        return result.Position + Vector3.new(0, height, 0)
+    else
+        return currentPosition + Vector3.new(0, height, 0)
+    end
+end
+
+local function GetPlayerGun()
+    local character = GetCharacter()
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    
+    if character then
+        for _, tool in pairs(character:GetChildren()) do
+            if tool:IsA("Tool") and tool:GetAttribute("Gun") then
+                return tool
+            end
+        end
+    end
+    
+    if backpack then
+        for _, tool in pairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") and tool:GetAttribute("Gun") then
+                return tool
+            end
+        end
+    end
+    
+    return nil
+end
+
+local function GetEnemies()
+    local enemies = {}
+    local liveFolder = Workspace:FindFirstChild("Live")
+    
+    if not liveFolder then return enemies end
+    
+    for _, model in pairs(liveFolder:GetChildren()) do
+        if model:IsA("Model") then
+            local enemyTag = model:FindFirstChild("Enemy")
+            local deadTag = model:FindFirstChild("Dead")
+            
+            if enemyTag and not deadTag then
+                local isPlayer = false
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player.Name == model.Name then
+                        isPlayer = true
+                        break
+                    end
+                end
+                
+                if not isPlayer then
+                    table.insert(enemies, model.Name)
+                    if #enemies >= 5 then
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    return enemies
+end
+
+local function KillEnemy(enemyName)
+    pcall(function()
+        local liveFolder = Workspace:FindFirstChild("Live")
+        if not liveFolder then return end
+        
+        local enemy = liveFolder:FindFirstChild(enemyName)
+        if not enemy then return end
+        
+        local enemyTag = enemy:FindFirstChild("Enemy")
+        local deadTag = enemy:FindFirstChild("Dead")
+        
+        if not enemyTag or deadTag then return end
+        
+        local gun = GetPlayerGun()
+        if not gun then return end
+        
+        local args = {
+            gun,
+            {
+                ["ClientRayNormal"] = Vector3.new(-1.1920928955078125e-7, 1.0000001192092896, 0),
+                ["FiredGun"] = true,
+                ["SecondaryHitTargets"] = {},
+                ["ClientRayInstance"] = Workspace:WaitForChild("StairWalkWay"):WaitForChild("Part"),
+                ["ClientRayPosition"] = Vector3.new(-220.17489624023438, 183.2957763671875, 301.07257080078125),
+                ["bulletCF"] = CFrame.new(-220.5039825439453, 185.22506713867188, 302.133544921875, 0.9551116228103638, 0.2567310333251953, -0.14782091975212097, 7.450581485102248e-9, 0.4989798665046692, 0.8666135668754578, 0.2962462604045868, -0.8277127146720886, 0.4765814542770386),
+                ["HitTargets"] = {
+                    [enemyName] = "Head"
+                },
+                ["bulletSizeC"] = Vector3.new(0.009999999776482582, 0.009999999776482582, 4.452499866485596),
+                ["NoMuzzleFX"] = false,
+                ["FirePosition"] = Vector3.new(-72.88850402832031, -679.4803466796875, -173.31005859375)
+            }
+        }
+        
+        local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("FiredGunClient")
+        remote:FireServer(unpack(args))
     end)
+end
+
+-- Исправленный RLGL GodMode
+function MainModule.ToggleGodMode(enabled)
+    MainModule.RLGL.GodMode = enabled
     
-    MobileOpenButton.MouseLeave:Connect(function()
-        TweenService:Create(MobileOpenButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(35, 35, 45),
-            TextColor3 = Color3.fromRGB(220, 220, 255)
-        }):Play()
-    end)
+    if MainModule.RLGL.Connection then
+        MainModule.RLGL.Connection:Disconnect()
+        MainModule.RLGL.Connection = nil
+    end
     
-    MobileOpenButton.MouseButton1Click:Connect(function()
-        MainFrame.Visible = true
-        MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
-        MobileOpenButton.Visible = false
-    end)
+    if enabled then
+        -- Запоминаем начальную позицию
+        local character = GetCharacter()
+        if character then
+            local humanoid = GetHumanoid(character)
+            local rootPart = GetRootPart(character)
+            
+            if humanoid and rootPart then
+                MainModule.RLGL.LastHealth = humanoid.Health
+                MainModule.RLGL.OriginalHeight = rootPart.Position.Y
+                
+                -- Телепортируем вверх на GodModeHeight
+                local targetPos = Vector3.new(
+                    rootPart.Position.X,
+                    rootPart.Position.Y + MainModule.RLGL.GodModeHeight,
+                    rootPart.Position.Z
+                )
+                SafeTeleport(targetPos)
+                print("[RLGL GodMode] Телепортирован вверх на " .. MainModule.RLGL.GodModeHeight .. " единиц")
+            end
+        end
+        
+        -- Проверка урона
+        MainModule.RLGL.Connection = RunService.Heartbeat:Connect(function()
+            if not MainModule.RLGL.GodMode then return end
+            
+            local currentTime = tick()
+            if currentTime - MainModule.RLGL.LastDamageTime < MainModule.RLGL.DamageCheckRate then return end
+            
+            pcall(function()
+                local character = GetCharacter()
+                if not character then return end
+                
+                local humanoid = GetHumanoid(character)
+                local rootPart = GetRootPart(character)
+                
+                if not (humanoid and rootPart) then return end
+                
+                -- Проверяем, получили ли мы урон
+                if humanoid.Health < MainModule.RLGL.LastHealth then
+                    MainModule.RLGL.LastDamageTime = currentTime
+                    
+                    -- Телепортируем на указанные координаты при уроне
+                    SafeTeleport(MainModule.RLGL.DamageTeleportPosition)
+                    
+                    -- Восстанавливаем здоровье
+                    humanoid.Health = MainModule.RLGL.LastHealth
+                    
+                    -- Отключаем GodMode после телепортации от урона
+                    task.wait(0.1)
+                    MainModule.ToggleGodMode(false)
+                else
+                    -- Обновляем запомненное здоровье
+                    MainModule.RLGL.LastHealth = humanoid.Health
+                end
+            end)
+        end)
+    else
+        -- Телепортируем обратно на правильную высоту
+        local character = GetCharacter()
+        if character then
+            local rootPart = GetRootPart(character)
+            if rootPart and MainModule.RLGL.OriginalHeight then
+                -- ПРАВИЛЬНАЯ ФОРМУЛА: Оригинальная высота - (GodModeHeight - NormalHeight)
+                local targetHeight = MainModule.RLGL.OriginalHeight - (MainModule.RLGL.GodModeHeight - MainModule.RLGL.NormalHeight)
+                
+                local targetPos = Vector3.new(
+                    rootPart.Position.X,
+                    targetHeight,
+                    rootPart.Position.Z
+                )
+                
+                SafeTeleport(targetPos)
+                print("[RLGL GodMode] Возврат на высоту: " .. targetHeight)
+            end
+        end
+        
+        -- Сбрасываем значения
+        MainModule.RLGL.OriginalHeight = nil
+        MainModule.RLGL.LastHealth = 100
+    end
+end
+
+-- Исправленный Spikes Kill
+function MainModule.ToggleSpikesKill(enabled)
+    MainModule.SpikesKill.Enabled = enabled
     
-    local mobileDragging = false
-    local mobileDragStart, mobileStartPos
+    -- Очищаем предыдущие соединения
+    if MainModule.SpikesKill.AnimationConnection then
+        MainModule.SpikesKill.AnimationConnection:Disconnect()
+        MainModule.SpikesKill.AnimationConnection = nil
+    end
     
-    MobileOpenButton.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            mobileDragging = true
-            mobileDragStart = input.Position
-            mobileStartPos = MobileOpenButton.Position
+    if MainModule.SpikesKill.CharacterAddedConnection then
+        MainModule.SpikesKill.CharacterAddedConnection:Disconnect()
+        MainModule.SpikesKill.CharacterAddedConnection = nil
+    end
+    
+    -- Удаляем старую платформу
+    if MainModule.SpikesKill.SpikesPlatform then
+        MainModule.SpikesKill.SpikesPlatform:Destroy()
+        MainModule.SpikesKill.SpikesPlatform = nil
+    end
+    
+    -- Сбрасываем переменные
+    MainModule.SpikesKill.SavedCFrame = nil
+    MainModule.SpikesKill.ActiveAnimation = false
+    MainModule.SpikesKill.SpikesRemoved = false
+    MainModule.SpikesKill.SpikesPosition = nil
+    
+    if not enabled then
+        print("[Spikes Kill] Выключен")
+        return
+    end
+    
+    print("[Spikes Kill] Включен")
+    
+    -- Шаг 1: Находим шипы и создаем платформу
+    local function findAndSetupSpikes()
+        -- Ищем шипы в структуре HideAndSeekMap
+        if workspace:FindFirstChild("HideAndSeekMap") and 
+           workspace.HideAndSeekMap:FindFirstChild("KillingParts") then
+            
+            local killingParts = workspace.HideAndSeekMap.KillingParts
+            
+            -- Находим первый шип для определения позиции
+            for _, spike in pairs(killingParts:GetChildren()) do
+                if spike:IsA("BasePart") or spike:IsA("Model") then
+                    local spikePosition
+                    
+                    if spike:IsA("BasePart") then
+                        spikePosition = spike.Position
+                    elseif spike:IsA("Model") and spike.PrimaryPart then
+                        spikePosition = spike.PrimaryPart.Position
+                    end
+                    
+                    if spikePosition then
+                        -- Запоминаем позицию шипов
+                        MainModule.SpikesKill.SpikesPosition = spikePosition
+                        print("[Spikes Kill] Найдены шипы на позиции: " .. tostring(spikePosition))
+                        
+                        -- Шаг 2: Создаем НЕВИДИМУЮ платформу над шипами
+                        local platform = Instance.new("Part")
+                        platform.Name = "SpikesKillPlatform"
+                        platform.Size = MainModule.SpikesKill.PlatformSize
+                        platform.Anchored = true
+                        platform.CanCollide = MainModule.SpikesKill.PlatformCanCollide
+                        platform.Transparency = MainModule.SpikesKill.PlatformTransparency
+                        platform.Color = MainModule.SpikesKill.PlatformColor
+                        platform.Material = Enum.Material.Plastic
+                        platform.CastShadow = false
+                        
+                        -- Позиция на 6 единиц выше шипов
+                        local platformPosition = Vector3.new(
+                            spikePosition.X,
+                            spikePosition.Y + MainModule.SpikesKill.PlatformHeightOffset,
+                            spikePosition.Z
+                        )
+                        
+                        platform.Position = platformPosition
+                        platform.Parent = workspace
+                        
+                        MainModule.SpikesKill.SpikesPlatform = platform
+                        print("[Spikes Kill] Создана невидимая платформа над шипами")
+                        
+                        -- Шаг 3: Удаляем шипы
+                        killingParts:ClearAllChildren()
+                        MainModule.SpikesKill.SpikesRemoved = true
+                        print("[Spikes Kill] Шипы удалены")
+                        
+                        return true
+                    end
+                end
+            end
+        end
+        warn("[Spikes Kill] HideAndSeekMap или KillingParts не найдены!")
+        return false
+    end
+    
+    -- Шаг 4: Настройка системы анимации
+    local function setupAnimationSystem(char)
+        local humanoid = char:WaitForChild("Humanoid", 5)
+        if not humanoid then return end
+        
+        -- Функция обработки начала анимации
+        local function onAnimationStart(animTrack)
+            if not MainModule.SpikesKill.Enabled then return end
+            
+            -- Проверяем ID анимации
+            if animTrack.Animation.AnimationId ~= MainModule.SpikesKill.AnimationId then
+                return
+            end
+            
+            if MainModule.SpikesKill.ActiveAnimation then return end
+            
+            MainModule.SpikesKill.ActiveAnimation = true
+            MainModule.SpikesKill.AnimationStartTime = tick()
+            
+            -- Сохраняем текущую позицию
+            local rootPart = GetRootPart(char)
+            if rootPart then
+                MainModule.SpikesKill.SavedCFrame = rootPart.CFrame
+                print("[Spikes Kill] Сохранена позиция: " .. tostring(rootPart.Position))
+            end
+            
+            -- Телепортируем на платформу (если она существует)
+            if MainModule.SpikesKill.SpikesPlatform then
+                local platformPos = MainModule.SpikesKill.SpikesPlatform.Position
+                rootPart.CFrame = CFrame.new(platformPos)
+                print("[Spikes Kill] Телепортирован на платформу: " .. tostring(platformPos))
+                
+                -- Запускаем таймер для возврата через 5 секунд
+                task.delay(MainModule.SpikesKill.MaxAnimationTime, function()
+                    if MainModule.SpikesKill.ActiveAnimation and MainModule.SpikesKill.Enabled then
+                        MainModule.SpikesKill.ActiveAnimation = false
+                        
+                        -- Возвращаем на сохраненную позицию
+                        if MainModule.SpikesKill.SavedCFrame then
+                            rootPart.CFrame = MainModule.SpikesKill.SavedCFrame
+                            print("[Spikes Kill] Возвращен на исходную позицию")
+                            MainModule.SpikesKill.SavedCFrame = nil
+                        end
+                    end
+                end)
+            else
+                warn("[Spikes Kill] Платформа не найдена!")
+            end
+        end
+        
+        -- Слушатель начала анимаций
+        MainModule.SpikesKill.AnimationConnection = humanoid.AnimationPlayed:Connect(function(animTrack)
+            onAnimationStart(animTrack)
+        end)
+    end
+    
+    -- Запускаем поиск шипов
+    if not findAndSetupSpikes() then
+        warn("[Spikes Kill] Не удалось найти шипы")
+        return
+    end
+    
+    -- Настраиваем для текущего персонажа
+    local char = LocalPlayer.Character
+    if char then
+        setupAnimationSystem(char)
+    end
+    
+    -- Слушатель для нового персонажа
+    MainModule.SpikesKill.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
+        task.wait(1)
+        if MainModule.SpikesKill.Enabled then
+            setupAnimationSystem(newChar)
         end
     end)
+end
+
+-- Функция для удаления шипов (отдельная кнопка)
+function MainModule.RemoveSpikes()
+    if workspace:FindFirstChild("HideAndSeekMap") and 
+       workspace.HideAndSeekMap:FindFirstChild("KillingParts") then
+        
+        local killingParts = workspace.HideAndSeekMap.KillingParts
+        killingParts:ClearAllChildren()
+        
+        -- Обновляем статус
+        MainModule.SpikesKill.SpikesRemoved = true
+        
+        print("[Spikes Kill] Шипы удалены вручную")
+        return true
+    else
+        warn("[Spikes Kill] HideAndSeekMap или KillingParts не найдены!")
+        return false
+    end
+end
+
+-- Anti Time Stop функция
+function MainModule.ToggleAntiTimeStop(enabled)
+    MainModule.AntiTimeStop.Enabled = enabled
     
-    MobileOpenButton.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            local currentInput = input
-            RunService.RenderStepped:Connect(function()
-                if mobileDragging and currentInput then
-                    local delta = currentInput.Position - mobileDragStart
-                    MobileOpenButton.Position = UDim2.new(
-                        mobileStartPos.X.Scale, 
-                        mobileStartPos.X.Offset + delta.X,
-                        mobileStartPos.Y.Scale, 
-                        mobileStartPos.Y.Offset + delta.Y
-                    )
+    if MainModule.AntiTimeStop.Connection then
+        MainModule.AntiTimeStop.Connection:Disconnect()
+        MainModule.AntiTimeStop.Connection = nil
+    end
+    
+    if enabled then
+        MainModule.AntiTimeStop.Connection = RunService.Heartbeat:Connect(function()
+            if not MainModule.AntiTimeStop.Enabled then return end
+            
+            pcall(function()
+                local character = GetCharacter()
+                if not character then return end
+                
+                local humanoid = GetHumanoid(character)
+                if not humanoid then return end
+                
+                -- Сохраняем оригинальные свойства
+                if not MainModule.AntiTimeStop.OriginalProperties[humanoid] then
+                    MainModule.AntiTimeStop.OriginalProperties[humanoid] = {
+                        WalkSpeed = humanoid.WalkSpeed,
+                        JumpPower = humanoid.JumpPower
+                    }
+                end
+                
+                -- Проверяем, не заморожены ли мы
+                local isFrozen = false
+                
+                -- Проверяем различные эффекты заморозки
+                local frozenEffects = {
+                    "TimeStop", "TimeStopEffect", "TimeStopDebuff", "Frozen", "Freeze", 
+                    "Stopped", "TimeLock", "TimeFreeze", "ZaWarudo"
+                }
+                
+                for _, effectName in ipairs(frozenEffects) do
+                    local effect = character:FindFirstChild(effectName)
+                    if effect then
+                        isFrozen = true
+                        break
+                    end
+                end
+                
+                -- Проверяем атрибуты
+                if humanoid:GetAttribute("TimeStopped") or 
+                   humanoid:GetAttribute("Frozen") or 
+                   humanoid:GetAttribute("Stopped") then
+                    isFrozen = true
+                end
+                
+                -- Если мы заморожены, восстанавливаем движение
+                if isFrozen then
+                    -- Восстанавливаем скорость
+                    humanoid.WalkSpeed = MainModule.AntiTimeStop.OriginalProperties[humanoid].WalkSpeed
+                    humanoid.JumpPower = MainModule.AntiTimeStop.OriginalProperties[humanoid].JumpPower
+                    
+                    -- Удаляем эффекты заморозки
+                    for _, effectName in ipairs(frozenEffects) do
+                        local effect = character:FindFirstChild(effectName)
+                        if effect then
+                            effect:Destroy()
+                        end
+                    end
+                    
+                    -- Сбрасываем атрибуты
+                    humanoid:SetAttribute("TimeStopped", false)
+                    humanoid:SetAttribute("Frozen", false)
+                    humanoid:SetAttribute("Stopped", false)
+                    
+                    -- Выходим из состояний заморозки
+                    humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                    humanoid.PlatformStand = false
+                end
+            end)
+        end)
+        
+        -- Также слушаем добавление новых эффектов
+        local character = GetCharacter()
+        if character then
+            character.ChildAdded:Connect(function(child)
+                if not MainModule.AntiTimeStop.Enabled then return end
+                
+                if child.Name:find("TimeStop") or child.Name:find("Freeze") then
+                    task.wait(0.1)
+                    pcall(function() child:Destroy() end)
                 end
             end)
         end
-    end)
-    
-    MobileOpenButton.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            mobileDragging = false
-        end
-    end)
-    
-    MainFrame.Visible = false
-else
-    MainFrame.Visible = true
-end
-
--- Функция для перемещения GUI
-local dragging = false
-local dragInput, dragStart, startPos
-
-local function update(input)
-    local delta = input.Position - dragStart
-    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-end
-
-TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-
-TitleBar.InputChanged:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        dragInput = input
-    end
-end)
-
-UIS.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        update(input)
-    end
-end)
-
--- Функция для создания кнопок
-local function CreateButton(text)
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, -10, 0, 32)
-    button.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-    button.BorderSizePixel = 0
-    button.Text = text
-    button.TextColor3 = Color3.fromRGB(240, 240, 255)
-    button.TextSize = 12
-    button.Font = Enum.Font.Gotham
-    button.AutoButtonColor = false
-    button.Parent = ContentScrolling
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = button
-    
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(80, 80, 100)
-    stroke.Thickness = 1.2
-    stroke.Parent = button
-    
-    -- Анимация при наведении
-    button.MouseEnter:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(65, 65, 85),
-            TextColor3 = Color3.fromRGB(255, 255, 255)
-        }):Play()
-    end)
-    
-    button.MouseLeave:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(50, 50, 65),
-            TextColor3 = Color3.fromRGB(240, 240, 255)
-        }):Play()
-    end)
-    
-    button.MouseButton1Down:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.1), {
-            BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-        }):Play()
-    end)
-    
-    button.MouseButton1Up:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.1), {
-            BackgroundColor3 = Color3.fromRGB(65, 65, 85)
-        }):Play()
-    end)
-    
-    return button
-end
-
--- Функция для создания переключателей
-local function CreateToggle(text, enabled, callback)
-    local toggleContainer = Instance.new("Frame")
-    toggleContainer.Size = UDim2.new(1, -10, 0, 32)
-    toggleContainer.BackgroundTransparency = 1
-    toggleContainer.Parent = ContentScrolling
-    
-    -- Текст
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(0.7, 0, 1, 0)
-    textLabel.Position = UDim2.new(0, 0, 0, 0)
-    textLabel.BackgroundTransparency = 1
-    textLabel.Text = text
-    textLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
-    textLabel.TextSize = 12
-    textLabel.Font = Enum.Font.Gotham
-    textLabel.TextXAlignment = Enum.TextXAlignment.Left
-    textLabel.Parent = toggleContainer
-    
-    -- Переключатель
-    local toggleBackground = Instance.new("Frame")
-    toggleBackground.Size = UDim2.new(0, 50, 0, 22)
-    toggleBackground.Position = UDim2.new(1, -52, 0.5, -11)
-    toggleBackground.BackgroundColor3 = enabled and Color3.fromRGB(0, 140, 255) or Color3.fromRGB(80, 80, 100)
-    toggleBackground.BorderSizePixel = 0
-    toggleBackground.Parent = toggleContainer
-    
-    local toggleCircle = Instance.new("Frame")
-    toggleCircle.Size = UDim2.new(0, 18, 0, 18)
-    toggleCircle.Position = enabled and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
-    toggleCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    toggleCircle.BorderSizePixel = 0
-    toggleCircle.Parent = toggleBackground
-    
-    -- Закругления
-    local corner1 = Instance.new("UICorner")
-    corner1.CornerRadius = UDim.new(0, 11)
-    corner1.Parent = toggleBackground
-    
-    local corner2 = Instance.new("UICorner")
-    corner2.CornerRadius = UDim.new(0, 9)
-    corner2.Parent = toggleCircle
-    
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(120, 120, 140)
-    stroke.Thickness = 1
-    stroke.Parent = toggleBackground
-    
-    -- Кнопка для переключения
-    local toggleButton = Instance.new("TextButton")
-    toggleButton.Size = UDim2.new(1, 0, 1, 0)
-    toggleButton.Position = UDim2.new(0, 0, 0, 0)
-    toggleButton.BackgroundTransparency = 1
-    toggleButton.Text = ""
-    toggleButton.Parent = toggleContainer
-    
-    local function updateToggle(newState)
-        enabled = newState
-        TweenService:Create(toggleBackground, TweenInfo.new(0.2), {
-            BackgroundColor3 = newState and Color3.fromRGB(0, 140, 255) or Color3.fromRGB(80, 80, 100)
-        }):Play()
-        
-        TweenService:Create(toggleCircle, TweenInfo.new(0.2), {
-            Position = newState and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
-        }):Play()
-        
-        if callback then
-            callback(newState)
-        end
-    end
-    
-    toggleButton.MouseButton1Click:Connect(function()
-        updateToggle(not enabled)
-    end)
-    
-    return toggleContainer, updateToggle, textLabel
-end
-
--- Функция для создания слайдера скорости
-local function CreateSpeedSlider()
-    local sliderContainer = Instance.new("Frame")
-    sliderContainer.Size = UDim2.new(1, -10, 0, 60)
-    sliderContainer.BackgroundTransparency = 1
-    sliderContainer.Parent = ContentScrolling
-    
-    local speedLabel = Instance.new("TextLabel")
-    speedLabel.Size = UDim2.new(1, 0, 0, 20)
-    speedLabel.BackgroundTransparency = 1
-    speedLabel.Text = "Speed: " .. MainModule.SpeedHack.CurrentSpeed
-    speedLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
-    speedLabel.TextSize = 12
-    speedLabel.Font = Enum.Font.GothamBold
-    speedLabel.Parent = sliderContainer
-    
-    local sliderBackground = Instance.new("Frame")
-    sliderBackground.Size = UDim2.new(1, 0, 0, 20)
-    sliderBackground.Position = UDim2.new(0, 0, 0, 25)
-    sliderBackground.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
-    sliderBackground.BorderSizePixel = 0
-    sliderBackground.Parent = sliderContainer
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = sliderBackground
-    
-    local sliderFill = Instance.new("Frame")
-    sliderFill.Size = UDim2.new((MainModule.SpeedHack.CurrentSpeed - MainModule.SpeedHack.MinSpeed) / (MainModule.SpeedHack.MaxSpeed - MainModule.SpeedHack.MinSpeed), 0, 1, 0)
-    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-    sliderFill.BorderSizePixel = 0
-    sliderFill.Parent = sliderBackground
-    
-    local fillCorner = Instance.new("UICorner")
-    fillCorner.CornerRadius = UDim.new(0, 8)
-    fillCorner.Parent = sliderFill
-    
-    local sliderButton = Instance.new("TextButton")
-    sliderButton.Size = UDim2.new(0, 20, 0, 20)
-    sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -10, 0, 0)
-    sliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    sliderButton.Text = ""
-    sliderButton.BorderSizePixel = 0
-    sliderButton.Parent = sliderBackground
-    
-    local buttonCorner = Instance.new("UICorner")
-    buttonCorner.CornerRadius = UDim.new(0, 8)
-    buttonCorner.Parent = sliderButton
-    
-    local dragging = false
-    
-    local function updateSpeed(value)
-        local newSpeed = MainModule.SetSpeed(value)
-        speedLabel.Text = "Speed: " .. newSpeed
-        sliderFill.Size = UDim2.new((newSpeed - MainModule.SpeedHack.MinSpeed) / (MainModule.SpeedHack.MaxSpeed - MainModule.SpeedHack.MinSpeed), 0, 1, 0)
-        sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -10, 0, 0)
-    end
-    
-    sliderButton.MouseButton1Down:Connect(function()
-        dragging = true
-    end)
-    
-    UIS.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local relativeX = (input.Position.X - sliderBackground.AbsolutePosition.X) / sliderBackground.AbsoluteSize.X
-            relativeX = math.clamp(relativeX, 0, 1)
-            local newSpeed = math.floor(MainModule.SpeedHack.MinSpeed + relativeX * (MainModule.SpeedHack.MaxSpeed - MainModule.SpeedHack.MinSpeed))
-            updateSpeed(newSpeed)
-        end
-    end)
-    
-    UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-    
-    return speedLabel
-end
-
--- Функция для создания кнопки изменения горячей клавиши
-local function CreateKeybindButton()
-    local keybindContainer = Instance.new("Frame")
-    keybindContainer.Size = UDim2.new(1, -10, 0, 32)
-    keybindContainer.BackgroundTransparency = 1
-    keybindContainer.Parent = ContentScrolling
-    
-    local keybindFrame = Instance.new("Frame")
-    keybindFrame.Size = UDim2.new(1, 0, 1, 0)
-    keybindFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-    keybindFrame.BorderSizePixel = 0
-    keybindFrame.Parent = keybindContainer
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = keybindFrame
-    
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(80, 80, 100)
-    stroke.Thickness = 1.2
-    stroke.Parent = keybindFrame
-    
-    -- Текст
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.7, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text = "Menu Hotkey: M"
-    label.TextColor3 = Color3.fromRGB(240, 240, 255)
-    label.TextSize = 12
-    label.Font = Enum.Font.Gotham
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = keybindFrame
-    
-    -- Кнопка изменения
-    local changeBtn = Instance.new("TextButton")
-    changeBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
-    changeBtn.Position = UDim2.new(0.72, 0, 0.15, 0)
-    changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
-    changeBtn.BorderSizePixel = 0
-    changeBtn.Text = "Change"
-    changeBtn.TextColor3 = Color3.fromRGB(240, 240, 255)
-    changeBtn.TextSize = 11
-    changeBtn.Font = Enum.Font.Gotham
-    changeBtn.AutoButtonColor = false
-    changeBtn.Parent = keybindFrame
-    
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = changeBtn
-    
-    local btnStroke = Instance.new("UIStroke")
-    btnStroke.Color = Color3.fromRGB(80, 80, 100)
-    btnStroke.Thickness = 1
-    btnStroke.Parent = changeBtn
-    
-    -- Анимации для кнопки
-    changeBtn.MouseEnter:Connect(function()
-        if not isChoosingKey then
-            TweenService:Create(changeBtn, TweenInfo.new(0.2), {
-                BackgroundColor3 = Color3.fromRGB(75, 75, 95),
-                TextColor3 = Color3.fromRGB(255, 255, 255)
-            }):Play()
-        end
-    end)
-    
-    changeBtn.MouseLeave:Connect(function()
-        if not isChoosingKey then
-            TweenService:Create(changeBtn, TweenInfo.new(0.2), {
-                BackgroundColor3 = Color3.fromRGB(60, 60, 75),
-                TextColor3 = Color3.fromRGB(240, 240, 255)
-            }):Play()
-        end
-    end)
-    
-    -- Функция обновления текста
-    local function updateKeyText()
-        label.Text = "Menu Hotkey: " .. menuHotkey.Name
-    end
-    
-    -- Функция изменения клавиши
-    local function startKeyChange()
-        isChoosingKey = true
-        changeBtn.Text = "Press any key..."
-        changeBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
-        
-        local connection
-        connection = UIS.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Keyboard then
-                -- Сохраняем новую клавишу
-                menuHotkey = input.KeyCode
-                updateKeyText()
-                
-                -- Останавливаем выбор
-                isChoosingKey = false
-                changeBtn.Text = "Change"
-                changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
-                
-                if connection then
-                    connection:Disconnect()
-                end
-            elseif input.UserInputType == Enum.UserInputType.MouseButton1 or 
-                   input.UserInputType == Enum.UserInputType.MouseButton2 or
-                   input.UserInputType == Enum.UserInputType.MouseButton3 then
-                -- Можно добавить поддержку мыши, если нужно
-                isChoosingKey = false
-                changeBtn.Text = "Change"
-                changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
-                
-                if connection then
-                    connection:Disconnect()
-                end
-            end
-        end)
-        
-        -- Если 5 секунд не выбрали клавишу - отменяем
-        task.delay(5, function()
-            if isChoosingKey then
-                isChoosingKey = false
-                changeBtn.Text = "Change"
-                changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
-                
-                if connection then
-                    connection:Disconnect()
-                end
-            end
-        end)
-    end
-    
-    changeBtn.MouseButton1Click:Connect(function()
-        if not isChoosingKey then
-            startKeyChange()
-        end
-    end)
-    
-    updateKeyText()
-    keyChangeButton = changeBtn
-    
-    return keybindContainer
-end
-
--- Простая кнопка выбора Guard типа
-local function CreateGuardTypeSelector()
-    local selectorContainer = Instance.new("Frame")
-    selectorContainer.Size = UDim2.new(1, -10, 0, 32)
-    selectorContainer.BackgroundTransparency = 1
-    selectorContainer.LayoutOrder = 1
-    selectorContainer.Parent = ContentScrolling
-    
-    local selectorFrame = Instance.new("Frame")
-    selectorFrame.Size = UDim2.new(1, 0, 1, 0)
-    selectorFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-    selectorFrame.BorderSizePixel = 0
-    selectorFrame.Parent = selectorContainer
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = selectorFrame
-    
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(80, 80, 100)
-    stroke.Thickness = 1.2
-    stroke.Parent = selectorFrame
-    
-    -- Текст
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.7, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text = "Guard Type: " .. MainModule.Guards.SelectedGuard
-    label.TextColor3 = Color3.fromRGB(240, 240, 255)
-    label.TextSize = 12
-    label.Font = Enum.Font.Gotham
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = selectorFrame
-    
-    -- Кнопка смены типа
-    local changeBtn = Instance.new("TextButton")
-    changeBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
-    changeBtn.Position = UDim2.new(0.72, 0, 0.15, 0)
-    changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
-    changeBtn.BorderSizePixel = 0
-    changeBtn.Text = "Change"
-    changeBtn.TextColor3 = Color3.fromRGB(240, 240, 255)
-    changeBtn.TextSize = 11
-    changeBtn.Font = Enum.Font.Gotham
-    changeBtn.AutoButtonColor = false
-    changeBtn.Parent = selectorFrame
-    
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = changeBtn
-    
-    local btnStroke = Instance.new("UIStroke")
-    btnStroke.Color = Color3.fromRGB(80, 80, 100)
-    btnStroke.Thickness = 1
-    btnStroke.Parent = changeBtn
-    
-    -- Анимации для кнопки
-    changeBtn.MouseEnter:Connect(function()
-        TweenService:Create(changeBtn, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(75, 75, 95),
-            TextColor3 = Color3.fromRGB(255, 255, 255)
-        }):Play()
-    end)
-    
-    changeBtn.MouseLeave:Connect(function()
-        TweenService:Create(changeBtn, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(60, 60, 75),
-            TextColor3 = Color3.fromRGB(240, 240, 255)
-        }):Play()
-    end)
-    
-    -- Циклическое переключение типов
-    local guardTypes = {"Circle", "Triangle", "Square"}
-    local currentIndex = 1
-    for i, guardType in ipairs(guardTypes) do
-        if guardType == MainModule.Guards.SelectedGuard then
-            currentIndex = i
-            break
-        end
-    end
-    
-    changeBtn.MouseButton1Click:Connect(function()
-        currentIndex = currentIndex + 1
-        if currentIndex > #guardTypes then
-            currentIndex = 1
-        end
-        
-        local newGuardType = guardTypes[currentIndex]
-        if MainModule.SetGuardType then
-            MainModule.SetGuardType(newGuardType)
-        else
-            MainModule.Guards.SelectedGuard = newGuardType
-        end
-        label.Text = "Guard Type: " .. newGuardType
-    end)
-    
-    return selectorContainer
-end
-
--- Функции для создания контента вкладок
-local function ClearContent()
-    for _, child in pairs(ContentScrolling:GetChildren()) do
-        if child:IsA("Frame") or child:IsA("TextButton") or child:IsA("TextLabel") then
-            child:Destroy()
-        end
-    end
-end
-
--- MAIN TAB
-local function CreateMainContent()
-    ClearContent()
-    
-    -- Speed Slider
-    local speedLabel = CreateSpeedSlider()
-    
-    -- Speed Toggle
-    local speedToggle, updateSpeedToggle = CreateToggle("SpeedHack", MainModule.SpeedHack.Enabled, function(enabled)
-        if MainModule.ToggleSpeedHack then
-            MainModule.ToggleSpeedHack(enabled)
-        else
-            MainModule.SpeedHack.Enabled = enabled
-        end
-    end)
-    speedToggle.LayoutOrder = 1
-    
-    -- Anti Time Stop (NEW)
-    local antiTimeStopToggle, updateAntiTimeStopToggle = CreateToggle("Anti Time Stop", MainModule.AntiTimeStop.Enabled, function(enabled)
-        if MainModule.ToggleAntiTimeStop then
-            MainModule.ToggleAntiTimeStop(enabled)
-        else
-            MainModule.AntiTimeStop.Enabled = enabled
-        end
-    end)
-    antiTimeStopToggle.LayoutOrder = 2
-    
-    -- Anti Stun QTE
-    local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun QTE", MainModule.AutoQTE.AntiStunEnabled, function(enabled)
-        if MainModule.ToggleAntiStunQTE then
-            MainModule.ToggleAntiStunQTE(enabled)
-        else
-            MainModule.AutoQTE.AntiStunEnabled = enabled
-        end
-    end)
-    antiStunToggle.LayoutOrder = 3
-    
-    -- Anti Stun + Anti Ragdoll
-    local bypassRagdollToggle, updateBypassRagdollToggle = CreateToggle("Anti Stun + Anti Ragdoll", MainModule.Misc.BypassRagdollEnabled, function(enabled)
-        if MainModule.ToggleBypassRagdoll then
-            MainModule.ToggleBypassRagdoll(enabled)
-        else
-            MainModule.Misc.BypassRagdollEnabled = enabled
-        end
-    end)
-    bypassRagdollToggle.LayoutOrder = 4
-    
-    -- Instance Interact
-    local instaInteractToggle, updateInstaInteractToggle = CreateToggle("Instance Interact", MainModule.Misc.InstaInteract, function(enabled)
-        if MainModule.ToggleInstaInteract then
-            MainModule.ToggleInstaInteract(enabled)
-        else
-            MainModule.Misc.InstaInteract = enabled
-        end
-    end)
-    instaInteractToggle.LayoutOrder = 5
-    
-    -- No Cooldown Proximity
-    local noCooldownToggle, updateNoCooldownToggle = CreateToggle("No Cooldown Proximity", MainModule.Misc.NoCooldownProximity, function(enabled)
-        if MainModule.ToggleNoCooldownProximity then
-            MainModule.ToggleNoCooldownProximity(enabled)
-        else
-            MainModule.Misc.NoCooldownProximity = enabled
-        end
-    end)
-    noCooldownToggle.LayoutOrder = 6
-    
-    -- Teleport Buttons
-    local tpUpBtn = CreateButton("TP 100 blocks up")
-    tpUpBtn.LayoutOrder = 7
-    tpUpBtn.MouseButton1Click:Connect(function()
-        if MainModule.TeleportUp100 then
-            MainModule.TeleportUp100()
-        end
-    end)
-    
-    local tpDownBtn = CreateButton("TP 40 blocks down")
-    tpDownBtn.LayoutOrder = 8
-    tpDownBtn.MouseButton1Click:Connect(function()
-        if MainModule.TeleportDown40 then
-            MainModule.TeleportDown40()
-        end
-    end)
-    
-    -- Position display
-    local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
-    positionLabel.LayoutOrder = 9
-    positionLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-    positionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
-    
-    -- Update position
-    game:GetService("RunService").Heartbeat:Connect(function()
-        if positionLabel and positionLabel.Parent then
-            positionLabel.Text = "Position: " .. MainModule.GetPlayerPosition()
-        end
-    end)
-end
-
--- COMBAT TAB
-local function CreateCombatContent()
-    ClearContent()
-    
-    local comingSoon = Instance.new("TextLabel")
-    comingSoon.Size = UDim2.new(1, 0, 0, 40)
-    comingSoon.BackgroundTransparency = 1
-    comingSoon.Text = "Combat Features Coming Soon"
-    comingSoon.TextColor3 = Color3.fromRGB(200, 200, 200)
-    comingSoon.TextSize = 16
-    comingSoon.Font = Enum.Font.Gotham
-    comingSoon.Parent = ContentScrolling
-end
-
--- MISC TAB
-local function CreateMiscContent()
-    ClearContent()
-    
-    -- ESP System Toggle
-    local espToggle, updateEspToggle = CreateToggle("ESP System", MainModule.Misc.ESPEnabled, function(enabled)
-        if MainModule.ToggleESP then
-            MainModule.ToggleESP(enabled)
-        else
-            MainModule.Misc.ESPEnabled = enabled
-        end
-    end)
-    espToggle.LayoutOrder = 1
-    
-    -- ESP Players
-    local espPlayersToggle, updateEspPlayersToggle = CreateToggle("ESP Players", MainModule.Misc.ESPPlayers, function(enabled)
-        MainModule.Misc.ESPPlayers = enabled
-        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
-            MainModule.ToggleESP(false)
-            task.wait(0.1)
-            MainModule.ToggleESP(true)
-        end
-    end)
-    espPlayersToggle.LayoutOrder = 2
-    
-    -- ESP Hiders
-    local espHidersToggle, updateEspHidersToggle = CreateToggle("ESP Hiders", MainModule.Misc.ESPHiders, function(enabled)
-        MainModule.Misc.ESPHiders = enabled
-        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
-            MainModule.ToggleESP(false)
-            task.wait(0.1)
-            MainModule.ToggleESP(true)
-        end
-    end)
-    espHidersToggle.LayoutOrder = 3
-    
-    -- ESP Seekers
-    local espSeekersToggle, updateEspSeekersToggle = CreateToggle("ESP Seekers", MainModule.Misc.ESPSeekers, function(enabled)
-        MainModule.Misc.ESPSeekers = enabled
-        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
-            MainModule.ToggleESP(false)
-            task.wait(0.1)
-            MainModule.ToggleESP(true)
-        end
-    end)
-    espSeekersToggle.LayoutOrder = 4
-    
-    -- ESP Highlight
-    local espHighlightToggle, updateEspHighlightToggle = CreateToggle("ESP Highlight", MainModule.Misc.ESPHighlight, function(enabled)
-        MainModule.Misc.ESPHighlight = enabled
-        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
-            MainModule.ToggleESP(false)
-            task.wait(0.1)
-            MainModule.ToggleESP(true)
-        end
-    end)
-    espHighlightToggle.LayoutOrder = 5
-    
-    -- ESP Distance
-    local espDistanceToggle, updateEspDistanceToggle = CreateToggle("ESP Distance", MainModule.Misc.ESPDistance, function(enabled)
-        MainModule.Misc.ESPDistance = enabled
-        if MainModule.Misc.ESPEnabled and MainModule.ToggleESP then
-            MainModule.ToggleESP(false)
-            task.wait(0.1)
-            MainModule.ToggleESP(true)
-        end
-    end)
-    espDistanceToggle.LayoutOrder = 6
-end
-
--- REBEL TAB
-local function CreateRebelContent()
-    ClearContent()
-    
-    local rebelTitle = CreateButton("REBEL")
-    rebelTitle.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-    rebelTitle.TextColor3 = Color3.fromRGB(255, 80, 80)
-    rebelTitle.TextSize = 14
-    rebelTitle.LayoutOrder = 1
-    
-    local rebelToggle, updateRebelToggle = CreateToggle("Instant Rebel", MainModule.Rebel.Enabled, function(enabled)
-        if MainModule.ToggleRebel then
-            MainModule.ToggleRebel(enabled)
-        else
-            MainModule.Rebel.Enabled = enabled
-        end
-    end)
-    rebelToggle.LayoutOrder = 2
-end
-
--- RLGL TAB
-local function CreateRLGLContent()
-    ClearContent()
-    
-    local tpEndBtn = CreateButton("TP TO END")
-    tpEndBtn.LayoutOrder = 1
-    tpEndBtn.MouseButton1Click:Connect(function()
-        if MainModule.TeleportToEnd then
-            MainModule.TeleportToEnd()
-        end
-    end)
-    
-    local tpStartBtn = CreateButton("TP TO START")
-    tpStartBtn.LayoutOrder = 2
-    tpStartBtn.MouseButton1Click:Connect(function()
-        if MainModule.TeleportToStart then
-            MainModule.TeleportToStart()
-        end
-    end)
-    
-    local godModeToggle, updateGodModeToggle = CreateToggle("GodMode", MainModule.RLGL.GodMode, function(enabled)
-        if MainModule.ToggleGodMode then
-            MainModule.ToggleGodMode(enabled)
-        else
-            MainModule.RLGL.GodMode = enabled
-        end
-    end)
-    godModeToggle.LayoutOrder = 3
-end
-
--- GUARDS TAB
-local function CreateGuardsContent()
-    ClearContent()
-    
-    -- Guard Type Selector
-    local guardSelector = CreateGuardTypeSelector()
-    
-    -- Spawn as Guard кнопка
-    local spawnBtn = CreateButton("Spawn as Guard")
-    spawnBtn.LayoutOrder = 2
-    spawnBtn.MouseButton1Click:Connect(function()
-        if MainModule.SpawnAsGuard then
-            MainModule.SpawnAsGuard()
-        end
-    end)
-    
-    -- Rapid Fire
-    local rapidFireToggle, updateRapidFireToggle = CreateToggle("Rapid Fire", MainModule.Guards.RapidFire, function(enabled)
-        if MainModule.ToggleRapidFire then
-            MainModule.ToggleRapidFire(enabled)
-        else
-            MainModule.Guards.RapidFire = enabled
-        end
-    end)
-    rapidFireToggle.LayoutOrder = 3
-    
-    -- Infinite Ammo
-    local infiniteAmmoToggle, updateInfiniteAmmoToggle = CreateToggle("Infinite Ammo", MainModule.Guards.InfiniteAmmo, function(enabled)
-        if MainModule.ToggleInfiniteAmmo then
-            MainModule.ToggleInfiniteAmmo(enabled)
-        else
-            MainModule.Guards.InfiniteAmmo = enabled
-        end
-    end)
-    infiniteAmmoToggle.LayoutOrder = 4
-    
-    -- Hitbox Expander
-    local hitboxToggle, updateHitboxToggle = CreateToggle("Hitbox Expander", MainModule.Guards.HitboxExpander, function(enabled)
-        if MainModule.ToggleHitboxExpander then
-            MainModule.ToggleHitboxExpander(enabled)
-        else
-            MainModule.Guards.HitboxExpander = enabled
-        end
-    end)
-    hitboxToggle.LayoutOrder = 5
-    
-    -- AutoFarm
-    local autoFarmToggle, updateAutoFarmToggle = CreateToggle("AutoFarm", MainModule.Guards.AutoFarm, function(enabled)
-        if MainModule.ToggleAutoFarm then
-            MainModule.ToggleAutoFarm(enabled)
-        else
-            MainModule.Guards.AutoFarm = enabled
-        end
-    end)
-    autoFarmToggle.LayoutOrder = 6
-end
-
--- DALGONA TAB
-local function CreateDalgonaContent()
-    ClearContent()
-    
-    local completeBtn = CreateButton("Complete Dalgona")
-    completeBtn.LayoutOrder = 1
-    completeBtn.MouseButton1Click:Connect(function()
-        if MainModule.CompleteDalgona then
-            MainModule.CompleteDalgona()
-        end
-    end)
-    
-    local lighterBtn = CreateButton("Free Lighter")
-    lighterBtn.LayoutOrder = 2
-    lighterBtn.MouseButton1Click:Connect(function()
-        if MainModule.FreeLighter then
-            MainModule.FreeLighter()
-        end
-    end)
-end
-
--- HNS TAB
-local function CreateHNSContent()
-    ClearContent()
-    
-    -- Infinity Stamina
-    local staminaToggle, updateStaminaToggle = CreateToggle("Infinity Stamina", MainModule.HNS.InfinityStaminaEnabled, function(enabled)
-        if MainModule.ToggleHNSInfinityStamina then
-            MainModule.ToggleHNSInfinityStamina(enabled)
-        else
-            MainModule.HNS.InfinityStaminaEnabled = enabled
-        end
-    end)
-    staminaToggle.LayoutOrder = 1
-end
-
--- Функция для GLASS BRIDGE с автоматическим AntiFall при включении
-local function GlassBridgeToggleCallback(enabled)
-    if MainModule.ToggleGlassBridgeAntiBreak then
-        MainModule.ToggleGlassBridgeAntiBreak(enabled)
     else
-        MainModule.GlassBridge.AntiBreakEnabled = enabled
+        -- Восстанавливаем оригинальные свойства
+        for humanoid, properties in pairs(MainModule.AntiTimeStop.OriginalProperties) do
+            if humanoid and humanoid.Parent then
+                humanoid.WalkSpeed = properties.WalkSpeed
+                humanoid.JumpPower = properties.JumpPower
+            end
+        end
+        MainModule.AntiTimeStop.OriginalProperties = {}
+    end
+end
+
+-- Instant REBEL функция (исправленная и безопасная)
+function MainModule.ToggleRebel(enabled)
+    MainModule.Rebel.Enabled = enabled
+    
+    if MainModule.Rebel.Connection then
+        MainModule.Rebel.Connection:Disconnect()
+        MainModule.Rebel.Connection = nil
     end
     
-    -- Автоматически создаем AntiFall платформу при включении
     if enabled then
-        task.wait(0.3) -- Небольшая задержка
-        if MainModule.CreateGlassBridgeAntiFall then
-            MainModule.CreateGlassBridgeAntiFall()
-            GlassBridgeAntiFallEnabled = true
+        MainModule.Rebel.Connection = RunService.Heartbeat:Connect(function()
+            if not MainModule.Rebel.Enabled then return end
+            
+            local currentTime = tick()
+            
+            -- Проверяем кулдаун проверки врагов
+            if currentTime - MainModule.Rebel.LastCheckTime < MainModule.Rebel.CheckCooldown then return end
+            MainModule.Rebel.LastCheckTime = currentTime
+            
+            -- Получаем список врагов
+            local enemies = GetEnemies()
+            if #enemies == 0 then return end
+            
+            -- Убиваем каждого врага с кулдауном
+            for _, enemyName in pairs(enemies) do
+                if currentTime - MainModule.Rebel.LastKillTime < MainModule.Rebel.KillCooldown then
+                    task.wait(MainModule.Rebel.KillCooldown)
+                end
+                
+                KillEnemy(enemyName)
+                MainModule.Rebel.LastKillTime = tick()
+                
+                -- Небольшая задержка между убийствами
+                task.wait(0.05)
+            end
+        end)
+    else
+        -- Сбрасываем время
+        MainModule.Rebel.LastKillTime = 0
+        MainModule.Rebel.LastCheckTime = 0
+    end
+end
+
+-- Функции телепортации RLGL с моментальной телепортацией
+function MainModule.TeleportToEnd()
+    SafeTeleport(MainModule.RLGL.EndPosition)
+end
+
+function MainModule.TeleportToStart()
+    SafeTeleport(MainModule.RLGL.StartPosition)
+end
+
+-- Улучшенная функция Bypass Ragdoll с дополнительными защитами
+function MainModule.ToggleBypassRagdoll(enabled)
+    MainModule.Misc.BypassRagdollEnabled = enabled
+    
+    if bypassRagdollConnection then
+        bypassRagdollConnection:Disconnect()
+        bypassRagdollConnection = nil
+    end
+    
+    if enabled then
+        bypassRagdollConnection = RunService.Stepped:Connect(function()
+            if not MainModule.Misc.BypassRagdollEnabled then return end
+            
+            pcall(function()
+                local Character = GetCharacter()
+                if not Character then return end
+                
+                local Humanoid = GetHumanoid(Character)
+                local HumanoidRootPart = GetRootPart(Character)
+                
+                if not (Humanoid and HumanoidRootPart) then return end
+
+                -- 1. Мягкое удаление Ragdoll объектов
+                for _, child in ipairs(Character:GetChildren()) do
+                    if child.Name == "Ragdoll" then
+                        task.spawn(function()
+                            for i = 1, 10 do
+                                if child and child.Parent then
+                                    for _, part in pairs(child:GetChildren()) do
+                                        if part:IsA("BasePart") then
+                                            part.Transparency = part.Transparency + 0.1
+                                        end
+                                    end
+                                    task.wait(0.05)
+                                end
+                            end
+                            pcall(function() child:Destroy() end)
+                        end)
+                        
+                        Humanoid.PlatformStand = false
+                        Humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                    end
+                end
+
+                -- 2. Удаляем только вредоносные папки
+                local harmfulFolders = {"RotateDisabled", "RagdollWakeupImmunity"}
+                for _, folderName in pairs(harmfulFolders) do
+                    local folder = Character:FindFirstChild(folderName)
+                    if folder then
+                        folder:Destroy()
+                    end
+                end
+
+                -- 3. Основная защита от толчков
+                for _, part in pairs(Character:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        local currentVelocity = part.Velocity
+                        local horizontalSpeed = Vector3.new(currentVelocity.X, 0, currentVelocity.Z).Magnitude
+                        
+                        if horizontalSpeed > 50 and part ~= HumanoidRootPart then
+                            local newVelocity = Vector3.new(
+                                currentVelocity.X * 0.8,
+                                currentVelocity.Y,
+                                currentVelocity.Z * 0.8
+                            )
+                            part.Velocity = newVelocity
+                        end
+                        
+                        for _, force in pairs(part:GetChildren()) do
+                            if force:IsA("BodyForce") then
+                                local forceMagnitude = force.Force.Magnitude
+                                if forceMagnitude > 1000 then
+                                    force:Destroy()
+                                end
+                            elseif force:IsA("BodyVelocity") then
+                                if force.Velocity.Magnitude > 30 then
+                                    force:Destroy()
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                -- 4. Защита корневого объекта
+                local playerInputVelocity = HumanoidRootPart.Velocity
+                local externalForces = {}
+                
+                for _, force in pairs(HumanoidRootPart:GetChildren()) do
+                    if force:IsA("BodyForce") or force:IsA("BodyVelocity") then
+                        table.insert(externalForces, force)
+                    end
+                end
+                
+                if #externalForces > 0 then
+                    local filteredVelocity = Vector3.new(
+                        playerInputVelocity.X,
+                        HumanoidRootPart.Velocity.Y,
+                        playerInputVelocity.Z
+                    )
+                    
+                    HumanoidRootPart.Velocity = filteredVelocity
+                    
+                    for _, force in pairs(externalForces) do
+                        task.spawn(function()
+                            if force:IsA("BodyVelocity") then
+                                for i = 1, 5 do
+                                    if force and force.Parent then
+                                        force.Velocity = force.Velocity * 0.5
+                                        task.wait(0.02)
+                                    end
+                                end
+                            end
+                            pcall(function() force:Destroy() end)
+                        end)
+                    end
+                end
+            end)
+        end)
+        
+        -- Слушатель для мгновенного удаления новых Ragdoll объектов
+        local char = GetCharacter()
+        if char then
+            char.ChildAdded:Connect(function(child)
+                if child.Name == "Ragdoll" and MainModule.Misc.BypassRagdollEnabled then
+                    task.wait(0.1)
+                    pcall(function() child:Destroy() end)
+                    
+                    local humanoid = GetHumanoid(char)
+                    if humanoid then
+                        humanoid.PlatformStand = false
+                        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                    end
+                end
+            end)
         end
     else
-        -- При выключении удаляем AntiFall платформу
-        if MainModule.RemoveGlassBridgeAntiFall then
-            MainModule.RemoveGlassBridgeAntiFall()
-            GlassBridgeAntiFallEnabled = false
+        -- При выключении очищаем слушатели
+        local character = GetCharacter()
+        if character then
+            local rootPart = GetRootPart(character)
+            if rootPart then
+                for _, conn in pairs(getconnections(rootPart.ChildAdded)) do
+                    conn:Disconnect()
+                end
+            end
         end
     end
 end
 
--- GLASS BRIDGE TAB
-local function CreateGlassBridgeContent()
-    ClearContent()
+-- Исправленная ESP система
+function MainModule.ToggleESP(enabled)
+    MainModule.Misc.ESPEnabled = enabled
     
-    -- AntiBreak (включает и AntiFall автоматически)
-    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("AntiBreak + Auto AntiFall", MainModule.GlassBridge.AntiBreakEnabled, GlassBridgeToggleCallback)
-    antiBreakToggle.LayoutOrder = 1
+    if MainModule.ESP.MainConnection then
+        MainModule.ESP.MainConnection:Disconnect()
+        MainModule.ESP.MainConnection = nil
+    end
     
-    -- Manual AntiFall Toggle (ON/OFF) с обновлением текста
-    local antiFallToggle, updateAntiFallToggle, antiFallTextLabel = CreateToggle("AntiFall [" .. (GlassBridgeAntiFallEnabled and "ON" or "OFF") .. "]", GlassBridgeAntiFallEnabled, function(enabled)
-        GlassBridgeAntiFallEnabled = enabled
-        if enabled then
-            if MainModule.CreateGlassBridgeAntiFall then
-                MainModule.CreateGlassBridgeAntiFall()
-                antiFallTextLabel.Text = "AntiFall [ON]"
-            end
-        else
-            if MainModule.RemoveGlassBridgeAntiFall then
-                MainModule.RemoveGlassBridgeAntiFall()
-                antiFallTextLabel.Text = "AntiFall [OFF]"
-            end
-        end
-    end)
-    antiFallToggle.LayoutOrder = 2
+    -- Очищаем все ESP объекты
+    MainModule.ClearESP()
     
-    -- Glass ESP (кликабельная кнопка)
-    local glassEspBtn = CreateButton("Glass ESP")
-    glassEspBtn.LayoutOrder = 3
-    glassEspBtn.MouseButton1Click:Connect(function()
-        if MainModule.RevealGlassBridge then
-            MainModule.RevealGlassBridge()
-            glassEspBtn.Text = "Glass ESP (Revealed)"
-            glassEspBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-            task.wait(1)
-            glassEspBtn.Text = "Glass ESP"
-            glassEspBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-        end
-    end)
-    
-    -- Teleport to End (кликабельная кнопка)
-    local tpEndBtn = CreateButton("Teleport to End")
-    tpEndBtn.LayoutOrder = 4
-    tpEndBtn.MouseButton1Click:Connect(function()
-        if MainModule.TeleportToGlassBridgeEnd then
-            MainModule.TeleportToGlassBridgeEnd()
-        end
-    end)
-end
-
--- TUG OF WAR TAB
-local function CreateTugOfWarContent()
-    ClearContent()
-    
-    local autoPullToggle, updateAutoPullToggle = CreateToggle("Auto Pull", MainModule.TugOfWar.AutoPull, function(enabled)
-        if MainModule.ToggleAutoPull then
-            MainModule.ToggleAutoPull(enabled)
-        else
-            MainModule.TugOfWar.AutoPull = enabled
-        end
-    end)
-    autoPullToggle.LayoutOrder = 1
-end
-
--- JUMP ROPE TAB
-local function CreateJumpRopeContent()
-    ClearContent()
-    
-    -- AntiFall Toggle (ON/OFF) с обновлением текста
-    local antiFallToggle, updateAntiFallToggle, antiFallTextLabel = CreateToggle("AntiFall [" .. (JumpRopeAntiFallEnabled and "ON" or "OFF") .. "]", JumpRopeAntiFallEnabled, function(enabled)
-        JumpRopeAntiFallEnabled = enabled
-        if enabled then
-            if MainModule.CreateJumpRopeAntiFall then
-                MainModule.CreateJumpRopeAntiFall()
-                antiFallTextLabel.Text = "AntiFall [ON]"
-            end
-        else
-            if MainModule.RemoveJumpRopeAntiFall then
-                MainModule.RemoveJumpRopeAntiFall()
-                antiFallTextLabel.Text = "AntiFall [OFF]"
-            end
-        end
-    end)
-    antiFallToggle.LayoutOrder = 1
-    
-    -- Delete The Rope (кликабельная кнопка)
-    local deleteRopeBtn = CreateButton("Delete The Rope")
-    deleteRopeBtn.LayoutOrder = 2
-    deleteRopeBtn.MouseButton1Click:Connect(function()
-        if MainModule.DeleteJumpRope then
-            local success = MainModule.DeleteJumpRope()
-            if success then
-                deleteRopeBtn.Text = "Rope Deleted!"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-                task.wait(1)
-                deleteRopeBtn.Text = "Delete The Rope"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-            else
-                deleteRopeBtn.Text = "Rope Not Found"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
-                task.wait(1)
-                deleteRopeBtn.Text = "Delete The Rope"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-            end
-        end
-    end)
-    
-    -- Teleport to End (кликабельная кнопка)
-    local tpEndBtn = CreateButton("Teleport to End")
-    tpEndBtn.LayoutOrder = 3
-    tpEndBtn.MouseButton1Click:Connect(function()
-        if MainModule.TeleportToJumpRopeEnd then
-            MainModule.TeleportToJumpRopeEnd()
-        end
-    end)
-end
-
--- SKY SQUID TAB
-local function CreateSkySquidContent()
-    ClearContent()
-    
-    -- AntiFall Toggle (ON/OFF) с обновлением текста
-    local antiFallToggle, updateAntiFallToggle, antiFallTextLabel = CreateToggle("AntiFall [" .. (SkySquidAntiFallEnabled and "ON" or "OFF") .. "]", SkySquidAntiFallEnabled, function(enabled)
-        SkySquidAntiFallEnabled = enabled
-        if enabled then
-            if MainModule.CreateSkySquidAntiFall then
-                MainModule.CreateSkySquidAntiFall()
-                antiFallTextLabel.Text = "AntiFall [ON]"
-            end
-        else
-            if MainModule.RemoveSkySquidAntiFall then
-                MainModule.RemoveSkySquidAntiFall()
-                antiFallTextLabel.Text = "AntiFall [OFF]"
-            end
-        end
-    end)
-    antiFallToggle.LayoutOrder = 1
-end
-
--- SETTINGS TAB
-local function CreateSettingsContent()
-    ClearContent()
-    
-    local creatorLabel = CreateButton("Creator: Creon")
-    creatorLabel.TextXAlignment = Enum.TextXAlignment.Left
-    creatorLabel.LayoutOrder = 1
-    
-    local versionLabel = CreateButton("Version: 2.4")
-    versionLabel.TextXAlignment = Enum.TextXAlignment.Left
-    versionLabel.LayoutOrder = 2
-    
-    local executorLabel = CreateButton("Executor: " .. executorName)
-    executorLabel.TextXAlignment = Enum.TextXAlignment.Left
-    executorLabel.LayoutOrder = 3
-    
-    local supportedLabel = CreateButton("Supported: " .. (isSupported and "YES" or "NO"))
-    supportedLabel.TextXAlignment = Enum.TextXAlignment.Left
-    supportedLabel.LayoutOrder = 4
-    
-    -- Кнопка для изменения горячей клавиши меню
-    local keybindButton = CreateKeybindButton()
-    keybindButton.LayoutOrder = 5
-    
-    local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
-    positionLabel.TextXAlignment = Enum.TextXAlignment.Left
-    positionLabel.LayoutOrder = 6
-    
-    local cleanupBtn = CreateButton("Cleanup Script")
-    cleanupBtn.LayoutOrder = 7
-    cleanupBtn.MouseButton1Click:Connect(function()
-        if MainModule.Cleanup then
-            MainModule.Cleanup()
-        end
-        ScreenGui:Destroy()
-    end)
-    
-    -- Обновление позиции
-    game:GetService("RunService").Heartbeat:Connect(function()
-        if positionLabel and positionLabel.Parent then
-            positionLabel.Text = "Position: " .. MainModule.GetPlayerPosition()
-        end
-    end)
-end
-
--- Создание вкладок
-local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Sky Squid", "Settings"}
-local tabButtons = {}
-
-for i, name in pairs(tabs) do
-    local buttonContainer = Instance.new("Frame")
-    buttonContainer.Size = UDim2.new(0.9, 0, 0, 36)
-    buttonContainer.Position = UDim2.new(0.05, 0, 0, (i-1)*38 + 10)
-    buttonContainer.BackgroundTransparency = 1
-    buttonContainer.Parent = TabButtons
-    
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, 0, 1, 0)
-    button.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-    button.BorderSizePixel = 0
-    button.Text = name
-    button.TextColor3 = Color3.fromRGB(240, 240, 255)
-    button.TextSize = 12
-    button.Font = Enum.Font.Gotham
-    button.AutoButtonColor = false
-    button.Parent = buttonContainer
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = button
-    
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(80, 80, 100)
-    stroke.Thickness = 1.2
-    stroke.Parent = button
-    
-    -- Анимация для кнопки вкладки
-    button.MouseEnter:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(65, 65, 85),
-            TextColor3 = Color3.fromRGB(255, 255, 255)
-        }):Play()
-    end)
-    
-    button.MouseLeave:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(50, 50, 65),
-            TextColor3 = Color3.fromRGB(240, 240, 255)
-        }):Play()
-    end)
-    
-    tabButtons[name] = button
-    
-    local function ActivateTab()
-        for tabName, btn in pairs(tabButtons) do
-            btn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-            btn.TextColor3 = Color3.fromRGB(240, 240, 255)
-        end
-        button.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
-        button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    if enabled then
+        -- Создаем папку для ESP
+        MainModule.ESP.Folder = Instance.new("Folder")
+        MainModule.ESP.Folder.Name = "CreonXESP"
+        MainModule.ESP.Folder.Parent = CoreGui
         
-        if name == "Main" then
-            CreateMainContent()
-        elseif name == "Combat" then
-            CreateCombatContent()
-        elseif name == "Misc" then
-            CreateMiscContent()
-        elseif name == "Rebel" then
-            CreateRebelContent()
-        elseif name == "RLGL" then
-            CreateRLGLContent()
-        elseif name == "Guards" then
-            CreateGuardsContent()
-        elseif name == "Dalgona" then
-            CreateDalgonaContent()
-        elseif name == "HNS" then
-            CreateHNSContent()
-        elseif name == "Glass Bridge" then
-            CreateGlassBridgeContent()
-        elseif name == "Tug of War" then
-            CreateTugOfWarContent()
-        elseif name == "Jump Rope" then
-            CreateJumpRopeContent()
-        elseif name == "Sky Squid" then
-            CreateSkySquidContent()
-        elseif name == "Settings" then
-            CreateSettingsContent()
+        -- Функция для создания и обновления ESP игрока
+        local function UpdatePlayerESP(player)
+            if not player or player == LocalPlayer then return end
+            
+            local character = player.Character
+            if not character then return end
+            
+            local humanoid = GetHumanoid(character)
+            local rootPart = GetRootPart(character)
+            
+            if not (humanoid and rootPart and humanoid.Health > 0) then return end
+            
+            local localCharacter = GetCharacter()
+            local localRoot = localCharacter and GetRootPart(localCharacter)
+            
+            -- Создаем или получаем данные ESP
+            local espData = MainModule.ESP.Players[player]
+            if not espData then
+                espData = {
+                    Player = player,
+                    Highlight = nil,
+                    Billboard = nil,
+                    Label = nil
+                }
+                MainModule.ESP.Players[player] = espData
+            end
+            
+            -- Создаем или обновляем Highlight
+            if not espData.Highlight then
+                espData.Highlight = Instance.new("Highlight")
+                espData.Highlight.Name = player.Name .. "_ESP"
+                espData.Highlight.Adornee = character
+                espData.Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                espData.Highlight.Enabled = MainModule.Misc.ESPHighlight
+                espData.Highlight.Parent = MainModule.ESP.Folder
+            end
+            
+            -- Настраиваем цвет
+            if IsHider(player) and MainModule.Misc.ESPHiders then
+                espData.Highlight.FillColor = Color3.fromRGB(0, 255, 0)
+                espData.Highlight.OutlineColor = Color3.fromRGB(0, 200, 0)
+            elseif IsSeeker(player) and MainModule.Misc.ESPSeekers then
+                espData.Highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                espData.Highlight.OutlineColor = Color3.fromRGB(200, 0, 0)
+            elseif MainModule.Misc.ESPPlayers then
+                espData.Highlight.FillColor = Color3.fromRGB(0, 120, 255)
+                espData.Highlight.OutlineColor = Color3.fromRGB(0, 100, 200)
+            else
+                espData.Highlight.Enabled = false
+            end
+            
+            espData.Highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+            espData.Highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+            
+            -- Создаем или обновляем Billboard
+            if MainModule.Misc.ESPNames then
+                if not espData.Billboard then
+                    espData.Billboard = Instance.new("BillboardGui")
+                    espData.Billboard.Name = player.Name .. "_Text"
+                    espData.Billboard.Adornee = rootPart
+                    espData.Billboard.AlwaysOnTop = true
+                    espData.Billboard.Size = UDim2.new(0, 200, 0, 50)
+                    espData.Billboard.StudsOffset = Vector3.new(0, 3, 0)
+                    espData.Billboard.Parent = MainModule.ESP.Folder
+                    
+                    espData.Label = Instance.new("TextLabel")
+                    espData.Label.Size = UDim2.new(1, 0, 1, 0)
+                    espData.Label.BackgroundTransparency = 1
+                    espData.Label.TextColor3 = espData.Highlight.FillColor
+                    espData.Label.TextSize = MainModule.Misc.ESPTextSize
+                    espData.Label.Font = Enum.Font.GothamBold
+                    espData.Label.TextStrokeColor3 = Color3.new(0, 0, 0)
+                    espData.Label.TextStrokeTransparency = 0.5
+                    espData.Label.Parent = espData.Billboard
+                end
+                
+                espData.Billboard.Enabled = true
+                
+                -- Обновляем текст с HP и DISTANCE
+                local distanceText = ""
+                if MainModule.Misc.ESPDistance and localRoot then
+                    local distance = math.floor(GetDistance(rootPart.Position, localRoot.Position))
+                    distanceText = string.format(" [%dm]", distance)
+                end
+                
+                local healthText = string.format("HP: %d/%d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
+                local nameText = player.DisplayName or player.Name
+                
+                espData.Label.Text = string.format("%s\n%s%s", nameText, healthText, distanceText)
+                espData.Label.TextColor3 = espData.Highlight.FillColor
+                espData.Label.TextSize = MainModule.Misc.ESPTextSize
+            elseif espData.Billboard then
+                espData.Billboard.Enabled = false
+            end
+        end
+        
+        -- Создаем ESP для всех игроков
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                UpdatePlayerESP(player)
+                
+                -- Слушатель для изменений персонажа
+                player.CharacterAdded:Connect(function()
+                    task.wait(0.5)
+                    UpdatePlayerESP(player)
+                end)
+            end
+        end
+        
+        -- Слушатель для новых игроков
+        MainModule.ESP.Connections.PlayerAdded = Players.PlayerAdded:Connect(function(player)
+            if MainModule.Misc.ESPEnabled and player ~= LocalPlayer then
+                task.wait(0.5)
+                UpdatePlayerESP(player)
+            end
+        end)
+        
+        -- Основной цикл обновления ESP
+        MainModule.ESP.MainConnection = RunService.RenderStepped:Connect(function()
+            if not MainModule.Misc.ESPEnabled then return end
+            
+            for player, espData in pairs(MainModule.ESP.Players) do
+                if player and player.Parent and player.Character then
+                    UpdatePlayerESP(player)
+                else
+                    -- Удаляем ESP для вышедших игроков
+                    if espData.Highlight then
+                        SafeDestroy(espData.Highlight)
+                    end
+                    if espData.Billboard then
+                        SafeDestroy(espData.Billboard)
+                    end
+                    MainModule.ESP.Players[player] = nil
+                end
+            end
+        end)
+    end
+end
+
+-- Функция для очистки всего ESP
+function MainModule.ClearESP()
+    for player, espData in pairs(MainModule.ESP.Players) do
+        if espData.Highlight then
+            SafeDestroy(espData.Highlight)
+        end
+        if espData.Billboard then
+            SafeDestroy(espData.Billboard)
+        end
+    end
+    MainModule.ESP.Players = {}
+    
+    if MainModule.ESP.Connections then
+        for name, connection in pairs(MainModule.ESP.Connections) do
+            if connection then
+                pcall(function() connection:Disconnect() end)
+                MainModule.ESP.Connections[name] = nil
+            end
         end
     end
     
-    button.MouseButton1Click:Connect(ActivateTab)
-end
-
--- Обновленная функция управления горячими клавишами
-local hotkeyConnection
-local function setupHotkeyListener()
-    if hotkeyConnection then
-        hotkeyConnection:Disconnect()
-        hotkeyConnection = nil
+    if MainModule.ESP.Folder then
+        SafeDestroy(MainModule.ESP.Folder)
+        MainModule.ESP.Folder = nil
     end
     
-    hotkeyConnection = UIS.InputBegan:Connect(function(input)
-        if input.KeyCode == menuHotkey then
-            MainFrame.Visible = not MainFrame.Visible
-            if MainFrame.Visible then
-                MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
-                if UIS.TouchEnabled then
-                    MobileOpenButton.Visible = false
+    if MainModule.ESP.MainConnection then
+        MainModule.ESP.MainConnection:Disconnect()
+        MainModule.ESP.MainConnection = nil
+    end
+end
+
+-- Функции скорости
+function MainModule.ToggleSpeedHack(enabled)
+    MainModule.SpeedHack.Enabled = enabled
+    
+    if speedConnection then
+        speedConnection:Disconnect()
+        speedConnection = nil
+    end
+    
+    if enabled then
+        speedConnection = RunService.Heartbeat:Connect(function()
+            if MainModule.SpeedHack.Enabled then
+                local character = GetCharacter()
+                if character then
+                    local humanoid = GetHumanoid(character)
+                    if humanoid then
+                        humanoid.WalkSpeed = MainModule.SpeedHack.CurrentSpeed
+                    end
                 end
-            else
-                if UIS.TouchEnabled then
-                    MobileOpenButton.Visible = true
+            end
+        end)
+    else
+        local character = GetCharacter()
+        if character then
+            local humanoid = GetHumanoid(character)
+            if humanoid then
+                humanoid.WalkSpeed = MainModule.SpeedHack.DefaultSpeed
+            end
+        end
+    end
+end
+
+function MainModule.SetSpeed(value)
+    if value < MainModule.SpeedHack.MinSpeed then
+        value = MainModule.SpeedHack.MinSpeed
+    elseif value > MainModule.SpeedHack.MaxSpeed then
+        value = MainModule.SpeedHack.MaxSpeed
+    end
+    
+    MainModule.SpeedHack.CurrentSpeed = value
+    
+    if MainModule.SpeedHack.Enabled then
+        local character = GetCharacter()
+        if character then
+            local humanoid = GetHumanoid(character)
+            if humanoid then
+                humanoid.WalkSpeed = value
+            end
+        end
+    end
+    
+    return value
+end
+
+-- Функции телепортации с моментальной телепортацией
+function MainModule.TeleportUp100()
+    local character = GetCharacter()
+    if character then
+        local rootPart = GetRootPart(character)
+        if rootPart then
+            local targetPos = rootPart.Position + Vector3.new(0, 100, 0)
+            SafeTeleport(targetPos)
+        end
+    end
+end
+
+function MainModule.TeleportDown40()
+    local character = GetCharacter()
+    if character then
+        local rootPart = GetRootPart(character)
+        if rootPart then
+            local targetPos = rootPart.Position + Vector3.new(0, -40, 0)
+            SafeTeleport(targetPos)
+        end
+    end
+end
+
+-- Anti Stun QTE функция
+function MainModule.ToggleAntiStunQTE(enabled)
+    MainModule.AutoQTE.AntiStunEnabled = enabled
+    
+    if antiStunConnection then
+        antiStunConnection:Disconnect()
+        antiStunConnection = nil
+    end
+    
+    if enabled then
+        antiStunConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.AutoQTE.AntiStunEnabled then return end
+            
+            pcall(function()
+                local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+                local impactFrames = playerGui:FindFirstChild("ImpactFrames")
+                if not impactFrames then return end
+                
+                local replicatedStorage = ReplicatedStorage
+                
+                local success, hbgModule = pcall(function()
+                    return require(replicatedStorage.Modules.HBGQTE)
+                end)
+                
+                if not success then return end
+                
+                for _, child in pairs(impactFrames:GetChildren()) do
+                    if child.Name == "OuterRingTemplate" and child:IsA("Frame") then
+                        for _, innerChild in pairs(impactFrames:GetChildren()) do
+                            if innerChild.Name == "InnerTemplate" and innerChild.Position == child.Position 
+                               and not innerChild:GetAttribute("Failed") and not innerChild:GetAttribute("Tweening") then
+                               
+                                pcall(function()
+                                    local qteData = {
+                                        Inner = innerChild,
+                                        Outer = child,
+                                        Duration = 2,
+                                        StartedAt = tick()
+                                    }
+                                    hbgModule.Pressed(false, qteData)
+                                end)
+                                break
+                            end
+                        end
+                    end
+                end
+            end)
+        end)
+    end
+end
+
+-- Функция для установки типа Guard
+function MainModule.SetGuardType(guardType)
+    if guardType == "Circle" then
+        MainModule.Guards.SelectedGuard = "Circle"
+    elseif guardType == "Triangle" then
+        MainModule.Guards.SelectedGuard = "Triangle"
+    elseif guardType == "Square" then
+        MainModule.Guards.SelectedGuard = "Square"
+    else
+        MainModule.Guards.SelectedGuard = "Circle"
+    end
+end
+
+-- Guards функции
+function MainModule.SpawnAsGuard()
+    local args = {
+        {
+            AttemptToSpawnAsGuard = MainModule.Guards.SelectedGuard
+        }
+    }
+    
+    pcall(function()
+        ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PlayableGuardRemote"):FireServer(unpack(args))
+    end)
+end
+
+function MainModule.ToggleAutoFarm(enabled)
+    MainModule.Guards.AutoFarm = enabled
+    
+    if autoFarmConnection then
+        autoFarmConnection:Disconnect()
+        autoFarmConnection = nil
+    end
+    
+    if enabled then
+        autoFarmConnection = RunService.Heartbeat:Connect(function()
+            if MainModule.Guards.AutoFarm then
+                local args2 = {
+                    "GameOver",
+                    4450
+                }
+                pcall(function()
+                    ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("VideoGameRemote"):FireServer(unpack(args2))
+                end)
+            end
+        end)
+    end
+end
+
+-- Rapid Fire функция
+function MainModule.ToggleRapidFire(enabled)
+    MainModule.Guards.RapidFire = enabled
+    
+    if rapidFireConnection then
+        rapidFireConnection:Disconnect()
+        rapidFireConnection = nil
+    end
+    
+    if enabled then
+        rapidFireConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.Guards.RapidFire then return end
+            
+            pcall(function()
+                local weaponsFolder = ReplicatedStorage:FindFirstChild("Weapons")
+                if not weaponsFolder then return end
+                
+                local gunsFolder = weaponsFolder:FindFirstChild("Guns")
+                if gunsFolder then
+                    for _, obj in ipairs(gunsFolder:GetDescendants()) do
+                        if obj.Name == "FireRateCD" and (obj:IsA("NumberValue") or obj:IsA("IntValue")) then
+                            if not MainModule.Guards.OriginalFireRates[obj] then
+                                MainModule.Guards.OriginalFireRates[obj] = obj.Value
+                            end
+                            obj.Value = 0
+                        end
+                    end
+                end
+                
+                local character = GetCharacter()
+                if character then
+                    for _, tool in pairs(character:GetChildren()) do
+                        if tool:IsA("Tool") then
+                            for _, obj in pairs(tool:GetDescendants()) do
+                                if obj.Name == "FireRateCD" and (obj:IsA("NumberValue") or obj:IsA("IntValue")) then
+                                    if not MainModule.Guards.OriginalFireRates[obj] then
+                                        MainModule.Guards.OriginalFireRates[obj] = obj.Value
+                                    end
+                                    obj.Value = 0
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        end)
+    else
+        pcall(function()
+            for obj, originalValue in pairs(MainModule.Guards.OriginalFireRates) do
+                if obj and obj.Parent then
+                    obj.Value = originalValue
+                end
+            end
+            MainModule.Guards.OriginalFireRates = {}
+        end)
+    end
+end
+
+-- Infinite Ammo функция (исправленная)
+function MainModule.ToggleInfiniteAmmo(enabled)
+    MainModule.Guards.InfiniteAmmo = enabled
+    
+    if infiniteAmmoConnection then
+        infiniteAmmoConnection:Disconnect()
+        infiniteAmmoConnection = nil
+    end
+    
+    if enabled then
+        infiniteAmmoConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.Guards.InfiniteAmmo then return end
+            
+            task.spawn(function()
+                local character = GetCharacter()
+                if character then
+                    for _, tool in pairs(character:GetChildren()) do
+                        if tool:IsA("Tool") then
+                            for _, obj in pairs(tool:GetDescendants()) do
+                                if obj:IsA("NumberValue") or obj:IsA("IntValue") then
+                                    -- Ищем значения патронов
+                                    local nameLower = obj.Name:lower()
+                                    if nameLower:find("ammo") or 
+                                       nameLower:find("bullet") or
+                                       nameLower:find("clip") or
+                                       nameLower:find("munition") then
+                                        
+                                        -- Сохраняем оригинальное значение
+                                        if not MainModule.Guards.OriginalAmmo[obj] then
+                                            MainModule.Guards.OriginalAmmo[obj] = obj.Value
+                                        end
+                                        
+                                        -- Устанавливаем значение в math.huge (бесконечность)
+                                        if obj.Value < 999 then  -- Если значение изменилось на что-то меньшее
+                                            obj.Value = math.huge
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                -- Проверяем бэкпак
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                if backpack then
+                    for _, tool in pairs(backpack:GetChildren()) do
+                        if tool:IsA("Tool") then
+                            for _, obj in pairs(tool:GetDescendants()) do
+                                if obj:IsA("NumberValue") or obj:IsA("IntValue") then
+                                    local nameLower = obj.Name:lower()
+                                    if nameLower:find("ammo") or 
+                                       nameLower:find("bullet") or
+                                       nameLower:find("clip") then
+                                        
+                                        if not MainModule.Guards.OriginalAmmo[obj] then
+                                            MainModule.Guards.OriginalAmmo[obj] = obj.Value
+                                        end
+                                        
+                                        if obj.Value < 999 then
+                                            obj.Value = math.huge
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        end)
+    else
+        pcall(function()
+            for obj, originalValue in pairs(MainModule.Guards.OriginalAmmo) do
+                if obj and obj.Parent then
+                    obj.Value = originalValue
+                end
+            end
+            MainModule.Guards.OriginalAmmo = {}
+        end)
+    end
+end
+
+-- Hitbox Expander функция
+function MainModule.ToggleHitboxExpander(enabled)
+    MainModule.Hitbox.Enabled = enabled
+    
+    if MainModule.Hitbox.Connection then
+        MainModule.Hitbox.Connection:Disconnect()
+        MainModule.Hitbox.Connection = nil
+    end
+    
+    -- Очистка кэша при отключении
+    if not enabled then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                if root and MainModule.Hitbox.ModifiedParts[root] then
+                    -- Восстанавливаем оригинальный размер
+                    root.Size = MainModule.Hitbox.ModifiedParts[root]
+                    root.CanCollide = true
+                    MainModule.Hitbox.ModifiedParts[root] = nil
+                end
+            end
+        end
+        MainModule.Hitbox.ModifiedParts = {}
+        return
+    end
+    
+    -- Функция для изменения части
+    local function modifyPart(part)
+        if not MainModule.Hitbox.ModifiedParts[part] then
+            -- Сохраняем оригинальный размер
+            MainModule.Hitbox.ModifiedParts[part] = part.Size
+            -- Устанавливаем новый размер хитбокса
+            part.Size = Vector3.new(MainModule.Hitbox.Size, MainModule.Hitbox.Size, MainModule.Hitbox.Size)
+            part.CanCollide = false
+        end
+    end
+    
+    -- Обработчик для новых игроков
+    local function onPlayerAdded(player)
+        player.CharacterAdded:Connect(function(character)
+            if MainModule.Hitbox.Enabled then
+                local root = character:WaitForChild("HumanoidRootPart", 5)
+                if root then
+                    modifyPart(root)
+                end
+            end
+        end)
+    end
+    
+    -- Обработчик для существующих игроков
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                modifyPart(root)
+            end
+        end
+        if player ~= LocalPlayer then
+            onPlayerAdded(player)
+        end
+    end
+    
+    -- Основной цикл с оптимизацией
+    MainModule.Hitbox.Connection = RunService.RenderStepped:Connect(function()
+        if not MainModule.Hitbox.Enabled then return end
+        
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                if root and not MainModule.Hitbox.ModifiedParts[root] then
+                    pcall(modifyPart, root)
+                end
+            end
+        end
+    end)
+    
+    -- Очистка при выходе игрока
+    Players.PlayerRemoving:Connect(function(player)
+        if player.Character then
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                MainModule.Hitbox.ModifiedParts[root] = nil
+            end
+        end
+    end)
+    
+    -- Слушатель для новых игроков
+    Players.PlayerAdded:Connect(function(player)
+        if player ~= LocalPlayer then
+            onPlayerAdded(player)
+        end
+    end)
+end
+
+-- Функция для установки размера хитбокса
+function MainModule.SetHitboxSize(size)
+    MainModule.Hitbox.Size = size
+    
+    -- Обновляем существующие хитбоксы
+    if MainModule.Hitbox.Enabled then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                if root and MainModule.Hitbox.ModifiedParts[root] then
+                    root.Size = Vector3.new(size, size, size)
+                end
+            end
+        end
+    end
+end
+
+-- Dalgona функции
+function MainModule.CompleteDalgona()
+    task.spawn(function()
+        local DalgonaClientModule = ReplicatedStorage:FindFirstChild("Modules") and
+                                    ReplicatedStorage.Modules:FindFirstChild("Games") and
+                                    ReplicatedStorage.Modules.Games:FindFirstChild("DalgonaClient")
+        if not DalgonaClientModule then return end
+        
+        for _, func in pairs(getreg()) do
+            if typeof(func) == "function" and islclosure(func) then
+                local info = getinfo(func)
+                if info.nups == 76 then
+                    setupvalue(func, 33, 9999)
+                    setupvalue(func, 34, 9999)
                 end
             end
         end
     end)
 end
 
--- Установка начального слушателя
-setupHotkeyListener()
+function MainModule.FreeLighter()
+    LocalPlayer:SetAttribute("HasLighter", true)
+end
 
--- Закрытие при нажатии ESC
-UIS.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.Escape and MainFrame.Visible then
-        MainFrame.Visible = false
-        if UIS.TouchEnabled then
-            MobileOpenButton.Visible = true
+-- Tug Of War функции
+function MainModule.ToggleAutoPull(enabled)
+    MainModule.TugOfWar.AutoPull = enabled
+    
+    if autoPullConnection then
+        autoPullConnection:Disconnect()
+        autoPullConnection = nil
+    end
+    
+    if enabled then
+        autoPullConnection = RunService.Heartbeat:Connect(function()
+            if MainModule.TugOfWar.AutoPull then
+                pcall(function()
+                    local Remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("TemporaryReachedBindable")
+                    local args = {
+                        { IHateYou = true }
+                    }
+                    Remote:FireServer(unpack(args))
+                end)
+                task.wait(0.25)
+            end
+        end)
+    end
+end
+
+-- Jump Rope функции
+function MainModule.DeleteJumpRope()
+    local ropeFound = false
+    
+    -- Ищем веревку в workspace
+    for _, obj in pairs(workspace:GetDescendants()) do
+        -- Ищем по имени "Rope"
+        if obj.Name == "Rope" then
+            if obj:IsA("Model") or obj:IsA("Part") or obj:IsA("MeshPart") then
+                obj:Destroy()
+                ropeFound = true
+                break
+            end
         end
+    end
+    
+    -- Если не нашли по точному имени, ищем по части имени
+    if not ropeFound then
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj.Name:lower():find("rope") and 
+               (obj:IsA("Model") or obj:IsA("Part") or obj:IsA("MeshPart")) then
+                obj:Destroy()
+                ropeFound = true
+                break
+            end
+        end
+    end
+    
+    -- Проверяем в папке Effects
+    if not ropeFound then
+        local effects = workspace:FindFirstChild("Effects")
+        if effects then
+            for _, obj in pairs(effects:GetDescendants()) do
+                if obj.Name:lower():find("rope") and 
+                   (obj:IsA("Model") or obj:IsA("Part") or obj:IsA("MeshPart")) then
+                    obj:Destroy()
+                    ropeFound = true
+                    break
+                end
+            end
+        end
+    end
+    
+    return ropeFound
+end
+
+function MainModule.TeleportToJumpRopeEnd()
+    local character = GetCharacter()
+    if character then
+        local rootPart = GetRootPart(character)
+        if rootPart then
+            SafeTeleport(Vector3.new(720.896057, 198.628311, 921.170654))
+        end
+    end
+end
+
+function MainModule.TeleportToJumpRopeStart()
+    local character = GetCharacter()
+    if character then
+        local rootPart = GetRootPart(character)
+        if rootPart then
+            SafeTeleport(Vector3.new(615.284424, 192.274277, 920.952515))
+        end
+    end
+end
+
+-- Функция для создания AntiFall платформы Glass Bridge (-5 Y) - ПОЛНОСТЬЮ НЕВИДИМАЯ
+function MainModule.CreateGlassBridgeAntiFall()
+    -- Удаляем старую платформу если она есть
+    if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
+        MainModule.GlassBridge.GlassAntiFallPlatform:Destroy()
+        MainModule.GlassBridge.GlassAntiFallPlatform = nil
+    end
+    
+    local character = GetCharacter()
+    if not character then return nil end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return nil end
+    
+    local currentPosition = rootPart.Position
+    
+    -- Создание ПОЛНОСТЬЮ НЕВИДИМОЙ платформы
+    local platform = Instance.new("Part")
+    platform.Name = "GlassBridgeAntiFall"
+    platform.Size = MainModule.GlassBridge.PlatformSize
+    platform.Anchored = true
+    platform.CanCollide = true
+    platform.Transparency = 1 -- ПОЛНАЯ НЕВИДИМОСТЬ
+    platform.Material = Enum.Material.Plastic
+    platform.CastShadow = false
+    platform.CanQuery = false -- Отключаем запросы
+    
+    -- Позиция на 5 единиц ниже игрока
+    platform.Position = Vector3.new(
+        currentPosition.X,
+        currentPosition.Y - 5,
+        currentPosition.Z
+    )
+    platform.Parent = workspace
+    
+    MainModule.GlassBridge.GlassAntiFallPlatform = platform
+    MainModule.GlassBridge.AntiFallEnabled = true
+    
+    print("[CreonX] Glass Bridge AntiFall создан (полностью невидимый) на высоте Y -5")
+    
+    return platform
+end
+
+-- Функция для удаления AntiFall платформы Glass Bridge
+function MainModule.RemoveGlassBridgeAntiFall()
+    if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
+        MainModule.GlassBridge.GlassAntiFallPlatform:Destroy()
+        MainModule.GlassBridge.GlassAntiFallPlatform = nil
+    end
+    
+    MainModule.GlassBridge.AntiFallEnabled = false
+    print("[CreonX] Glass Bridge AntiFall удален")
+    return true
+end
+
+-- Функция для создания Sky Squid AntiFall платформы (-5 Y) - ПОЛНОСТЬЮ НЕВИДИМАЯ
+function MainModule.CreateSkySquidAntiFall()
+    -- Удаляем старую платформу если она есть
+    if MainModule.SkySquid.AntiFallPlatform and MainModule.SkySquid.AntiFallPlatform.Parent then
+        MainModule.SkySquid.AntiFallPlatform:Destroy()
+        MainModule.SkySquid.AntiFallPlatform = nil
+    end
+    
+    local character = GetCharacter()
+    if not character then return nil end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return nil end
+    
+    local currentPosition = rootPart.Position
+    
+    -- Создание ПОЛНОСТЬЮ НЕВИДИМОЙ платформы
+    local platform = Instance.new("Part")
+    platform.Name = "SkySquidAntiFall"
+    platform.Size = MainModule.SkySquid.PlatformSize
+    platform.Anchored = true
+    platform.CanCollide = true
+    platform.Transparency = 1 -- ПОЛНАЯ НЕВИДИМОСТЬ
+    platform.Material = Enum.Material.Plastic
+    platform.CastShadow = false
+    platform.CanQuery = false -- Отключаем запросы
+    
+    -- Позиция на 5 единиц ниже игрока
+    platform.Position = Vector3.new(
+        currentPosition.X,
+        currentPosition.Y - 5,
+        currentPosition.Z
+    )
+    platform.Parent = workspace
+    
+    MainModule.SkySquid.AntiFallPlatform = platform
+    
+    print("[CreonX] Sky Squid AntiFall создан (полностью невидимый) на высоте Y -5")
+    
+    return platform
+end
+
+-- Функция для удаления Sky Squid AntiFall платформы
+function MainModule.RemoveSkySquidAntiFall()
+    if MainModule.SkySquid.AntiFallPlatform and MainModule.SkySquid.AntiFallPlatform.Parent then
+        MainModule.SkySquid.AntiFallPlatform:Destroy()
+        MainModule.SkySquid.AntiFallPlatform = nil
+    end
+    
+    print("[CreonX] Sky Squid AntiFall удален")
+    return true
+end
+
+-- Функция для создания Jump Rope AntiFall платформы (-5 Y) - ПОЛНОСТЬЮ НЕВИДИМАЯ
+function MainModule.CreateJumpRopeAntiFall()
+    -- Удаляем старую платформу если она есть
+    if MainModule.JumpRope.AntiFallPlatform and MainModule.JumpRope.AntiFallPlatform.Parent then
+        MainModule.JumpRope.AntiFallPlatform:Destroy()
+        MainModule.JumpRope.AntiFallPlatform = nil
+    end
+    
+    local character = GetCharacter()
+    if not character then return nil end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return nil end
+    
+    local currentPosition = rootPart.Position
+    
+    -- Создание ПОЛНОСТЬЮ НЕВИДИМОЙ платформы
+    local platform = Instance.new("Part")
+    platform.Name = "JumpRopeAntiFall"
+    platform.Size = MainModule.JumpRope.PlatformSize
+    platform.Anchored = true
+    platform.CanCollide = true
+    platform.Transparency = 1 -- ПОЛНАЯ НЕВИДИМОСТЬ
+    platform.Material = Enum.Material.Plastic
+    platform.CastShadow = false
+    platform.CanQuery = false -- Отключаем запросы
+    
+    -- Позиция на 5 единиц ниже игрока
+    platform.Position = Vector3.new(
+        currentPosition.X,
+        currentPosition.Y - 5,
+        currentPosition.Z
+    )
+    platform.Parent = workspace
+    
+    MainModule.JumpRope.AntiFallPlatform = platform
+    
+    print("[CreonX] Jump Rope AntiFall создан (полностью невидимый) на высоте Y -5")
+    
+    return platform
+end
+
+-- Функция для удаления Jump Rope AntiFall платформы
+function MainModule.RemoveJumpRopeAntiFall()
+    if MainModule.JumpRope.AntiFallPlatform and MainModule.JumpRope.AntiFallPlatform.Parent then
+        MainModule.JumpRope.AntiFallPlatform:Destroy()
+        MainModule.JumpRope.AntiFallPlatform = nil
+    end
+    
+    print("[CreonX] Jump Rope AntiFall удален")
+    return true
+end
+
+-- Функция для включения/выключения AntiFall Glass Bridge
+function MainModule.ToggleGlassBridgeAntiFall(enabled)
+    if enabled then
+        return MainModule.CreateGlassBridgeAntiFall()
+    else
+        return MainModule.RemoveGlassBridgeAntiFall()
+    end
+end
+
+-- Функция для включения/выключения AntiFall Sky Squid
+function MainModule.ToggleSkySquidAntiFall(enabled)
+    if enabled then
+        return MainModule.CreateSkySquidAntiFall()
+    else
+        return MainModule.RemoveSkySquidAntiFall()
+    end
+end
+
+-- Функция для включения/выключения AntiFall Jump Rope
+function MainModule.ToggleJumpRopeAntiFall(enabled)
+    if enabled then
+        return MainModule.CreateJumpRopeAntiFall()
+    else
+        return MainModule.RemoveJumpRopeAntiFall()
+    end
+end
+
+-- Glass Bridge AntiBreak функция
+function MainModule.ToggleGlassBridgeAntiBreak(enabled)
+    MainModule.GlassBridge.AntiBreakEnabled = enabled
+    
+    if MainModule.GlassBridge.AntiBreakConnection then
+        MainModule.GlassBridge.AntiBreakConnection:Disconnect()
+        MainModule.GlassBridge.AntiBreakConnection = nil
+    end
+    
+    -- Удаление всех существующих платформ при отключении
+    if not enabled then
+        for _, platform in pairs(MainModule.GlassBridge.GlassPlatforms) do
+            if platform and platform.Parent then
+                platform:Destroy()
+            end
+        end
+        MainModule.GlassBridge.GlassPlatforms = {}
+        return
+    end
+    
+    -- Функция создания платформы под стеклом
+    local function createPlatformUnderGlass(glassModel)
+        if not glassModel or not glassModel.PrimaryPart then return end
+        
+        local platformName = "AntiFallPlatform_" .. glassModel.Name
+        
+        -- Проверяем, существует ли уже платформа
+        local existingPlatform = nil
+        for _, platform in pairs(MainModule.GlassBridge.GlassPlatforms) do
+            if platform and platform.Name == platformName then
+                existingPlatform = platform
+                break
+            end
+        end
+        
+        if existingPlatform then
+            existingPlatform.CFrame = glassModel.PrimaryPart.CFrame * CFrame.new(0, -1.5, 0)
+            return existingPlatform
+        end
+        
+        -- Создание невидимой платформы
+        local platform = Instance.new("Part")
+        platform.Name = platformName
+        platform.Size = Vector3.new(5, 1, 5)
+        platform.Anchored = true
+        platform.CanCollide = true
+        platform.Transparency = 1
+        platform.CastShadow = false
+        
+        -- Позиция на 1.5 ниже стекла
+        platform.CFrame = glassModel.PrimaryPart.CFrame * CFrame.new(0, -1.5, 0)
+        platform.Parent = workspace
+        
+        -- Добавление в таблицу для управления
+        table.insert(MainModule.GlassBridge.GlassPlatforms, platform)
+        
+        return platform
+    end
+    
+    -- Подключение Heartbeat для постоянной проверки
+    MainModule.GlassBridge.AntiBreakConnection = RunService.Heartbeat:Connect(function()
+        -- Поиск GlassHolder в GlassBridge
+        local GlassBridge = workspace:FindFirstChild("GlassBridge")
+        if not GlassBridge then return end
+        
+        local GlassHolder = GlassBridge:FindFirstChild("GlassHolder")
+        if not GlassHolder then return end
+        
+        -- Проход по всем стеклянным панелям
+        for _, rowFolder in pairs(GlassHolder:GetChildren()) do
+            for _, glassModel in pairs(rowFolder:GetChildren()) do
+                if glassModel:IsA("Model") and glassModel.PrimaryPart then
+                    -- Удаление атрибута, который отвечает за взрыв/поломку стекла
+                    if glassModel.PrimaryPart:GetAttribute("exploitingisevil") ~= nil then
+                        glassModel.PrimaryPart:SetAttribute("exploitingisevil", nil)
+                    end
+                    
+                    -- Дополнительная защита: делаем стекло неразрушаемым
+                    if glassModel.PrimaryPart:IsA("BasePart") then
+                        glassModel.PrimaryPart.CanCollide = true
+                        glassModel.PrimaryPart.Anchored = true
+                        
+                        -- Защита от удаления стекла
+                        for _, descendant in pairs(glassModel:GetDescendants()) do
+                            if descendant:IsA("BasePart") then
+                                descendant.CanCollide = true
+                                descendant.Anchored = true
+                                descendant.Transparency = 0
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    
+    -- Сразу создаем платформы при включении
+    task.spawn(function()
+        task.wait(1)
+        local GlassBridge = workspace:FindFirstChild("GlassBridge")
+        if GlassBridge and GlassBridge:FindFirstChild("GlassHolder") then
+            local GlassHolder = GlassBridge.GlassHolder
+            for _, rowFolder in pairs(GlassHolder:GetChildren()) do
+                for _, glassModel in pairs(rowFolder:GetChildren()) do
+                    if glassModel:IsA("Model") and glassModel.PrimaryPart then
+                        createPlatformUnderGlass(glassModel)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Glass Bridge ESP функция
+function MainModule.RevealGlassBridge()
+    local Effects = ReplicatedStorage:FindFirstChild("Modules") and 
+                   ReplicatedStorage.Modules:FindFirstChild("Effects")
+    
+    local glassHolder = workspace:FindFirstChild("GlassBridge") and workspace.GlassBridge:FindFirstChild("GlassHolder")
+    if not glassHolder then
+        warn("GlassHolder not found in workspace.GlassBridge")
+        return
+    end
+
+    for _, tilePair in pairs(glassHolder:GetChildren()) do
+        for _, tileModel in pairs(tilePair:GetChildren()) do
+            if tileModel:IsA("Model") and tileModel.PrimaryPart then
+                local primaryPart = tileModel.PrimaryPart
+                for _, child in ipairs(tileModel:GetChildren()) do
+                    if child:IsA("Highlight") then
+                        child:Destroy()
+                    end
+                end
+                local isBreakable = primaryPart:GetAttribute("exploitingisevil") == true
+
+                local targetColor = isBreakable and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
+                local transparency = 0.5
+
+                for _, part in pairs(tileModel:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        TweenService:Create(part, TweenInfo.new(0.5, Enum.EasingStyle.Linear), {
+                            Transparency = transparency,
+                            Color = targetColor
+                        }):Play()
+                    end
+                end
+
+                local highlight = Instance.new("Highlight")
+                highlight.FillColor = targetColor
+                highlight.FillTransparency = 0.7
+                highlight.OutlineTransparency = 0.5
+                highlight.Parent = tileModel
+            end
+        end
+    end
+
+    -- Создаем уведомление
+    if Effects then
+        local success, result = pcall(function()
+            return require(Effects)
+        end)
+        
+        if success and result and result.AnnouncementTween then
+            result.AnnouncementTween({
+                AnnouncementOneLine = true,
+                FasterTween = true,
+                DisplayTime = 10,
+                AnnouncementDisplayText = "[CreonHub]: Safe tiles are green, breakable tiles are red!"
+            })
+        end
+    end
+    
+    -- Также создаем текстовое уведомление
+    print("[CreonHub]: Safe tiles are green, breakable tiles are red!")
+end
+
+-- Teleport to End для Glass Bridge
+function MainModule.TeleportToGlassBridgeEnd()
+    SafeTeleport(MainModule.GlassBridge.EndPosition)
+end
+
+-- HNS Infinity Stamina функция
+function MainModule.ToggleHNSInfinityStamina(enabled)
+    MainModule.HNS.InfinityStaminaEnabled = enabled
+    
+    if MainModule.HNS.InfinityStaminaConnection then
+        MainModule.HNS.InfinityStaminaConnection:Disconnect()
+        MainModule.HNS.InfinityStaminaConnection = nil
+    end
+    
+    if enabled then
+        MainModule.HNS.InfinityStaminaConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.HNS.InfinityStaminaEnabled then return end
+            
+            task.spawn(function()
+                if LocalPlayer.Character then
+                    local stamina = LocalPlayer.Character:FindFirstChild("StaminaVal")
+                    if stamina then
+                        stamina.Value = 100
+                    end
+                end
+            end)
+        end)
+    end
+end
+
+-- Misc функции
+function MainModule.ToggleInstaInteract(enabled)
+    MainModule.Misc.InstaInteract = enabled
+    
+    if instaInteractConnection then
+        instaInteractConnection:Disconnect()
+        instaInteractConnection = nil
+    end
+    
+    if enabled then
+        local function makePromptInstant(prompt)
+            if prompt:IsA("ProximityPrompt") then
+                prompt.HoldDuration = 0
+            end
+        end
+
+        for _, obj in pairs(Workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") then
+                makePromptInstant(obj)
+            end
+        end
+
+        instaInteractConnection = Workspace.DescendantAdded:Connect(function(obj)
+            if obj:IsA("ProximityPrompt") then
+                makePromptInstant(obj)
+            end
+        end)
+    end
+end
+
+function MainModule.ToggleNoCooldownProximity(enabled)
+    MainModule.Misc.NoCooldownProximity = enabled
+    
+    if noCooldownConnection then
+        noCooldownConnection:Disconnect()
+        noCooldownConnection = nil
+    end
+    
+    if enabled then
+        for _, v in pairs(Workspace:GetDescendants()) do
+            if v.ClassName == "ProximityPrompt" then
+                v.HoldDuration = 0
+            end
+        end
+        
+        noCooldownConnection = Workspace.DescendantAdded:Connect(function(obj)
+            if MainModule.Misc.NoCooldownProximity then
+                if obj:IsA("ProximityPrompt") then
+                    obj.HoldDuration = 0
+                end
+            end
+        end)
+    end
+end
+
+-- Функция для получения координат
+function MainModule.GetPlayerPosition()
+    local character = GetCharacter()
+    if character then
+        local rootPart = GetRootPart(character)
+        if rootPart then
+            local position = rootPart.Position
+            return string.format("X: %.1f, Y: %.1f, Z: %.1f", position.X, position.Y, position.Z)
+        end
+    end
+    return "Не доступно"
+end
+
+-- Очистка при закрытии
+function MainModule.Cleanup()
+    -- Отключаем все соединения
+    local connections = {
+        speedConnection, autoFarmConnection, godModeConnection, instaInteractConnection,
+        noCooldownConnection, antiStunConnection, rapidFireConnection, infiniteAmmoConnection,
+        hitboxConnection, autoPullConnection, bypassRagdollConnection
+    }
+    
+    for _, conn in pairs(connections) do
+        if conn then
+            pcall(function() conn:Disconnect() end)
+        end
+    end
+    
+    -- Отключаем ESP
+    MainModule.ClearESP()
+    
+    -- Отключаем RLGL
+    if MainModule.RLGL.Connection then
+        MainModule.RLGL.Connection:Disconnect()
+        MainModule.RLGL.Connection = nil
+    end
+    
+    -- Отключаем REBEL
+    if MainModule.Rebel.Connection then
+        MainModule.Rebel.Connection:Disconnect()
+        MainModule.Rebel.Connection = nil
+    end
+    
+    -- Отключаем HNS соединения
+    if MainModule.HNS.InfinityStaminaConnection then
+        MainModule.HNS.InfinityStaminaConnection:Disconnect()
+        MainModule.HNS.InfinityStaminaConnection = nil
+    end
+    
+    -- Отключаем Spikes Kill
+    if MainModule.SpikesKill.AnimationConnection then
+        MainModule.SpikesKill.AnimationConnection:Disconnect()
+        MainModule.SpikesKill.AnimationConnection = nil
+    end
+    
+    if MainModule.SpikesKill.CharacterAddedConnection then
+        MainModule.SpikesKill.CharacterAddedConnection:Disconnect()
+        MainModule.SpikesKill.CharacterAddedConnection = nil
+    end
+    
+    -- Удаляем платформу Spikes Kill
+    if MainModule.SpikesKill.SpikesPlatform then
+        MainModule.SpikesKill.SpikesPlatform:Destroy()
+        MainModule.SpikesKill.SpikesPlatform = nil
+    end
+    
+    -- Отключаем Glass Bridge соединения
+    if MainModule.GlassBridge.AntiBreakConnection then
+        MainModule.GlassBridge.AntiBreakConnection:Disconnect()
+        MainModule.GlassBridge.AntiBreakConnection = nil
+    end
+    
+    -- Отключаем Glass ESP соединения
+    if MainModule.GlassBridge.GlassESPConnection then
+        MainModule.GlassBridge.GlassESPConnection:Disconnect()
+        MainModule.GlassBridge.GlassESPConnection = nil
+    end
+    
+    -- Отключаем Jump Rope соединения
+    if MainModule.JumpRope.Connection then
+        MainModule.JumpRope.Connection:Disconnect()
+        MainModule.JumpRope.Connection = nil
+    end
+    
+    -- Отключаем Sky Squid соединения
+    if MainModule.SkySquid.Connection then
+        MainModule.SkySquid.Connection:Disconnect()
+        MainModule.SkySquid.Connection = nil
+    end
+    
+    -- Отключаем Tug of War соединения
+    if MainModule.TugOfWar.Connection then
+        MainModule.TugOfWar.Connection:Disconnect()
+        MainModule.TugOfWar.Connection = nil
+    end
+    
+    -- Отключаем Hitbox Expander
+    if MainModule.Hitbox.Connection then
+        MainModule.Hitbox.Connection:Disconnect()
+        MainModule.Hitbox.Connection = nil
+    end
+    
+    -- Отключаем Anti Time Stop
+    if MainModule.AntiTimeStop.Connection then
+        MainModule.AntiTimeStop.Connection:Disconnect()
+        MainModule.AntiTimeStop.Connection = nil
+    end
+    
+    -- Восстанавливаем хитбоксы
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if root and MainModule.Hitbox.ModifiedParts[root] then
+                root.Size = MainModule.Hitbox.ModifiedParts[root]
+                root.CanCollide = true
+            end
+        end
+    end
+    MainModule.Hitbox.ModifiedParts = {}
+    
+    -- Восстанавливаем Infinite Ammo
+    for obj, originalValue in pairs(MainModule.Guards.OriginalAmmo) do
+        if obj and obj.Parent then
+            obj.Value = originalValue
+        end
+    end
+    MainModule.Guards.OriginalAmmo = {}
+    
+    -- Восстанавливаем Rapid Fire
+    for obj, originalValue in pairs(MainModule.Guards.OriginalFireRates) do
+        if obj and obj.Parent then
+            obj.Value = originalValue
+        end
+    end
+    MainModule.Guards.OriginalFireRates = {}
+    
+    -- Восстанавливаем Anti Time Stop свойства
+    for humanoid, properties in pairs(MainModule.AntiTimeStop.OriginalProperties) do
+        if humanoid and humanoid.Parent then
+            humanoid.WalkSpeed = properties.WalkSpeed
+            humanoid.JumpPower = properties.JumpPower
+        end
+    end
+    MainModule.AntiTimeStop.OriginalProperties = {}
+    
+    -- Удаляем платформы Glass Bridge
+    for _, platform in pairs(MainModule.GlassBridge.GlassPlatforms) do
+        if platform and platform.Parent then
+            platform:Destroy()
+        end
+    end
+    MainModule.GlassBridge.GlassPlatforms = {}
+    
+    -- Удаляем Anti Fall платформы
+    if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
+        MainModule.RemoveGlassBridgeAntiFall()
+    end
+    
+    if MainModule.SkySquid.AntiFallPlatform and MainModule.SkySquid.AntiFallPlatform.Parent then
+        MainModule.RemoveSkySquidAntiFall()
+    end
+    
+    if MainModule.JumpRope.AntiFallPlatform and MainModule.JumpRope.AntiFallPlatform.Parent then
+        MainModule.RemoveJumpRopeAntiFall()
+    end
+    
+    -- Восстанавливаем скорость
+    if MainModule.SpeedHack.Enabled then
+        MainModule.ToggleSpeedHack(false)
+    end
+    
+    -- Сбрасываем переменные
+    MainModule.SpeedHack.Enabled = false
+    MainModule.SpeedHack.CurrentSpeed = 16
+    MainModule.Noclip.Enabled = false
+    MainModule.AutoQTE.AntiStunEnabled = false
+    MainModule.Rebel.Enabled = false
+    MainModule.RLGL.GodMode = false
+    MainModule.Guards.AutoFarm = false
+    MainModule.Guards.RapidFire = false
+    MainModule.Guards.InfiniteAmmo = false
+    MainModule.Guards.HitboxExpander = false
+    MainModule.Hitbox.Enabled = false
+    MainModule.AntiTimeStop.Enabled = false
+    MainModule.HNS.InfinityStaminaEnabled = false
+    MainModule.Misc.ESPEnabled = false
+    MainModule.Misc.InstaInteract = false
+    MainModule.Misc.NoCooldownProximity = false
+    MainModule.Misc.BypassRagdollEnabled = false
+    MainModule.TugOfWar.AutoPull = false
+    MainModule.Dalgona.CompleteEnabled = false
+    MainModule.Dalgona.FreeLighterEnabled = false
+    MainModule.GlassBridge.AntiBreakEnabled = false
+    MainModule.GlassBridge.AntiFallEnabled = false
+    MainModule.GlassBridge.GlassESPEnabled = false
+    MainModule.SpikesKill.Enabled = false
+    
+    print("Creon X cleanup complete")
+end
+
+-- Автоматическая очистка при выходе
+LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
+    if not LocalPlayer.Parent then
+        MainModule.Cleanup()
     end
 end)
 
--- Автоматически открываем Main вкладку
-if tabButtons["Main"] then
-    tabButtons["Main"].BackgroundColor3 = Color3.fromRGB(0, 100, 200)
-    tabButtons["Main"].TextColor3 = Color3.fromRGB(255, 255, 255)
-end
-CreateMainContent()
-
--- Очистка при удалении GUI
-ScreenGui.AncestryChanged:Connect(function()
-    if not ScreenGui.Parent then
-        if MainModule.Cleanup then
-            MainModule.Cleanup()
-        end
-        if hotkeyConnection then
-            hotkeyConnection:Disconnect()
-        end
-    end
-end)
-
--- Функция для обновления слушателя горячей клавиши при изменении
-local function updateHotkeyListener()
-    setupHotkeyListener()
-end
-
--- Создаем связь между кнопкой изменения и обновлением слушателя
-if keyChangeButton then
-    keyChangeButton.MouseButton1Click:Connect(updateHotkeyListener)
-end
-
--- Отображение сообщения о загрузке
-print("Creon X v2.4 loaded successfully")
-print("Menu Hotkey: " .. menuHotkey.Name)
-if not isSupported then
-    warn("Warning: Executor " .. executorName .. " is not officially supported")
-else
-    print("Executor " .. executorName .. " is supported")
-end
+return MainModule
