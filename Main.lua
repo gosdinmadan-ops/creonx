@@ -30,10 +30,11 @@ MainModule.Noclip = {
 MainModule.AutoDodge = {
     Enabled = false,
     AnimationId = "rbxassetid://88451099342711",
-    Range = 9,
+    Range = 10,
     Connection = nil,
     LastDodgeTime = 0,
-    DodgeCooldown = 1
+    DodgeCooldown = 1,
+    TrackedPlayers = {}
 }
 
 MainModule.AutoQTE = {
@@ -2170,8 +2171,14 @@ function MainModule.ToggleAutoDodge(enabled)
         MainModule.AutoDodge.Connection = nil
     end
     
+    for player, _ in pairs(MainModule.AutoDodge.TrackedPlayers) do
+        MainModule.AutoDodge.TrackedPlayers[player] = nil
+    end
+    
     if enabled then
-        MainModule.AutoDodge.Connection = RunService.Heartbeat:Connect(function()
+        print("[AutoDodge] Включен - мониторинг анимации от других игроков в радиусе 10")
+        
+        local function checkPlayersAnimations()
             if not MainModule.AutoDodge.Enabled then return end
             
             local currentTime = tick()
@@ -2203,23 +2210,72 @@ function MainModule.ToggleAutoDodge(enabled)
                 local activeTracks = humanoid:GetPlayingAnimationTracks()
                 for _, track in pairs(activeTracks) do
                     if track.Animation and track.Animation.AnimationId == MainModule.AutoDodge.AnimationId then
-                        MainModule.AutoDodge.LastDodgeTime = currentTime
-                        if UserInputService.KeyboardEnabled then
-                            local keyCode = Enum.KeyCode.One
-                            local keys = {keyCode}
-                            pcall(function()
-                                UserInputService:SetKeysDown(keys)
-                                task.wait(0.1)
-                                UserInputService:SetKeysUp(keys)
-                            end)
+                        if not MainModule.AutoDodge.TrackedPlayers[player] then
+                            MainModule.AutoDodge.TrackedPlayers[player] = true
+                            MainModule.AutoDodge.LastDodgeTime = currentTime
+                            
+                            print("[AutoDodge] Игрок " .. player.Name .. " запустил атаку! Дистанция: " .. math.floor(distance) .. " - ДОДЖИМ!")
+                            
+                            if UserInputService.KeyboardEnabled then
+                                local keyCode = Enum.KeyCode.One
+                                local keys = {keyCode}
+                                pcall(function()
+                                    UserInputService:SetKeysDown(keys)
+                                    print("[AutoDodge] Нажата клавиша 1 для доджа")
+                                    task.wait(0.1)
+                                    UserInputService:SetKeysUp(keys)
+                                    print("[AutoDodge] Отпущена клавиша 1")
+                                end)
+                            end
+                            
+                            return
                         end
-                        return
+                    end
+                end
+                
+                if MainModule.AutoDodge.TrackedPlayers[player] then
+                    local foundAnimation = false
+                    for _, track in pairs(activeTracks) do
+                        if track.Animation and track.Animation.AnimationId == MainModule.AutoDodge.AnimationId then
+                            foundAnimation = true
+                            break
+                        end
+                    end
+                    
+                    if not foundAnimation then
+                        MainModule.AutoDodge.TrackedPlayers[player] = nil
+                        print("[AutoDodge] Игрок " .. player.Name .. " завершил анимацию, снимаем с отслеживания")
                     end
                 end
             end
+        end
+        
+        MainModule.AutoDodge.Connection = RunService.Heartbeat:Connect(function()
+            if not MainModule.AutoDodge.Enabled then return end
+            pcall(checkPlayersAnimations)
         end)
+        
+        Players.PlayerAdded:Connect(function(player)
+            if MainModule.AutoDodge.Enabled then
+                print("[AutoDodge] Новый игрок добавлен: " .. player.Name)
+            end
+        end)
+        
+        Players.PlayerRemoving:Connect(function(player)
+            if MainModule.AutoDodge.Enabled and MainModule.AutoDodge.TrackedPlayers[player] then
+                MainModule.AutoDodge.TrackedPlayers[player] = nil
+                print("[AutoDodge] Игрок " .. player.Name .. " вышел, удаляем из отслеживания")
+            end
+        end)
+        
+        print("[AutoDodge] Начинаем мониторинг игроков. Всего игроков: " .. #Players:GetPlayers())
+        
     else
         MainModule.AutoDodge.LastDodgeTime = 0
+        for player, _ in pairs(MainModule.AutoDodge.TrackedPlayers) do
+            MainModule.AutoDodge.TrackedPlayers[player] = nil
+        end
+        print("[AutoDodge] Выключен")
     end
 end
 
