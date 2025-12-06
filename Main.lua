@@ -30,7 +30,7 @@ MainModule.Noclip = {
 MainModule.AutoDodge = {
     Enabled = false,
     AnimationId = "rbxassetid://88451099342711",
-    Range = 9,
+    Range = 10,
     Connection = nil,
     LastDodgeTime = 0,
     DodgeCooldown = 1,
@@ -2636,3 +2636,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
