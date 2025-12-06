@@ -1,4 +1,4 @@
--- Main.lua - Creon X v2.5 (Исправленный AntiFall и Hitbox Size 40)
+-- Main.lua - Creon X v2.5 (Обновленный Spikes Kill и Void Kill)
 local MainModule = {}
 
 -- Services
@@ -112,6 +112,52 @@ MainModule.SkySquid = {
     PlatformSize = Vector3.new(10000, 1, 10000)
 }
 
+-- Void Kill System для Sky Squid Game
+MainModule.VoidKill = {
+    Enabled = false,
+    AnimationId = "rbxassetid://107989020363293", -- ID анимации для Void Kill
+    ReturnDelay = 2, -- Задержка перед возвратом после окончания анимации
+    OriginalSpikes = {}, -- Для сохранения шипов (если нужно)
+    
+    -- Внутренние переменные
+    SavedCFrame = nil,
+    ActiveAnimation = false,
+    AnimationStartTime = 0,
+    AnimationConnection = nil,
+    CharacterAddedConnection = nil,
+    AnimationStoppedConnections = {},
+    AnimationCheckConnection = nil,
+    TrackedAnimations = {},
+    
+    -- AntiFall для Sky Squid
+    AntiFallEnabled = false,
+    AntiFallPlatform = nil
+}
+
+-- HIDE AND SEEK - Spikes Kill System (Обновленная версия)
+MainModule.SpikesKill = {
+    Enabled = false,
+    AnimationId = "rbxassetid://105341857343164", -- НОВАЯ ID анимации шипов/урона
+    SpikesPosition = nil, -- Позиция шипов (запоминаем при включении)
+    PlatformHeightOffset = 5, -- На сколько выше шипов телепортируемся
+    ReturnDelay = 5, -- Задержка перед возвратом (5 секунд)
+    
+    -- Внутренние переменные
+    SavedCFrame = nil,
+    ActiveAnimation = false,
+    AnimationStartTime = 0,
+    AnimationConnection = nil,
+    CharacterAddedConnection = nil,
+    AnimationStoppedConnections = {},
+    AnimationCheckConnection = nil,
+    TrackedAnimations = {},
+    SafetyCheckConnection = nil,
+    
+    -- Для удаления шипов
+    OriginalSpikes = {}, -- Сохраняем оригинальные шипы
+    SpikesRemoved = false
+}
+
 -- Anti Time Stop System
 MainModule.AntiTimeStop = {
     Enabled = false,
@@ -125,30 +171,6 @@ MainModule.Hitbox = {
     Enabled = false,
     Connection = nil,
     ModifiedParts = {}
-}
-
--- HIDE AND SEEK - Spikes Kill System (Исправленная версия с постоянным отслеживанием)
-MainModule.SpikesKill = {
-    Enabled = false,
-    AnimationId = "rbxassetid://107989020363293", -- ID анимации шипов/урона
-    PlatformCFrame = CFrame.new(64.45010375976562, 960.6300048828125, -41.144325256347656), -- Координаты шипов
-    PlatformSize = Vector3.new(8, 1, 8), -- Размер платформы (чуть больше чем 1 человек)
-    PlatformHeightOffset = 5, -- На сколько выше шипов телепортируемся
-    PlatformColor = Color3.fromRGB(120, 120, 120), -- Серый цвет платформы
-    ReturnDelay = 5, -- Задержка перед возвратом (5 секунд)
-    
-    -- Внутренние переменные
-    Platform = nil,
-    SavedCFrame = nil,
-    OriginalSpikes = {},
-    ActiveAnimation = false,
-    AnimationStartTime = 0,
-    AnimationConnection = nil,
-    CharacterAddedConnection = nil,
-    AnimationStoppedConnections = {},
-    SafetyCheckConnection = nil,
-    TrackedAnimations = {}, -- Таблица для отслеживания активных анимаций
-    AnimationCheckConnection = nil -- Соединение для постоянной проверки
 }
 
 -- Misc System
@@ -1224,7 +1246,7 @@ function MainModule.ClearESP()
     end
 end
 
--- HIDE AND SEEK - Spikes Kill функция (Исправленная версия с постоянным отслеживанием)
+-- HIDE AND SEEK - Spikes Kill функция (Обновленная версия без платформы)
 function MainModule.ToggleSpikesKill(enabled)
     MainModule.SpikesKill.Enabled = enabled
     
@@ -1261,36 +1283,15 @@ function MainModule.ToggleSpikesKill(enabled)
     MainModule.SpikesKill.AnimationStartTime = 0
     MainModule.SpikesKill.TrackedAnimations = {}
     
-    -- Удаляем платформу при отключении
     if not enabled then
-        if MainModule.SpikesKill.Platform and MainModule.SpikesKill.Platform.Parent then
-            MainModule.SpikesKill.Platform:Destroy()
-            MainModule.SpikesKill.Platform = nil
-        end
         print("[Spikes Kill] Выключен")
         return
     end
     
-    print("[Spikes Kill] Включен - поиск анимации rbxassetid://107989020363293")
+    print("[Spikes Kill] Включен - поиск анимации " .. MainModule.SpikesKill.AnimationId)
     
-    -- Создаем платформу при включении
-    if not MainModule.SpikesKill.Platform then
-        MainModule.SpikesKill.Platform = Instance.new("Part")
-        MainModule.SpikesKill.Platform.Name = "SpikesKillPlatform"
-        MainModule.SpikesKill.Platform.Size = MainModule.SpikesKill.PlatformSize
-        MainModule.SpikesKill.Platform.Anchored = true
-        MainModule.SpikesKill.Platform.CanCollide = true
-        MainModule.SpikesKill.Platform.Transparency = 0.3
-        MainModule.SpikesKill.Platform.Color = MainModule.SpikesKill.PlatformColor
-        MainModule.SpikesKill.Platform.Material = Enum.Material.Neon
-        MainModule.SpikesKill.Platform.CastShadow = false
-        
-        -- Позиция платформы выше шипов на 5 единиц
-        MainModule.SpikesKill.Platform.CFrame = MainModule.SpikesKill.PlatformCFrame + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
-        MainModule.SpikesKill.Platform.Parent = workspace
-        
-        print("[Spikes Kill] Платформа создана на высоте +5 Y")
-    end
+    -- Автоматически удаляем шипы при включении
+    MainModule.DisableSpikes(true)
     
     -- Функция для проверки всех активных анимаций в реальном времени
     local function checkAnimations()
@@ -1321,11 +1322,38 @@ function MainModule.ToggleSpikesKill(enabled)
                         -- Сохраняем текущую позицию игрока
                         MainModule.SpikesKill.SavedCFrame = character:GetPrimaryPartCFrame()
                         
-                        -- Телепортируем игрока на платформу
-                        local targetCFrame = MainModule.SpikesKill.PlatformCFrame + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset + 2, 0)
-                        character:SetPrimaryPartCFrame(targetCFrame)
+                        -- Получаем позицию шипов (если есть)
+                        local spikesPosition = MainModule.SpikesKill.SpikesPosition
+                        if not spikesPosition then
+                            -- Если позиция шипов не запомнена, пытаемся получить ее
+                            local hideAndSeekMap = workspace:FindFirstChild("HideAndSeekMap")
+                            local killingParts = hideAndSeekMap and hideAndSeekMap:FindFirstChild("KillingParts")
+                            
+                            if killingParts and killingParts:FindFirstChildWhichIsA("BasePart") then
+                                -- Берем позицию первого шипа
+                                local firstSpike = killingParts:FindFirstChildWhichIsA("BasePart")
+                                if firstSpike then
+                                    spikesPosition = firstSpike.Position
+                                    MainModule.SpikesKill.SpikesPosition = spikesPosition
+                                    print("[Spikes Kill] Запомнена позиция шипов: " .. tostring(spikesPosition))
+                                end
+                            end
+                        end
                         
-                        print("[Spikes Kill] Телепортирован на платформу, запомнены исходные координаты")
+                        if spikesPosition then
+                            -- Телепортируем игрока на позицию шипов + 5 Y
+                            local targetPosition = spikesPosition + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
+                            character:SetPrimaryPartCFrame(CFrame.new(targetPosition))
+                            
+                            print("[Spikes Kill] Телепортирован в шипы, запомнены исходные координаты")
+                        else
+                            -- Если нет позиции шипов, телепортируем просто вверх
+                            local currentPos = character:GetPrimaryPartCFrame().Position
+                            local targetPosition = currentPos + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
+                            character:SetPrimaryPartCFrame(CFrame.new(targetPosition))
+                            
+                            print("[Spikes Kill] Телепортирован вверх, запомнены исходные координаты")
+                        end
                         
                         -- Запускаем таймер для возврата через 5 секунд
                         task.delay(MainModule.SpikesKill.ReturnDelay, function()
@@ -1375,11 +1403,38 @@ function MainModule.ToggleSpikesKill(enabled)
                     -- Сохраняем текущую позицию игрока
                     MainModule.SpikesKill.SavedCFrame = char:GetPrimaryPartCFrame()
                     
-                    -- Телепортируем игрока на платформу
-                    local targetCFrame = MainModule.SpikesKill.PlatformCFrame + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset + 2, 0)
-                    char:SetPrimaryPartCFrame(targetCFrame)
+                    -- Получаем позицию шипов (если есть)
+                    local spikesPosition = MainModule.SpikesKill.SpikesPosition
+                    if not spikesPosition then
+                        -- Если позиция шипов не запомнена, пытаемся получить ее
+                        local hideAndSeekMap = workspace:FindFirstChild("HideAndSeekMap")
+                        local killingParts = hideAndSeekMap and hideAndSeekMap:FindFirstChild("KillingParts")
+                        
+                        if killingParts and killingParts:FindFirstChildWhichIsA("BasePart") then
+                            -- Берем позицию первого шипа
+                            local firstSpike = killingParts:FindFirstChildWhichIsA("BasePart")
+                            if firstSpike then
+                                spikesPosition = firstSpike.Position
+                                MainModule.SpikesKill.SpikesPosition = spikesPosition
+                                print("[Spikes Kill] Запомнена позиция шипов: " .. tostring(spikesPosition))
+                            end
+                        end
+                    end
                     
-                    print("[Spikes Kill] Телепортирован на платформу, запомнены исходные координаты")
+                    if spikesPosition then
+                        -- Телепортируем игрока на позицию шипов + 5 Y
+                        local targetPosition = spikesPosition + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
+                        char:SetPrimaryPartCFrame(CFrame.new(targetPosition))
+                        
+                        print("[Spikes Kill] Телепортирован в шипы, запомнены исходные координаты")
+                    else
+                        -- Если нет позиции шипов, телепортируем просто вверх
+                        local currentPos = char:GetPrimaryPartCFrame().Position
+                        local targetPosition = currentPos + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
+                        char:SetPrimaryPartCFrame(CFrame.new(targetPosition))
+                        
+                        print("[Spikes Kill] Телепортирован вверх, запомнены исходные координаты")
+                    end
                     
                     -- Запускаем таймер для возврата через 5 секунд
                     task.delay(MainModule.SpikesKill.ReturnDelay, function()
@@ -1404,10 +1459,6 @@ function MainModule.ToggleSpikesKill(enabled)
                 end)
                 
                 table.insert(MainModule.SpikesKill.AnimationStoppedConnections, stoppedConn)
-            else
-                if track.Animation then
-                    print("[Spikes Kill] Другая анимация: " .. track.Animation.AnimationId)
-                end
             end
         end)
     end
@@ -1442,36 +1493,228 @@ function MainModule.ToggleSpikesKill(enabled)
     end)
 end
 
--- Функция удаления шипов
-function MainModule.RemoveSpikes()
+-- Функция для удаления шипов (Disable Spikes)
+function MainModule.DisableSpikes(remove)
     pcall(function()
-        -- Проверяем существует ли карта HideAndSeek
-        if workspace:FindFirstChild("HideAndSeekMap") and 
-           workspace.HideAndSeekMap:FindFirstChild("KillingParts") then
-            
-            -- Получаем папку с шипами
-            local killingParts = workspace.HideAndSeekMap.KillingParts
-            
-            -- Сохраняем информацию о шипах (на всякий случай)
-            MainModule.SpikesKill.OriginalSpikes = {}
-            for _, spike in pairs(killingParts:GetChildren()) do
-                table.insert(MainModule.SpikesKill.OriginalSpikes, {
-                    Name = spike.Name,
-                    Position = spike:IsA("BasePart") and spike.Position or nil,
-                    Size = spike:IsA("BasePart") and spike.Size or nil
-                })
-            end
-            
-            -- Удаляем ВСЕ дочерние объекты (все шипы)
-            killingParts:ClearAllChildren()
-            
-            print("[Spikes Kill] Шипы удалены успешно!")
-            return true
-        else
-            -- Если не найдены необходимые объекты
-            print("[Spikes Kill] HideAndSeekMap или KillingParts не найдены!")
+        local hideAndSeekMap = workspace:FindFirstChild("HideAndSeekMap")
+        local killingParts = hideAndSeekMap and hideAndSeekMap:FindFirstChild("KillingParts")
+        
+        if not killingParts then
+            print("[Disable Spikes] KillingParts не найдены!")
             return false
         end
+        
+        if remove then
+            -- УДАЛЕНИЕ ШИПОВ
+            -- Сохраняем оригинальные шипы и их позицию
+            MainModule.SpikesKill.OriginalSpikes = {}
+            MainModule.SpikesKill.SpikesPosition = nil
+            
+            for _, spike in pairs(killingParts:GetChildren()) do
+                if spike:IsA("BasePart") then
+                    -- Сохраняем клон шипа
+                    table.insert(MainModule.SpikesKill.OriginalSpikes, spike:Clone())
+                    
+                    -- Запоминаем позицию первого шипа
+                    if not MainModule.SpikesKill.SpikesPosition then
+                        MainModule.SpikesKill.SpikesPosition = spike.Position
+                        print("[Disable Spikes] Запомнена позиция шипов: " .. tostring(spike.Position))
+                    end
+                    
+                    -- Удаляем оригинал
+                    spike:Destroy()
+                end
+            end
+            
+            MainModule.SpikesKill.SpikesRemoved = true
+            print("[Disable Spikes] Шипы удалены! Позиция запомнена.")
+            return true
+        else
+            -- Шипы не восстанавливаем (как в требованиях)
+            print("[Disable Spikes] Шипы остаются удаленными (не восстанавливаем)")
+            return true
+        end
+    end)
+end
+
+-- Sky Squid Game - Void Kill функция
+function MainModule.ToggleVoidKill(enabled)
+    MainModule.VoidKill.Enabled = enabled
+    
+    -- Отключаем предыдущие соединения
+    if MainModule.VoidKill.AnimationConnection then
+        MainModule.VoidKill.AnimationConnection:Disconnect()
+        MainModule.VoidKill.AnimationConnection = nil
+    end
+    
+    if MainModule.VoidKill.CharacterAddedConnection then
+        MainModule.VoidKill.CharacterAddedConnection:Disconnect()
+        MainModule.VoidKill.CharacterAddedConnection = nil
+    end
+    
+    if MainModule.VoidKill.AnimationCheckConnection then
+        MainModule.VoidKill.AnimationCheckConnection:Disconnect()
+        MainModule.VoidKill.AnimationCheckConnection = nil
+    end
+    
+    -- Отключаем все сохраненные соединения
+    for _, conn in ipairs(MainModule.VoidKill.AnimationStoppedConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    MainModule.VoidKill.AnimationStoppedConnections = {}
+    
+    -- Сбрасываем переменные
+    MainModule.VoidKill.SavedCFrame = nil
+    MainModule.VoidKill.ActiveAnimation = false
+    MainModule.VoidKill.AnimationStartTime = 0
+    MainModule.VoidKill.TrackedAnimations = {}
+    
+    -- AntiFall для Sky Squid
+    if enabled then
+        -- Включаем AntiFall
+        MainModule.CreateSkySquidAntiFall()
+        MainModule.VoidKill.AntiFallEnabled = true
+    else
+        -- Выключаем AntiFall
+        if MainModule.VoidKill.AntiFallEnabled then
+            MainModule.RemoveSkySquidAntiFall()
+            MainModule.VoidKill.AntiFallEnabled = false
+        end
+    end
+    
+    if not enabled then
+        print("[Void Kill] Выключен")
+        return
+    end
+    
+    print("[Void Kill] Включен - поиск анимации " .. MainModule.VoidKill.AnimationId)
+    
+    -- Функция для проверки всех активных анимаций в реальном времени
+    local function checkAnimations()
+        local character = GetCharacter()
+        if not character then return end
+        
+        local humanoid = GetHumanoid(character)
+        if not humanoid then return end
+        
+        -- Получаем все активные анимации
+        local activeTracks = humanoid:GetPlayingAnimationTracks()
+        
+        for _, track in pairs(activeTracks) do
+            -- Проверяем ID анимации
+            if track.Animation and track.Animation.AnimationId == MainModule.VoidKill.AnimationId then
+                -- Проверяем, отслеживается ли уже эта анимация
+                if not MainModule.VoidKill.TrackedAnimations[track] then
+                    print("[Void Kill] НАЙДЕНА ЦЕЛЕВАЯ АНИМАЦИЯ! ID: " .. MainModule.VoidKill.AnimationId)
+                    
+                    -- Отмечаем как отслеживаемую
+                    MainModule.VoidKill.TrackedAnimations[track] = true
+                    
+                    -- Если не активна другая анимация, запускаем телепорт
+                    if not MainModule.VoidKill.ActiveAnimation then
+                        MainModule.VoidKill.ActiveAnimation = true
+                        MainModule.VoidKill.AnimationStartTime = tick()
+                        
+                        -- Сохраняем текущую позицию игрока
+                        MainModule.VoidKill.SavedCFrame = character:GetPrimaryPartCFrame()
+                        
+                        -- Телепортируем игрока на 15 блоков назад
+                        local currentCFrame = character:GetPrimaryPartCFrame()
+                        local lookVector = currentCFrame.LookVector
+                        local backOffset = lookVector * -15  -- 15 блоков назад
+                        
+                        local targetPosition = currentCFrame.Position + backOffset
+                        character:SetPrimaryPartCFrame(CFrame.new(targetPosition))
+                        
+                        print("[Void Kill] Телепортирован на 15 блоков назад, запомнены исходные координаты")
+                        
+                        -- Слушаем окончание анимации
+                        local stoppedConn = track.Stopped:Connect(function()
+                            print("[Void Kill] Анимация завершилась, возвращаем на исходную позицию")
+                            
+                            -- Ждем указанную задержку
+                            task.wait(MainModule.VoidKill.ReturnDelay)
+                            
+                            if MainModule.VoidKill.SavedCFrame then
+                                character:SetPrimaryPartCFrame(MainModule.VoidKill.SavedCFrame)
+                                MainModule.VoidKill.SavedCFrame = nil
+                                MainModule.VoidKill.ActiveAnimation = false
+                            end
+                        end)
+                        
+                        table.insert(MainModule.VoidKill.AnimationStoppedConnections, stoppedConn)
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Также слушаем новые анимации через AnimationPlayed
+    local function setupCharacter(char)
+        local humanoid = char:WaitForChild("Humanoid")
+        
+        -- Слушатель для новых анимаций
+        MainModule.VoidKill.AnimationConnection = humanoid.AnimationPlayed:Connect(function(track)
+            if track.Animation and track.Animation.AnimationId == MainModule.VoidKill.AnimationId then
+                print("[Void Kill] НОВАЯ АНИМАЦИЯ ЗАПУЩЕНА! ID: " .. MainModule.VoidKill.AnimationId)
+                
+                -- Отмечаем как отслеживаемую
+                MainModule.VoidKill.TrackedAnimations[track] = true
+                
+                -- Если не активна другая анимация, запускаем телепорт
+                if not MainModule.VoidKill.ActiveAnimation then
+                    MainModule.VoidKill.ActiveAnimation = true
+                    MainModule.VoidKill.AnimationStartTime = tick()
+                    
+                    -- Сохраняем текущую позицию игрока
+                    MainModule.VoidKill.SavedCFrame = char:GetPrimaryPartCFrame()
+                    
+                    -- Телепортируем игрока на 15 блоков назад
+                    local currentCFrame = char:GetPrimaryPartCFrame()
+                    local lookVector = currentCFrame.LookVector
+                    local backOffset = lookVector * -15  -- 15 блоков назад
+                    
+                    local targetPosition = currentCFrame.Position + backOffset
+                    char:SetPrimaryPartCFrame(CFrame.new(targetPosition))
+                    
+                    print("[Void Kill] Телепортирован на 15 блоков назад, запомнены исходные координаты")
+                    
+                    -- Слушаем окончание анимации
+                    local stoppedConn = track.Stopped:Connect(function()
+                        print("[Void Kill] Анимация завершилась, возвращаем на исходную позицию")
+                        
+                        -- Ждем указанную задержку
+                        task.wait(MainModule.VoidKill.ReturnDelay)
+                        
+                        if MainModule.VoidKill.SavedCFrame then
+                            char:SetPrimaryPartCFrame(MainModule.VoidKill.SavedCFrame)
+                            MainModule.VoidKill.SavedCFrame = nil
+                            MainModule.VoidKill.ActiveAnimation = false
+                        end
+                    end)
+                    
+                    table.insert(MainModule.VoidKill.AnimationStoppedConnections, stoppedConn)
+                end
+            end
+        end)
+    end
+    
+    -- Настраиваем для текущего персонажа
+    local char = LocalPlayer.Character
+    if char then
+        setupCharacter(char)
+    end
+    
+    -- Подключаемся к событию добавления нового персонажа
+    MainModule.VoidKill.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(char)
+        task.wait(1)  -- Ждем загрузки персонажа
+        setupCharacter(char)
+    end)
+    
+    -- Запускаем постоянную проверку анимаций в реальном времени
+    MainModule.VoidKill.AnimationCheckConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.VoidKill.Enabled then return end
+        checkAnimations()
     end)
 end
 
@@ -2542,11 +2785,26 @@ function MainModule.Cleanup()
     end
     MainModule.SpikesKill.AnimationStoppedConnections = {}
     
-    -- Удаляем платформу Spikes Kill
-    if MainModule.SpikesKill.Platform and MainModule.SpikesKill.Platform.Parent then
-        MainModule.SpikesKill.Platform:Destroy()
-        MainModule.SpikesKill.Platform = nil
+    -- Отключаем Void Kill
+    if MainModule.VoidKill.AnimationConnection then
+        MainModule.VoidKill.AnimationConnection:Disconnect()
+        MainModule.VoidKill.AnimationConnection = nil
     end
+    
+    if MainModule.VoidKill.CharacterAddedConnection then
+        MainModule.VoidKill.CharacterAddedConnection:Disconnect()
+        MainModule.VoidKill.CharacterAddedConnection = nil
+    end
+    
+    if MainModule.VoidKill.AnimationCheckConnection then
+        MainModule.VoidKill.AnimationCheckConnection:Disconnect()
+        MainModule.VoidKill.AnimationCheckConnection = nil
+    end
+    
+    for _, conn in ipairs(MainModule.VoidKill.AnimationStoppedConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    MainModule.VoidKill.AnimationStoppedConnections = {}
     
     -- Отключаем Glass Bridge соединения
     if MainModule.GlassBridge.AntiBreakConnection then
@@ -2652,6 +2910,12 @@ function MainModule.Cleanup()
         MainModule.RemoveJumpRopeAntiFall()
     end
     
+    -- Выключаем Void Kill AntiFall если включен
+    if MainModule.VoidKill.AntiFallEnabled then
+        MainModule.RemoveSkySquidAntiFall()
+        MainModule.VoidKill.AntiFallEnabled = false
+    end
+    
     -- Восстанавливаем скорость
     if MainModule.SpeedHack.Enabled then
         MainModule.ToggleSpeedHack(false)
@@ -2683,6 +2947,11 @@ function MainModule.Cleanup()
     MainModule.GlassBridge.GlassESPEnabled = false
     MainModule.SpikesKill.Enabled = false
     MainModule.SpikesKill.TrackedAnimations = {}
+    MainModule.SpikesKill.SpikesRemoved = false
+    MainModule.SpikesKill.OriginalSpikes = {}
+    MainModule.SpikesKill.SpikesPosition = nil
+    MainModule.VoidKill.Enabled = false
+    MainModule.VoidKill.TrackedAnimations = {}
     
     print("Creon X cleanup complete")
 end
