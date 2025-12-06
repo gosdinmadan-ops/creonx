@@ -1,4 +1,4 @@
--- Creon X v2.4 (исправленная версия для ПК и Delta Mobile) с HNS функциями
+-- Creon X v2.4 (исправленная версия для ПК и Delta Mobile)
 -- Проверка исполнителя
 local executorName = "Unknown"
 if identifyexecutor then
@@ -746,7 +746,7 @@ local function ClearContent()
     end
 end
 
--- MAIN TAB (без Anti Time Stop)
+-- MAIN TAB
 local function CreateMainContent()
     ClearContent()
     
@@ -1046,7 +1046,7 @@ local function CreateDalgonaContent()
     end)
 end
 
--- HNS TAB (с добавленными функциями)
+-- HNS TAB
 local function CreateHNSContent()
     ClearContent()
     
@@ -1061,43 +1061,14 @@ local function CreateHNSContent()
     staminaToggle.LayoutOrder = 1
     
     -- Spikes Kill
-    local spikesKillToggle, updateSpikesKillToggle = CreateToggle("Spikes Kill", MainModule.HNS.SpikesKillEnabled, function(enabled)
+    local spikesKillToggle, updateSpikesKillToggle = CreateToggle("Spikes Kill", MainModule.SpikesKill.Enabled, function(enabled)
         if MainModule.ToggleSpikesKill then
             MainModule.ToggleSpikesKill(enabled)
         else
-            MainModule.HNS.SpikesKillEnabled = enabled
+            MainModule.SpikesKill.Enabled = enabled
         end
     end)
     spikesKillToggle.LayoutOrder = 2
-    
-    -- Auto Dodge
-    local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("Auto Dodge", MainModule.HNS.AutoDodgeEnabled, function(enabled)
-        if MainModule.ToggleAutoDodge then
-            MainModule.ToggleAutoDodge(enabled)
-        else
-            MainModule.HNS.AutoDodgeEnabled = enabled
-        end
-    end)
-    autoDodgeToggle.LayoutOrder = 3
-    
-    -- Remove Spikes Button
-    local removeSpikesBtn = CreateButton("Remove Spikes")
-    removeSpikesBtn.LayoutOrder = 4
-    removeSpikesBtn.MouseButton1Click:Connect(function()
-        if MainModule.RemoveSpikes then
-            local success, message = MainModule.RemoveSpikes()
-            if success then
-                removeSpikesBtn.Text = "Spikes Removed!"
-                removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-            else
-                removeSpikesBtn.Text = "Failed: " .. message
-                removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
-            end
-            task.wait(2)
-            removeSpikesBtn.Text = "Remove Spikes"
-            removeSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-        end
-    end)
 end
 
 -- Функция для GLASS BRIDGE с автоматическим AntiFall при включении
