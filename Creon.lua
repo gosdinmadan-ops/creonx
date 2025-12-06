@@ -1,4 +1,4 @@
--- Creon X v2.4 (исправленная версия для ПК и Delta Mobile)
+-- Creon X v2.5 (исправленная версия для ПК и Delta Mobile)
 -- Проверка исполнителя
 local executorName = "Unknown"
 if identifyexecutor then
@@ -48,7 +48,7 @@ local menuHotkey = Enum.KeyCode.M
 local isChoosingKey = false
 local keyChangeButton = nil
 
--- GUI Creon X v2.4
+-- GUI Creon X v2.5
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
 local TitleBar = Instance.new("Frame")
@@ -63,7 +63,7 @@ local ContentLayout = Instance.new("UIListLayout")
 local MobileOpenButton = Instance.new("TextButton")
 
 ScreenGui.Parent = game.CoreGui
-ScreenGui.Name = "CreonXv24"
+ScreenGui.Name = "CreonXv25"
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 ScreenGui.ResetOnSpawn = false
 
@@ -106,7 +106,7 @@ titleCorner.Parent = TitleBar
 TitleLabel.Size = UDim2.new(0.7, 0, 1, 0)
 TitleLabel.Position = UDim2.new(0.1, 0, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "Creon X v2.4"
+TitleLabel.Text = "Creon X v2.5"
 TitleLabel.TextColor3 = Color3.fromRGB(220, 220, 255)
 TitleLabel.TextSize = 14
 TitleLabel.Font = Enum.Font.GothamBold
@@ -1069,6 +1069,28 @@ local function CreateHNSContent()
         end
     end)
     spikesKillToggle.LayoutOrder = 2
+    
+    -- Disable Spikes (кликабельная кнопка)
+    local disableSpikesBtn = CreateButton("Disable Spikes")
+    disableSpikesBtn.LayoutOrder = 3
+    disableSpikesBtn.MouseButton1Click:Connect(function()
+        if MainModule.DisableSpikes then
+            local success = MainModule.DisableSpikes(true)
+            if success then
+                disableSpikesBtn.Text = "Spikes Disabled!"
+                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+                task.wait(1)
+                disableSpikesBtn.Text = "Disable Spikes"
+                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+            else
+                disableSpikesBtn.Text = "Failed to Disable"
+                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+                task.wait(1)
+                disableSpikesBtn.Text = "Disable Spikes"
+                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+            end
+        end
+    end)
 end
 
 -- Функция для GLASS BRIDGE с автоматическим AntiFall при включении
@@ -1100,7 +1122,7 @@ local function CreateGlassBridgeContent()
     ClearContent()
     
     -- AntiBreak (включает и AntiFall автоматически)
-    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("AntiBreak + Auto AntiFall", MainModule.GlassBridge.AntiBreakEnabled, GlassBridgeToggleCallback)
+    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("AntiBreak", MainModule.GlassBridge.AntiBreakEnabled, GlassBridgeToggleCallback)
     antiBreakToggle.LayoutOrder = 1
     
     -- Manual AntiFall Toggle (ON/OFF) с обновлением текста
@@ -1231,6 +1253,16 @@ local function CreateSkySquidContent()
         end
     end)
     antiFallToggle.LayoutOrder = 1
+    
+    -- Void Kill
+    local voidKillToggle, updateVoidKillToggle = CreateToggle("Void Kill", MainModule.VoidKill.Enabled, function(enabled)
+        if MainModule.ToggleVoidKill then
+            MainModule.ToggleVoidKill(enabled)
+        else
+            MainModule.VoidKill.Enabled = enabled
+        end
+    end)
+    voidKillToggle.LayoutOrder = 2
 end
 
 -- SETTINGS TAB
@@ -1241,7 +1273,7 @@ local function CreateSettingsContent()
     creatorLabel.TextXAlignment = Enum.TextXAlignment.Left
     creatorLabel.LayoutOrder = 1
     
-    local versionLabel = CreateButton("Version: 2.4")
+    local versionLabel = CreateButton("Version: 2.5")
     versionLabel.TextXAlignment = Enum.TextXAlignment.Left
     versionLabel.LayoutOrder = 2
     
@@ -1434,7 +1466,7 @@ if keyChangeButton then
 end
 
 -- Отображение сообщения о загрузке
-print("Creon X v2.4 loaded successfully")
+print("Creon X v2.5 loaded successfully")
 print("Menu Hotkey: " .. menuHotkey.Name)
 if not isSupported then
     warn("Warning: Executor " .. executorName .. " is not officially supported")
