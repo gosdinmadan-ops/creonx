@@ -51,7 +51,7 @@ MainModule.RLGL = {
     DamageCheckRate = 0.1,
     LastHealth = 100,
     GodModeHeight = 160,
-    NormalHeight = 50,
+    NormalHeight = 80,
     DamageTeleportPosition = Vector3.new(-903.4, 1184.9, -556),
     StartPosition = Vector3.new(-55.3, 1023.1, -545.8),
     EndPosition = Vector3.new(-214.4, 1023.1, 146.7),
@@ -127,25 +127,28 @@ MainModule.Hitbox = {
     ModifiedParts = {}
 }
 
--- HIDE AND SEEK - Spikes Kill System
+-- HIDE AND SEEK - Spikes Kill System (ИСПРАВЛЕННЫЙ)
 MainModule.SpikesKill = {
     Enabled = false,
     AnimationId = "rbxassetid://107989020363293", -- ID анимации шипов/урона
-    PlatformCFrame = CFrame.new(64.45010375976562, 960.6300048828125, -41.144325256347656), -- Координаты шипов
-    PlatformSize = Vector3.new(20, 2, 20), -- Размер платформы
     PlatformHeightOffset = 6, -- На сколько выше шипов телепортируемся
-    MaxAnimationTime = 5, -- Максимальное время ожидания окончания анимации (5 секунд)
-    PlatformColor = Color3.fromRGB(120, 120, 120), -- Серый цвет платформы
+    MaxAnimationTime = 5, -- Максимальное время ожидания (5 секунд)
     
     -- Внутренние переменные
-    Platform = nil,
-    SavedCFrame = nil,
+    SpikesPlatform = nil, -- НЕВИДИМАЯ платформа на месте шипов
+    SavedCFrame = nil, -- Сохраненная позиция до телепортации
     ActiveAnimation = false,
     AnimationStartTime = 0,
     AnimationConnection = nil,
     CharacterAddedConnection = nil,
-    AnimationStoppedConnections = {},
-    SafetyCheckConnection = nil
+    SpikesRemoved = false,
+    SpikesPosition = nil, -- Позиция найденных шипов
+    
+    -- Параметры платформы
+    PlatformSize = Vector3.new(50, 1, 50), -- Большая платформа
+    PlatformColor = Color3.fromRGB(120, 120, 120),
+    PlatformTransparency = 1, -- ПОЛНАЯ невидимость
+    PlatformCanCollide = false -- Проходит сквозь блоки
 }
 
 -- Misc System
@@ -225,54 +228,21 @@ local function GetRootPart(character)
     return character and character:FindFirstChild("HumanoidRootPart")
 end
 
--- Функция для проверки, есть ли у игрока нож
-local function playerHasKnife(player)
-    if not player or not player.Character then return false end
-    
-    -- Проверяем в персонаже
-    for _, tool in pairs(player.Character:GetChildren()) do
-        if tool:IsA("Tool") then
-            local toolName = tool.Name:lower()
-            if toolName:find("knife") or toolName:find("fork") or toolName:find("dagger") or toolName:find("нож") then
-                return true, tool
-            end
-        end
-    end
-    
-    -- Проверяем в бэкпаке
-    if player:FindFirstChild("Backpack") then
-        for _, tool in pairs(player.Backpack:GetChildren()) do
-            if tool:IsA("Tool") then
-                local toolName = tool.Name:lower()
-                if toolName:find("knife") or toolName:find("fork") or toolName:find("dagger") or toolName:find("нож") then
-                    return true, tool
-                end
-            end
-        end
-    end
-    
-    return false, nil
-end
-
--- Функция для получения расстояния
 local function GetDistance(position1, position2)
     if not position1 or not position2 then return math.huge end
     return (position1 - position2).Magnitude
 end
 
--- Функция для проверки, является ли игрок хайдером
 local function IsHider(player)
     if not player then return false end
     return player:GetAttribute("IsHider") == true
 end
 
--- Функция для проверки, является ли игрок сикером
 local function IsSeeker(player)
     if not player then return false end
     return player:GetAttribute("IsHunter") == true
 end
 
--- Функция для моментальной телепортации с обходом
 local function SafeTeleport(position)
     local character = GetCharacter()
     if not character then return false end
@@ -280,41 +250,10 @@ local function SafeTeleport(position)
     local rootPart = GetRootPart(character)
     if not rootPart then return false end
     
-    -- Сохраняем текущую позицию
-    local currentPosition = rootPart.Position
-    local currentCFrame = rootPart.CFrame
-    
-    -- Создаем временную невидимую часть для обхода
-    local tempPart = Instance.new("Part")
-    tempPart.Size = Vector3.new(1, 1, 1)
-    tempPart.Transparency = 1
-    tempPart.Anchored = true
-    tempPart.CanCollide = false
-    tempPart.Position = currentPosition
-    tempPart.Parent = workspace
-    Debris:AddItem(tempPart, 0.1)
-    
-    -- Создаем фейковую анимацию
-    local fakeVelocity = Instance.new("BodyVelocity")
-    fakeVelocity.Velocity = (position - currentPosition).Unit * 100
-    fakeVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
-    fakeVelocity.Parent = rootPart
-    Debris:AddItem(fakeVelocity, 0.1)
-    
-    -- Мгновенная телепортация
     rootPart.CFrame = CFrame.new(position)
-    
-    -- Удаляем фейковую скорость
-    task.delay(0.05, function()
-        if fakeVelocity and fakeVelocity.Parent then
-            fakeVelocity:Destroy()
-        end
-    end)
-    
     return true
 end
 
--- Функция для получения безопасной позиции выше
 local function GetSafePositionAbove(currentPosition, height)
     local rayOrigin = currentPosition + Vector3.new(0, 5, 0)
     local rayDirection = Vector3.new(0, -1, 0)
@@ -331,7 +270,6 @@ local function GetSafePositionAbove(currentPosition, height)
     end
 end
 
--- Функция для получения оружия игрока
 local function GetPlayerGun()
     local character = GetCharacter()
     local backpack = LocalPlayer:FindFirstChild("Backpack")
@@ -355,7 +293,6 @@ local function GetPlayerGun()
     return nil
 end
 
--- Функция для получения врагов (NPC с тегом "Enemy")
 local function GetEnemies()
     local enemies = {}
     local liveFolder = Workspace:FindFirstChild("Live")
@@ -368,7 +305,6 @@ local function GetEnemies()
             local deadTag = model:FindFirstChild("Dead")
             
             if enemyTag and not deadTag then
-                -- Проверяем, что это не игрок
                 local isPlayer = false
                 for _, player in pairs(Players:GetPlayers()) do
                     if player.Name == model.Name then
@@ -390,7 +326,6 @@ local function GetEnemies()
     return enemies
 end
 
--- Функция для мгновенного убийства врага
 local function KillEnemy(enemyName)
     pcall(function()
         local liveFolder = Workspace:FindFirstChild("Live")
@@ -428,6 +363,290 @@ local function KillEnemy(enemyName)
         local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("FiredGunClient")
         remote:FireServer(unpack(args))
     end)
+end
+
+-- Исправленный RLGL GodMode
+function MainModule.ToggleGodMode(enabled)
+    MainModule.RLGL.GodMode = enabled
+    
+    if MainModule.RLGL.Connection then
+        MainModule.RLGL.Connection:Disconnect()
+        MainModule.RLGL.Connection = nil
+    end
+    
+    if enabled then
+        -- Запоминаем начальную позицию
+        local character = GetCharacter()
+        if character then
+            local humanoid = GetHumanoid(character)
+            local rootPart = GetRootPart(character)
+            
+            if humanoid and rootPart then
+                MainModule.RLGL.LastHealth = humanoid.Health
+                MainModule.RLGL.OriginalHeight = rootPart.Position.Y
+                
+                -- Телепортируем вверх на GodModeHeight
+                local targetPos = Vector3.new(
+                    rootPart.Position.X,
+                    rootPart.Position.Y + MainModule.RLGL.GodModeHeight,
+                    rootPart.Position.Z
+                )
+                SafeTeleport(targetPos)
+                print("[RLGL GodMode] Телепортирован вверх на " .. MainModule.RLGL.GodModeHeight .. " единиц")
+            end
+        end
+        
+        -- Проверка урона
+        MainModule.RLGL.Connection = RunService.Heartbeat:Connect(function()
+            if not MainModule.RLGL.GodMode then return end
+            
+            local currentTime = tick()
+            if currentTime - MainModule.RLGL.LastDamageTime < MainModule.RLGL.DamageCheckRate then return end
+            
+            pcall(function()
+                local character = GetCharacter()
+                if not character then return end
+                
+                local humanoid = GetHumanoid(character)
+                local rootPart = GetRootPart(character)
+                
+                if not (humanoid and rootPart) then return end
+                
+                -- Проверяем, получили ли мы урон
+                if humanoid.Health < MainModule.RLGL.LastHealth then
+                    MainModule.RLGL.LastDamageTime = currentTime
+                    
+                    -- Телепортируем на указанные координаты при уроне
+                    SafeTeleport(MainModule.RLGL.DamageTeleportPosition)
+                    
+                    -- Восстанавливаем здоровье
+                    humanoid.Health = MainModule.RLGL.LastHealth
+                    
+                    -- Отключаем GodMode после телепортации от урона
+                    task.wait(0.1)
+                    MainModule.ToggleGodMode(false)
+                else
+                    -- Обновляем запомненное здоровье
+                    MainModule.RLGL.LastHealth = humanoid.Health
+                end
+            end)
+        end)
+    else
+        -- Телепортируем обратно на правильную высоту
+        local character = GetCharacter()
+        if character then
+            local rootPart = GetRootPart(character)
+            if rootPart and MainModule.RLGL.OriginalHeight then
+                -- ПРАВИЛЬНАЯ ФОРМУЛА: Оригинальная высота - (GodModeHeight - NormalHeight)
+                local targetHeight = MainModule.RLGL.OriginalHeight - (MainModule.RLGL.GodModeHeight - MainModule.RLGL.NormalHeight)
+                
+                local targetPos = Vector3.new(
+                    rootPart.Position.X,
+                    targetHeight,
+                    rootPart.Position.Z
+                )
+                
+                SafeTeleport(targetPos)
+                print("[RLGL GodMode] Возврат на высоту: " .. targetHeight)
+            end
+        end
+        
+        -- Сбрасываем значения
+        MainModule.RLGL.OriginalHeight = nil
+        MainModule.RLGL.LastHealth = 100
+    end
+end
+
+-- Исправленный Spikes Kill
+function MainModule.ToggleSpikesKill(enabled)
+    MainModule.SpikesKill.Enabled = enabled
+    
+    -- Очищаем предыдущие соединения
+    if MainModule.SpikesKill.AnimationConnection then
+        MainModule.SpikesKill.AnimationConnection:Disconnect()
+        MainModule.SpikesKill.AnimationConnection = nil
+    end
+    
+    if MainModule.SpikesKill.CharacterAddedConnection then
+        MainModule.SpikesKill.CharacterAddedConnection:Disconnect()
+        MainModule.SpikesKill.CharacterAddedConnection = nil
+    end
+    
+    -- Удаляем старую платформу
+    if MainModule.SpikesKill.SpikesPlatform then
+        MainModule.SpikesKill.SpikesPlatform:Destroy()
+        MainModule.SpikesKill.SpikesPlatform = nil
+    end
+    
+    -- Сбрасываем переменные
+    MainModule.SpikesKill.SavedCFrame = nil
+    MainModule.SpikesKill.ActiveAnimation = false
+    MainModule.SpikesKill.SpikesRemoved = false
+    MainModule.SpikesKill.SpikesPosition = nil
+    
+    if not enabled then
+        print("[Spikes Kill] Выключен")
+        return
+    end
+    
+    print("[Spikes Kill] Включен")
+    
+    -- Шаг 1: Находим шипы и создаем платформу
+    local function findAndSetupSpikes()
+        -- Ищем шипы в структуре HideAndSeekMap
+        if workspace:FindFirstChild("HideAndSeekMap") and 
+           workspace.HideAndSeekMap:FindFirstChild("KillingParts") then
+            
+            local killingParts = workspace.HideAndSeekMap.KillingParts
+            
+            -- Находим первый шип для определения позиции
+            for _, spike in pairs(killingParts:GetChildren()) do
+                if spike:IsA("BasePart") or spike:IsA("Model") then
+                    local spikePosition
+                    
+                    if spike:IsA("BasePart") then
+                        spikePosition = spike.Position
+                    elseif spike:IsA("Model") and spike.PrimaryPart then
+                        spikePosition = spike.PrimaryPart.Position
+                    end
+                    
+                    if spikePosition then
+                        -- Запоминаем позицию шипов
+                        MainModule.SpikesKill.SpikesPosition = spikePosition
+                        print("[Spikes Kill] Найдены шипы на позиции: " .. tostring(spikePosition))
+                        
+                        -- Шаг 2: Создаем НЕВИДИМУЮ платформу над шипами
+                        local platform = Instance.new("Part")
+                        platform.Name = "SpikesKillPlatform"
+                        platform.Size = MainModule.SpikesKill.PlatformSize
+                        platform.Anchored = true
+                        platform.CanCollide = MainModule.SpikesKill.PlatformCanCollide
+                        platform.Transparency = MainModule.SpikesKill.PlatformTransparency
+                        platform.Color = MainModule.SpikesKill.PlatformColor
+                        platform.Material = Enum.Material.Plastic
+                        platform.CastShadow = false
+                        
+                        -- Позиция на 6 единиц выше шипов
+                        local platformPosition = Vector3.new(
+                            spikePosition.X,
+                            spikePosition.Y + MainModule.SpikesKill.PlatformHeightOffset,
+                            spikePosition.Z
+                        )
+                        
+                        platform.Position = platformPosition
+                        platform.Parent = workspace
+                        
+                        MainModule.SpikesKill.SpikesPlatform = platform
+                        print("[Spikes Kill] Создана невидимая платформа над шипами")
+                        
+                        -- Шаг 3: Удаляем шипы
+                        killingParts:ClearAllChildren()
+                        MainModule.SpikesKill.SpikesRemoved = true
+                        print("[Spikes Kill] Шипы удалены")
+                        
+                        return true
+                    end
+                end
+            end
+        end
+        warn("[Spikes Kill] HideAndSeekMap или KillingParts не найдены!")
+        return false
+    end
+    
+    -- Шаг 4: Настройка системы анимации
+    local function setupAnimationSystem(char)
+        local humanoid = char:WaitForChild("Humanoid", 5)
+        if not humanoid then return end
+        
+        -- Функция обработки начала анимации
+        local function onAnimationStart(animTrack)
+            if not MainModule.SpikesKill.Enabled then return end
+            
+            -- Проверяем ID анимации
+            if animTrack.Animation.AnimationId ~= MainModule.SpikesKill.AnimationId then
+                return
+            end
+            
+            if MainModule.SpikesKill.ActiveAnimation then return end
+            
+            MainModule.SpikesKill.ActiveAnimation = true
+            MainModule.SpikesKill.AnimationStartTime = tick()
+            
+            -- Сохраняем текущую позицию
+            local rootPart = GetRootPart(char)
+            if rootPart then
+                MainModule.SpikesKill.SavedCFrame = rootPart.CFrame
+                print("[Spikes Kill] Сохранена позиция: " .. tostring(rootPart.Position))
+            end
+            
+            -- Телепортируем на платформу (если она существует)
+            if MainModule.SpikesKill.SpikesPlatform then
+                local platformPos = MainModule.SpikesKill.SpikesPlatform.Position
+                rootPart.CFrame = CFrame.new(platformPos)
+                print("[Spikes Kill] Телепортирован на платформу: " .. tostring(platformPos))
+                
+                -- Запускаем таймер для возврата через 5 секунд
+                task.delay(MainModule.SpikesKill.MaxAnimationTime, function()
+                    if MainModule.SpikesKill.ActiveAnimation and MainModule.SpikesKill.Enabled then
+                        MainModule.SpikesKill.ActiveAnimation = false
+                        
+                        -- Возвращаем на сохраненную позицию
+                        if MainModule.SpikesKill.SavedCFrame then
+                            rootPart.CFrame = MainModule.SpikesKill.SavedCFrame
+                            print("[Spikes Kill] Возвращен на исходную позицию")
+                            MainModule.SpikesKill.SavedCFrame = nil
+                        end
+                    end
+                end)
+            else
+                warn("[Spikes Kill] Платформа не найдена!")
+            end
+        end
+        
+        -- Слушатель начала анимаций
+        MainModule.SpikesKill.AnimationConnection = humanoid.AnimationPlayed:Connect(function(animTrack)
+            onAnimationStart(animTrack)
+        end)
+    end
+    
+    -- Запускаем поиск шипов
+    if not findAndSetupSpikes() then
+        warn("[Spikes Kill] Не удалось найти шипы")
+        return
+    end
+    
+    -- Настраиваем для текущего персонажа
+    local char = LocalPlayer.Character
+    if char then
+        setupAnimationSystem(char)
+    end
+    
+    -- Слушатель для нового персонажа
+    MainModule.SpikesKill.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
+        task.wait(1)
+        if MainModule.SpikesKill.Enabled then
+            setupAnimationSystem(newChar)
+        end
+    end)
+end
+
+-- Функция для удаления шипов (отдельная кнопка)
+function MainModule.RemoveSpikes()
+    if workspace:FindFirstChild("HideAndSeekMap") and 
+       workspace.HideAndSeekMap:FindFirstChild("KillingParts") then
+        
+        local killingParts = workspace.HideAndSeekMap.KillingParts
+        killingParts:ClearAllChildren()
+        
+        -- Обновляем статус
+        MainModule.SpikesKill.SpikesRemoved = true
+        
+        print("[Spikes Kill] Шипы удалены вручную")
+        return true
+    else
+        warn("[Spikes Kill] HideAndSeekMap или KillingParts не найдены!")
+        return false
+    end
 end
 
 -- Anti Time Stop функция
@@ -575,92 +794,6 @@ function MainModule.ToggleRebel(enabled)
     end
 end
 
--- Исправленный GodMode для RLGL (только одна телепортация)
-function MainModule.ToggleGodMode(enabled)
-    MainModule.RLGL.GodMode = enabled
-    
-    if MainModule.RLGL.Connection then
-        MainModule.RLGL.Connection:Disconnect()
-        MainModule.RLGL.Connection = nil
-    end
-    
-    if enabled then
-        -- Запоминаем начальное здоровье
-        local character = GetCharacter()
-        if character then
-            local humanoid = GetHumanoid(character)
-            if humanoid then
-                MainModule.RLGL.LastHealth = humanoid.Health
-                MainModule.RLGL.OriginalHeight = humanoid.RootPart.Position.Y
-            end
-        end
-        
-        -- Однократная телепортация вверх при включении
-        local character = GetCharacter()
-        if character and character.HumanoidRootPart then
-            local currentPos = character.HumanoidRootPart.Position
-            local targetHeight = currentPos.Y + MainModule.RLGL.GodModeHeight
-            local targetPos = Vector3.new(currentPos.X, targetHeight, currentPos.Z)
-            
-            SafeTeleport(targetPos)
-        end
-        
-        -- Только проверка урона
-        MainModule.RLGL.Connection = RunService.Heartbeat:Connect(function()
-            if not MainModule.RLGL.GodMode then return end
-            
-            local currentTime = tick()
-            if currentTime - MainModule.RLGL.LastDamageTime < MainModule.RLGL.DamageCheckRate then return end
-            
-            pcall(function()
-                local character = GetCharacter()
-                if not character then return end
-                
-                local humanoid = GetHumanoid(character)
-                local rootPart = GetRootPart(character)
-                
-                if not (humanoid and rootPart) then return end
-                
-                -- Проверяем, получили ли мы урон
-                if humanoid.Health < MainModule.RLGL.LastHealth then
-                    MainModule.RLGL.LastDamageTime = currentTime
-                    
-                    -- Телепортируем на указанные координаты при уроне
-                    SafeTeleport(MainModule.RLGL.DamageTeleportPosition)
-                    
-                    -- Восстанавливаем здоровье
-                    humanoid.Health = MainModule.RLGL.LastHealth
-                    
-                    -- Отключаем GodMode после телепортации от урона
-                    task.wait(0.1)
-                    MainModule.ToggleGodMode(false)
-                else
-                    -- Обновляем запомненное здоровье
-                    MainModule.RLGL.LastHealth = humanoid.Health
-                    -- НЕ телепортируем обратно - одна телепортация при включении
-                end
-            end)
-        end)
-    else
-        -- Однократная телепортация вниз при выключении
-        local character = GetCharacter()
-        if character then
-            local rootPart = GetRootPart(character)
-            if rootPart then
-                local currentPos = rootPart.Position
-                local targetHeight = (MainModule.RLGL.OriginalHeight or currentPos.Y) - MainModule.RLGL.GodModeHeight + MainModule.RLGL.NormalHeight
-                local targetPos = Vector3.new(currentPos.X, targetHeight, currentPos.Z)
-                
-                SafeTeleport(targetPos)
-            end
-        end
-        
-        -- Сбрасываем значения
-        MainModule.RLGL.LastHealth = 100
-        MainModule.RLGL.OriginalHeight = nil
-    end
-end
-
 -- Функции телепортации RLGL с моментальной телепортацией
 function MainModule.TeleportToEnd()
     SafeTeleport(MainModule.RLGL.EndPosition)
@@ -805,11 +938,6 @@ function MainModule.ToggleBypassRagdoll(enabled)
                 end
             end)
         end
-        
-        -- Запускаем дополнительные защиты при включении
-        task.wait(0.5)
-        MainModule.StartEnhancedProtection()
-        MainModule.StartJointCleaning()
     else
         -- При выключении очищаем слушатели
         local character = GetCharacter()
@@ -821,218 +949,10 @@ function MainModule.ToggleBypassRagdoll(enabled)
                 end
             end
         end
-        
-        -- Останавливаем дополнительные защиты
-        MainModule.StopEnhancedProtection()
-        MainModule.StopJointCleaning()
     end
 end
 
--- Дополнительные защиты для Bypass Ragdoll
-local harmfulEffectsList = {
-    "RagdollStun", "Stun", "Stunned", "StunEffect", "StunHit",
-    "Knockback", "Knockdown", "Knockout", "KB_Effect",
-    "Dazed", "Paralyzed", "Paralyze", "Freeze", "Frozen", 
-    "Sleep", "Sleeping", "SleepEffect", "Confusion", "Confused",
-    "Slow", "Slowed", "Root", "Rooted", "Immobilized",
-    "Bleed", "Bleeding", "Poison", "Poisoned", "Burn", "Burning",
-    "Shock", "Shocked", "Electrocuted", "Silence", "Silenced",
-    "Disarm", "Disarmed", "Blind", "Blinded", "Fear", "Feared",
-    "Taunt", "Taunted", "Charm", "Charmed", "Petrify", "Petrified"
-}
-
-local enhancedProtectionConnection = nil
-local jointCleaningConnection = nil
-local ragdollBlockConnection = nil
-
-local function CleanNegativeEffects(character)
-    if not character or not MainModule.Misc.BypassRagdollEnabled then return end
-    
-    pcall(function()
-        -- Удаление эффектов по имени
-        for _, effectName in ipairs(harmfulEffectsList) do
-            local effect = character:FindFirstChild(effectName)
-            if effect then
-                if effect:IsA("BasePart") then
-                    task.spawn(function()
-                        for i = 1, 5 do
-                            if effect and effect.Parent then
-                                effect.Transparency = effect.Transparency + 0.2
-                                task.wait(0.02)
-                            end
-                        end
-                        pcall(function() effect:Destroy() end)
-                    end)
-                else
-                    pcall(function() effect:Destroy() end)
-                end
-            end
-        end
-        
-        -- Очистка Humanoid атрибутов
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            local badAttributes = {"Stunned", "Paralyzed", "Frozen", "Asleep", "Confused", 
-                                   "Slowed", "Rooted", "Silenced", "Disarmed", "Blinded", "Feared"}
-            for _, attr in ipairs(badAttributes) do
-                if humanoid:GetAttribute(attr) then
-                    humanoid:SetAttribute(attr, false)
-                end
-            end
-        end
-    end)
-end
-
-local function CleanJointsAndConstraints(character)
-    if not character then return end
-    
-    pcall(function()
-        local Humanoid = character:FindFirstChild("Humanoid")
-        local HumanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-        local Torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
-        
-        if not (Humanoid and HumanoidRootPart and Torso) then return end
-
-        -- Удаление существующих Ragdoll папок
-        for _, child in ipairs(character:GetChildren()) do
-            if child.Name == "Ragdoll" then
-                pcall(function() child:Destroy() end)
-            end
-        end
-
-        -- Удаление других связанных папок
-        for _, folderName in pairs({"Stun", "RotateDisabled", "RagdollWakeupImmunity", "InjuredWalking"}) do
-            local folder = character:FindFirstChild(folderName)
-            if folder then
-                folder:Destroy()
-            end
-        end
-
-        -- Удаление констрейнтов с HumanoidRootPart
-        for _, obj in pairs(HumanoidRootPart:GetChildren()) do
-            if obj:IsA("BallSocketConstraint") or obj.Name:match("^CacheAttachment") then
-                obj:Destroy()
-            end
-        end
-        
-        -- Восстановление соединений суставов
-        local joints = {"Left Hip", "Left Shoulder", "Neck", "Right Hip", "Right Shoulder"}
-        for _, jointName in pairs(joints) do
-            local motor = Torso:FindFirstChild(jointName)
-            if motor and motor:IsA("Motor6D") and not motor.Part0 then
-                motor.Part0 = Torso
-            end
-        end
-        
-        -- Удаление BoneCustom
-        for _, part in pairs(character:GetChildren()) do
-            if part:IsA("BasePart") and part:FindFirstChild("BoneCustom") then
-                part.BoneCustom:Destroy()
-            end
-        end
-    end)
-end
-
-local function SetupRagdollListener(character)
-    if not character then return end
-    
-    -- Удаляем старое соединение
-    if ragdollBlockConnection then
-        ragdollBlockConnection:Disconnect()
-        ragdollBlockConnection = nil
-    end
-    
-    local Humanoid = character:FindFirstChild("Humanoid")
-    if not Humanoid then return end
-    
-    -- Настраиваем слушатель для новых Ragdoll объектов
-    ragdollBlockConnection = character.ChildAdded:Connect(function(child)
-        if child.Name == "Ragdoll" then
-            pcall(function() child:Destroy() end)
-            pcall(function()
-                Humanoid.PlatformStand = false
-                Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
-                Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
-            end)
-        end
-    end)
-end
-
-function MainModule.StartEnhancedProtection()
-    if enhancedProtectionConnection then
-        enhancedProtectionConnection:Disconnect()
-    end
-    
-    enhancedProtectionConnection = RunService.Heartbeat:Connect(function()
-        if not MainModule.Misc.BypassRagdollEnabled then return end
-        local character = GetCharacter()
-        if character then
-            CleanNegativeEffects(character)
-        end
-    end)
-end
-
-function MainModule.StopEnhancedProtection()
-    if enhancedProtectionConnection then
-        enhancedProtectionConnection:Disconnect()
-        enhancedProtectionConnection = nil
-    end
-end
-
-function MainModule.StartJointCleaning()
-    if jointCleaningConnection then
-        jointCleaningConnection:Disconnect()
-    end
-    
-    -- Очистка сразу при запуске
-    local character = GetCharacter()
-    if character then
-        CleanJointsAndConstraints(character)
-        SetupRagdollListener(character)
-    end
-    
-    -- Постоянная очистка
-    jointCleaningConnection = RunService.Heartbeat:Connect(function()
-        if not MainModule.Misc.BypassRagdollEnabled then return end
-        local character = GetCharacter()
-        if character then
-            CleanJointsAndConstraints(character)
-        end
-    end)
-    
-    -- Слушатель смены персонажа
-    LocalPlayer.CharacterAdded:Connect(function(newChar)
-        task.wait(1)
-        SetupRagdollListener(newChar)
-        CleanJointsAndConstraints(newChar)
-    end)
-end
-
-function MainModule.StopJointCleaning()
-    if jointCleaningConnection then
-        jointCleaningConnection:Disconnect()
-        jointCleaningConnection = nil
-    end
-    
-    if ragdollBlockConnection then
-        ragdollBlockConnection:Disconnect()
-        ragdollBlockConnection = nil
-    end
-end
-
-function MainModule.FullCleanup()
-    local character = GetCharacter()
-    if character then
-        CleanNegativeEffects(character)
-        CleanJointsAndConstraints(character)
-        return true
-    end
-    return false
-end
-
--- Исправленная ESP система с обновлением HP и DISTANCE
+-- Исправленная ESP система
 function MainModule.ToggleESP(enabled)
     MainModule.Misc.ESPEnabled = enabled
     
@@ -1219,166 +1139,6 @@ function MainModule.ClearESP()
         MainModule.ESP.MainConnection:Disconnect()
         MainModule.ESP.MainConnection = nil
     end
-end
-
--- HIDE AND SEEK - Spikes Kill функция
-function MainModule.ToggleSpikesKill(enabled)
-    MainModule.SpikesKill.Enabled = enabled
-    
-    -- Создаем платформу сразу при включении
-    if enabled then
-        -- Создаем платформу (шипы)
-        if not MainModule.SpikesKill.Platform then
-            MainModule.SpikesKill.Platform = Instance.new("Part")
-            MainModule.SpikesKill.Platform.Name = "SpikesKillPlatform"
-            MainModule.SpikesKill.Platform.Size = MainModule.SpikesKill.PlatformSize
-            MainModule.SpikesKill.Platform.Anchored = true
-            MainModule.SpikesKill.Platform.Color = MainModule.SpikesKill.PlatformColor
-            MainModule.SpikesKill.Platform.CFrame = MainModule.SpikesKill.PlatformCFrame
-            MainModule.SpikesKill.Platform.Parent = workspace
-            print("[Spikes Kill] Платформа создана")
-        end
-    else
-        -- Удаляем платформу при выключении
-        if MainModule.SpikesKill.Platform and MainModule.SpikesKill.Platform.Parent then
-            MainModule.SpikesKill.Platform:Destroy()
-            MainModule.SpikesKill.Platform = nil
-            print("[Spikes Kill] Платформа удалена")
-        end
-    end
-    
-    -- Отключаем предыдущие соединения
-    if MainModule.SpikesKill.AnimationConnection then
-        MainModule.SpikesKill.AnimationConnection:Disconnect()
-        MainModule.SpikesKill.AnimationConnection = nil
-    end
-    
-    if MainModule.SpikesKill.CharacterAddedConnection then
-        MainModule.SpikesKill.CharacterAddedConnection:Disconnect()
-        MainModule.SpikesKill.CharacterAddedConnection = nil
-    end
-    
-    if MainModule.SpikesKill.SafetyCheckConnection then
-        MainModule.SpikesKill.SafetyCheckConnection:Disconnect()
-        MainModule.SpikesKill.SafetyCheckConnection = nil
-    end
-    
-    -- Отключаем все сохраненные соединения
-    for _, conn in ipairs(MainModule.SpikesKill.AnimationStoppedConnections) do
-        pcall(function() conn:Disconnect() end)
-    end
-    MainModule.SpikesKill.AnimationStoppedConnections = {}
-    
-    -- Сбрасываем переменные
-    MainModule.SpikesKill.SavedCFrame = nil
-    MainModule.SpikesKill.ActiveAnimation = false
-    MainModule.SpikesKill.AnimationStartTime = 0
-    
-    if not enabled then
-        print("[Spikes Kill] Выключен")
-        return
-    end
-    
-    print("[Spikes Kill] Включен")
-    
-    -- Функция настройки для персонажа
-    local function setupCharacter(char)
-        local humanoid = char:WaitForChild("Humanoid")
-        
-        -- ID целевой анимации
-        local targetAnimations = {
-            [MainModule.SpikesKill.AnimationId] = true
-        }
-        
-        -- Функция, срабатывающая при начале анимации
-        local function onAnimationStart(animTrack)
-            local id = animTrack.Animation.AnimationId
-            -- Проверяем, это нужная нам анимация?
-            if not targetAnimations[id] then return end
-            if MainModule.SpikesKill.ActiveAnimation then return end  -- Если уже активна, пропускаем
-            
-            MainModule.SpikesKill.ActiveAnimation = true
-            MainModule.SpikesKill.AnimationStartTime = tick()
-            
-            -- Сохраняем текущую позицию игрока
-            MainModule.SpikesKill.SavedCFrame = char:GetPrimaryPartCFrame()
-            
-            -- Телепортируем игрока на платформу (в шипы)
-            -- + Vector3.new(0, 6, 0) - на 6 единиц выше платформы
-            local targetCFrame = MainModule.SpikesKill.PlatformCFrame + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
-            char:SetPrimaryPartCFrame(targetCFrame)
-            
-            print("[Spikes Kill] Телепортирован в шипы")
-            
-            -- Запускаем проверку безопасности (максимум 5 секунд)
-            if MainModule.SpikesKill.SafetyCheckConnection then
-                MainModule.SpikesKill.SafetyCheckConnection:Disconnect()
-            end
-            
-            MainModule.SpikesKill.SafetyCheckConnection = RunService.Heartbeat:Connect(function()
-                if not MainModule.SpikesKill.ActiveAnimation then return end
-                
-                -- Если прошло больше 5 секунд, считаем анимацию оконченной
-                if tick() - MainModule.SpikesKill.AnimationStartTime >= MainModule.SpikesKill.MaxAnimationTime then
-                    onAnimationEnd(animTrack)
-                    MainModule.SpikesKill.SafetyCheckConnection:Disconnect()
-                end
-            end)
-        end
-        
-        -- Функция, срабатывающая при окончании анимации
-        local function onAnimationEnd(animTrack)
-            if not MainModule.SpikesKill.ActiveAnimation then return end
-            
-            local id = animTrack.Animation.AnimationId
-            if not targetAnimations[id] then return end
-            
-            MainModule.SpikesKill.ActiveAnimation = false
-            
-            print("[Spikes Kill] Анимация окончена, возвращаем на исходную позицию")
-            
-            -- Возвращаем игрока обратно
-            if MainModule.SpikesKill.SavedCFrame then
-                task.wait(0.5)  -- Небольшая задержка перед возвратом
-                char:SetPrimaryPartCFrame(MainModule.SpikesKill.SavedCFrame)
-                MainModule.SpikesKill.SavedCFrame = nil
-            end
-            
-            -- Отключаем проверку безопасности
-            if MainModule.SpikesKill.SafetyCheckConnection then
-                MainModule.SpikesKill.SafetyCheckConnection:Disconnect()
-                MainModule.SpikesKill.SafetyCheckConnection = nil
-            end
-        end
-        
-        -- Подключаемся к событию воспроизведения анимации
-        local animationConn = humanoid.AnimationPlayed:Connect(function(track)
-            -- Создаем соединение на окончание анимации
-            local stoppedConn = track.Stopped:Connect(function()
-                onAnimationEnd(track)
-            end)
-            
-            -- Сохраняем соединение для последующего отключения
-            table.insert(MainModule.SpikesKill.AnimationStoppedConnections, stoppedConn)
-            
-            -- Запускаем телепорт при начале анимации
-            onAnimationStart(track)
-        end)
-        
-        MainModule.SpikesKill.AnimationConnection = animationConn
-    end
-    
-    -- Настраиваем для текущего персонажа
-    local char = LocalPlayer.Character
-    if char then
-        setupCharacter(char)
-    end
-    
-    -- Подключаемся к событию добавления нового персонажа
-    MainModule.SpikesKill.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(char)
-        task.wait(1)  -- Ждем загрузки персонажа
-        setupCharacter(char)
-    end)
 end
 
 -- Функции скорости
@@ -1698,7 +1458,7 @@ function MainModule.ToggleInfiniteAmmo(enabled)
     end
 end
 
--- Hitbox Expander функция (исправленная по вашему примеру)
+-- Hitbox Expander функция
 function MainModule.ToggleHitboxExpander(enabled)
     MainModule.Hitbox.Enabled = enabled
     
@@ -2433,20 +2193,10 @@ function MainModule.Cleanup()
         MainModule.SpikesKill.CharacterAddedConnection = nil
     end
     
-    if MainModule.SpikesKill.SafetyCheckConnection then
-        MainModule.SpikesKill.SafetyCheckConnection:Disconnect()
-        MainModule.SpikesKill.SafetyCheckConnection = nil
-    end
-    
-    for _, conn in ipairs(MainModule.SpikesKill.AnimationStoppedConnections) do
-        pcall(function() conn:Disconnect() end)
-    end
-    MainModule.SpikesKill.AnimationStoppedConnections = {}
-    
     -- Удаляем платформу Spikes Kill
-    if MainModule.SpikesKill.Platform and MainModule.SpikesKill.Platform.Parent then
-        MainModule.SpikesKill.Platform:Destroy()
-        MainModule.SpikesKill.Platform = nil
+    if MainModule.SpikesKill.SpikesPlatform then
+        MainModule.SpikesKill.SpikesPlatform:Destroy()
+        MainModule.SpikesKill.SpikesPlatform = nil
     end
     
     -- Отключаем Glass Bridge соединения
@@ -2490,10 +2240,6 @@ function MainModule.Cleanup()
         MainModule.AntiTimeStop.Connection:Disconnect()
         MainModule.AntiTimeStop.Connection = nil
     end
-    
-    -- Отключаем дополнительные защиты
-    MainModule.StopEnhancedProtection()
-    MainModule.StopJointCleaning()
     
     -- Восстанавливаем хитбоксы
     for _, player in ipairs(Players:GetPlayers()) do
@@ -2595,4 +2341,3 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
-
