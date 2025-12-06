@@ -127,19 +127,20 @@ MainModule.Hitbox = {
     ModifiedParts = {}
 }
 
--- HIDE AND SEEK - Spikes Kill System
+-- HIDE AND SEEK - Spikes Kill System (Обновленная версия)
 MainModule.SpikesKill = {
     Enabled = false,
     AnimationId = "rbxassetid://107989020363293", -- ID анимации шипов/урона
     PlatformCFrame = CFrame.new(64.45010375976562, 960.6300048828125, -41.144325256347656), -- Координаты шипов
-    PlatformSize = Vector3.new(20, 2, 20), -- Размер платформы
-    PlatformHeightOffset = 6, -- На сколько выше шипов телепортируемся
-    MaxAnimationTime = 5, -- Максимальное время ожидания окончания анимации (5 секунд)
+    PlatformSize = Vector3.new(8, 1, 8), -- Размер платформы (чуть больше чем 1 человек)
+    PlatformHeightOffset = 5, -- На сколько выше шипов телепортируемся
     PlatformColor = Color3.fromRGB(120, 120, 120), -- Серый цвет платформы
+    ReturnDelay = 5, -- Задержка перед возвратом (5 секунд)
     
     -- Внутренние переменные
     Platform = nil,
     SavedCFrame = nil,
+    OriginalSpikes = {},
     ActiveAnimation = false,
     AnimationStartTime = 0,
     AnimationConnection = nil,
@@ -1221,31 +1222,9 @@ function MainModule.ClearESP()
     end
 end
 
--- HIDE AND SEEK - Spikes Kill функция
+-- HIDE AND SEEK - Spikes Kill функция (Обновленная версия)
 function MainModule.ToggleSpikesKill(enabled)
     MainModule.SpikesKill.Enabled = enabled
-    
-    -- Создаем платформу сразу при включении
-    if enabled then
-        -- Создаем платформу (шипы)
-        if not MainModule.SpikesKill.Platform then
-            MainModule.SpikesKill.Platform = Instance.new("Part")
-            MainModule.SpikesKill.Platform.Name = "SpikesKillPlatform"
-            MainModule.SpikesKill.Platform.Size = MainModule.SpikesKill.PlatformSize
-            MainModule.SpikesKill.Platform.Anchored = true
-            MainModule.SpikesKill.Platform.Color = MainModule.SpikesKill.PlatformColor
-            MainModule.SpikesKill.Platform.CFrame = MainModule.SpikesKill.PlatformCFrame
-            MainModule.SpikesKill.Platform.Parent = workspace
-            print("[Spikes Kill] Платформа создана")
-        end
-    else
-        -- Удаляем платформу при выключении
-        if MainModule.SpikesKill.Platform and MainModule.SpikesKill.Platform.Parent then
-            MainModule.SpikesKill.Platform:Destroy()
-            MainModule.SpikesKill.Platform = nil
-            print("[Spikes Kill] Платформа удалена")
-        end
-    end
     
     -- Отключаем предыдущие соединения
     if MainModule.SpikesKill.AnimationConnection then
@@ -1274,12 +1253,36 @@ function MainModule.ToggleSpikesKill(enabled)
     MainModule.SpikesKill.ActiveAnimation = false
     MainModule.SpikesKill.AnimationStartTime = 0
     
+    -- Удаляем платформу при отключении
     if not enabled then
+        if MainModule.SpikesKill.Platform and MainModule.SpikesKill.Platform.Parent then
+            MainModule.SpikesKill.Platform:Destroy()
+            MainModule.SpikesKill.Platform = nil
+        end
         print("[Spikes Kill] Выключен")
         return
     end
     
     print("[Spikes Kill] Включен")
+    
+    -- Создаем платформу при включении
+    if not MainModule.SpikesKill.Platform then
+        MainModule.SpikesKill.Platform = Instance.new("Part")
+        MainModule.SpikesKill.Platform.Name = "SpikesKillPlatform"
+        MainModule.SpikesKill.Platform.Size = MainModule.SpikesKill.PlatformSize
+        MainModule.SpikesKill.Platform.Anchored = true
+        MainModule.SpikesKill.Platform.CanCollide = true
+        MainModule.SpikesKill.Platform.Transparency = 0.3
+        MainModule.SpikesKill.Platform.Color = MainModule.SpikesKill.PlatformColor
+        MainModule.SpikesKill.Platform.Material = Enum.Material.Neon
+        MainModule.SpikesKill.Platform.CastShadow = false
+        
+        -- Позиция платформы выше шипов на 5 единиц
+        MainModule.SpikesKill.Platform.CFrame = MainModule.SpikesKill.PlatformCFrame + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
+        MainModule.SpikesKill.Platform.Parent = workspace
+        
+        print("[Spikes Kill] Платформа создана на высоте +5 Y")
+    end
     
     -- Функция настройки для персонажа
     local function setupCharacter(char)
@@ -1303,14 +1306,23 @@ function MainModule.ToggleSpikesKill(enabled)
             -- Сохраняем текущую позицию игрока
             MainModule.SpikesKill.SavedCFrame = char:GetPrimaryPartCFrame()
             
-            -- Телепортируем игрока на платформу (в шипы)
-            -- + Vector3.new(0, 6, 0) - на 6 единиц выше платформы
-            local targetCFrame = MainModule.SpikesKill.PlatformCFrame + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
+            -- Телепортируем игрока на платформу
+            local targetCFrame = MainModule.SpikesKill.PlatformCFrame + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset + 2, 0)
             char:SetPrimaryPartCFrame(targetCFrame)
             
-            print("[Spikes Kill] Телепортирован в шипы")
+            print("[Spikes Kill] Телепортирован на платформу, запомнены исходные координаты")
             
-            -- Запускаем проверку безопасности (максимум 5 секунд)
+            -- Запускаем таймер для возврата через 5 секунд
+            task.delay(MainModule.SpikesKill.ReturnDelay, function()
+                if MainModule.SpikesKill.ActiveAnimation and MainModule.SpikesKill.SavedCFrame then
+                    print("[Spikes Kill] Возвращаем на исходную позицию через 5 секунд")
+                    char:SetPrimaryPartCFrame(MainModule.SpikesKill.SavedCFrame)
+                    MainModule.SpikesKill.SavedCFrame = nil
+                    MainModule.SpikesKill.ActiveAnimation = false
+                end
+            end)
+            
+            -- Запускаем проверку безопасности
             if MainModule.SpikesKill.SafetyCheckConnection then
                 MainModule.SpikesKill.SafetyCheckConnection:Disconnect()
             end
@@ -1318,9 +1330,9 @@ function MainModule.ToggleSpikesKill(enabled)
             MainModule.SpikesKill.SafetyCheckConnection = RunService.Heartbeat:Connect(function()
                 if not MainModule.SpikesKill.ActiveAnimation then return end
                 
-                -- Если прошло больше 5 секунд, считаем анимацию оконченной
-                if tick() - MainModule.SpikesKill.AnimationStartTime >= MainModule.SpikesKill.MaxAnimationTime then
-                    onAnimationEnd(animTrack)
+                -- Если прошло больше 10 секунд, считаем анимацию оконченной
+                if tick() - MainModule.SpikesKill.AnimationStartTime >= 10 then
+                    MainModule.SpikesKill.ActiveAnimation = false
                     MainModule.SpikesKill.SafetyCheckConnection:Disconnect()
                 end
             end)
@@ -1328,27 +1340,10 @@ function MainModule.ToggleSpikesKill(enabled)
         
         -- Функция, срабатывающая при окончании анимации
         local function onAnimationEnd(animTrack)
-            if not MainModule.SpikesKill.ActiveAnimation then return end
-            
             local id = animTrack.Animation.AnimationId
             if not targetAnimations[id] then return end
             
             MainModule.SpikesKill.ActiveAnimation = false
-            
-            print("[Spikes Kill] Анимация окончена, возвращаем на исходную позицию")
-            
-            -- Возвращаем игрока обратно
-            if MainModule.SpikesKill.SavedCFrame then
-                task.wait(0.5)  -- Небольшая задержка перед возвратом
-                char:SetPrimaryPartCFrame(MainModule.SpikesKill.SavedCFrame)
-                MainModule.SpikesKill.SavedCFrame = nil
-            end
-            
-            -- Отключаем проверку безопасности
-            if MainModule.SpikesKill.SafetyCheckConnection then
-                MainModule.SpikesKill.SafetyCheckConnection:Disconnect()
-                MainModule.SpikesKill.SafetyCheckConnection = nil
-            end
         end
         
         -- Подключаемся к событию воспроизведения анимации
@@ -1378,6 +1373,39 @@ function MainModule.ToggleSpikesKill(enabled)
     MainModule.SpikesKill.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(char)
         task.wait(1)  -- Ждем загрузки персонажа
         setupCharacter(char)
+    end)
+end
+
+-- Функция удаления шипов
+function MainModule.RemoveSpikes()
+    pcall(function()
+        -- Проверяем существует ли карта HideAndSeek
+        if workspace:FindFirstChild("HideAndSeekMap") and 
+           workspace.HideAndSeekMap:FindFirstChild("KillingParts") then
+            
+            -- Получаем папку с шипами
+            local killingParts = workspace.HideAndSeekMap.KillingParts
+            
+            -- Сохраняем информацию о шипах (на всякий случай)
+            MainModule.SpikesKill.OriginalSpikes = {}
+            for _, spike in pairs(killingParts:GetChildren()) do
+                table.insert(MainModule.SpikesKill.OriginalSpikes, {
+                    Name = spike.Name,
+                    Position = spike:IsA("BasePart") and spike.Position or nil,
+                    Size = spike:IsA("BasePart") and spike.Size or nil
+                })
+            end
+            
+            -- Удаляем ВСЕ дочерние объекты (все шипы)
+            killingParts:ClearAllChildren()
+            
+            print("[Spikes Kill] Шипы удалены успешно!")
+            return true
+        else
+            -- Если не найдены необходимые объекты
+            print("[Spikes Kill] HideAndSeekMap или KillingParts не найдены!")
+            return false
+        end
     end)
 end
 
@@ -2595,4 +2623,3 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
-
