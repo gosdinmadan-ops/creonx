@@ -40,8 +40,9 @@ MainModule.AutoDodge = {
     Range = 9,
     RangeSquared = 9 * 9,
     AnimationIdsSet = {},
-    PlayersInRange = {}
-}
+    PlayersInRange = {},
+    LastRangeUpdate = 0
+}=
 
 
 MainModule.AutoQTE = {
@@ -2192,6 +2193,100 @@ function MainModule.ToggleAutoDodge(enabled)
     if enabled then
         print("[AutoDodge] Включен - радиус 9 метров")
         
+        -- Функция для нажатия клавиши 1 через UserInputService
+        local function pressKey1()
+            local currentTime = tick()
+            
+            if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then
+                return false
+            end
+            
+            -- Пытаемся использовать несколько методов через UserInputService
+            local success = false
+            
+            -- Метод 1: Прямое создание InputObject (работает во многих играх)
+            pcall(function()
+                -- Создаем объект ввода для клавиши 1
+                local inputObject = {
+                    KeyCode = Enum.KeyCode.One,
+                    UserInputType = Enum.UserInputType.Keyboard,
+                    UserInputState = Enum.UserInputState.Begin
+                }
+                
+                -- Попробуем вызвать через FireAllClients если есть
+                local inputRemote = ReplicatedStorage:FindFirstChild("InputRemote") or
+                                   ReplicatedStorage:FindFirstChild("UserInputRemote")
+                
+                if inputRemote and inputRemote:IsA("RemoteEvent") then
+                    inputRemote:FireServer("KeyPress", Enum.KeyCode.One, true)
+                    success = true
+                else
+                    -- Пробуем напрямую через симуляцию ввода
+                    -- Получаем все подключения к InputBegan
+                    for _, connection in pairs(getconnections(UserInputService.InputBegan)) do
+                        pcall(function()
+                            connection:Fire(inputObject)
+                        end)
+                    end
+                    
+                    task.wait(0.03)
+                    
+                    -- Завершаем нажатие
+                    inputObject.UserInputState = Enum.UserInputState.End
+                    for _, connection in pairs(getconnections(UserInputService.InputEnded)) do
+                        pcall(function()
+                            connection:Fire(inputObject)
+                        end)
+                    end
+                    
+                    success = true
+                end
+            end)
+            
+            -- Метод 2: Если первый не сработал, пробуем через BindableEvents
+            if not success then
+                pcall(function()
+                    -- Ищем BindableEvent для ввода в игре
+                    local inputBindable = ReplicatedStorage:FindFirstChild("InputBindable") or
+                                         workspace:FindFirstChild("InputEvents")
+                    
+                    if inputBindable and inputBindable:IsA("BindableEvent") then
+                        inputBindable:Fire("KeyDown", Enum.KeyCode.One)
+                        task.wait(0.03)
+                        inputBindable:Fire("KeyUp", Enum.KeyCode.One)
+                        success = true
+                    end
+                end)
+            end
+            
+            -- Метод 3: Пробуем через RemoteEvents которые могут отвечать за способности
+            if not success then
+                pcall(function()
+                    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+                    if remotes then
+                        -- Ищем remote для уклонения/способностей
+                        local dodgeRemote = remotes:FindFirstChild("Dodge") or
+                                           remotes:FindFirstChild("Ability") or
+                                           remotes:FindFirstChild("Skill")
+                        
+                        if dodgeRemote and dodgeRemote:IsA("RemoteEvent") then
+                            dodgeRemote:FireServer()
+                            success = true
+                        end
+                    end
+                end)
+            end
+            
+            if success then
+                MainModule.AutoDodge.LastDodgeTime = currentTime
+                print("[AutoDodge] Выполнено уклонение")
+                return true
+            else
+                print("[AutoDodge] Не удалось выполнить уклонение")
+                return false
+            end
+        end
+        
         -- Быстрая проверка расстояния с квадратом
         local function isInRangeFast(playerRoot, localRoot)
             if not (playerRoot and localRoot) then return false end
@@ -2213,34 +2308,6 @@ function MainModule.ToggleAutoDodge(enabled)
             if not animId or type(animId) ~= "string" then return false end
             
             return MainModule.AutoDodge.AnimationIdsSet[animId] == true
-        end
-        
-        -- Нажатие клавиши T
-        local function pressKeyT()
-            local currentTime = tick()
-            
-            if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then
-                return false
-            end
-            
-            local VirtualInputManager = game:GetService("VirtualInputManager")
-            if VirtualInputManager then
-                local keyCode = Enum.KeyCode.T
-                
-                local success = pcall(function()
-                    VirtualInputManager:SendKeyEvent(true, keyCode, false, nil)
-                    task.wait(0.03)
-                    VirtualInputManager:SendKeyEvent(false, keyCode, false, nil)
-                end)
-                
-                if success then
-                    MainModule.AutoDodge.LastDodgeTime = currentTime
-                    print("[AutoDodge] Нажата клавиша T для уклонения")
-                    return true
-                end
-            end
-            
-            return false
         end
         
         -- Обновление списка игроков в радиусе
@@ -2318,10 +2385,11 @@ function MainModule.ToggleAutoDodge(enabled)
                         -- Логируем атаку
                         local animId = track.Animation.AnimationId
                         local animNum = animId:match("rbxassetid://(%d+)") or animId
-                        print(string.format("[AutoDodge] Атака от %s (анимация: %s)", 
+                        print(string.format("[AutoDodge] Обнаружена атака от %s (анимация: %s)", 
                               player.Name, animNum))
                         
-                        pressKeyT()
+                        -- Выполняем уклонение
+                        pressKey1()
                     end
                 end
             end
