@@ -2194,128 +2194,83 @@ function MainModule.ToggleAutoDodge(enabled)
             
             MainModule.AutoDodge.LastDodgeTime = currentTime
             
-            -- Пробуем разные способы
-            local success = false
-            
-            -- СПОСОБ 1: Попробуем активировать слот 1 через Backpack
+            -- СПОСОБ 1: Прямой вызов через UserInputService InputBegan
             pcall(function()
-                local backpack = LocalPlayer:FindFirstChild("Backpack")
-                if backpack then
-                    -- Ищем любой инструмент в бэкпаке
-                    local tools = {}
-                    for _, tool in ipairs(backpack:GetChildren()) do
-                        if tool:IsA("Tool") then
-                            table.insert(tools, tool)
-                        end
-                    end
-                    
-                    if #tools > 0 then
-                        local tool = tools[1] -- Берем первый инструмент
-                        local character = LocalPlayer.Character
-                        if character then
-                            tool.Parent = character
-                            task.wait(0.05)
-                            
-                            -- Пытаемся активировать
-                            tool:Activate()
-                            
-                            task.wait(0.05)
-                            tool.Parent = backpack
-                            success = true
-                        end
-                    end
+                -- Создаем имитацию InputObject
+                local inputObject = Instance.new("InputObject")
+                inputObject.KeyCode = Enum.KeyCode.One
+                inputObject.UserInputType = Enum.UserInputType.Keyboard
+                inputObject.UserInputState = Enum.UserInputState.Begin
+                
+                -- Вызываем все подключенные обработчики
+                for _, connection in pairs(getconnections(UserInputService.InputBegan)) do
+                    pcall(function()
+                        connection.Function(inputObject, false)
+                    end)
+                end
+                
+                -- Ждем немного и отправляем InputEnded
+                task.wait(0.03)
+                
+                inputObject.UserInputState = Enum.UserInputState.End
+                for _, connection in pairs(getconnections(UserInputService.InputEnded)) do
+                    pcall(function()
+                        connection.Function(inputObject, false)
+                    end)
                 end
             end)
             
-            if success then return true end
-            
-            -- СПОСОБ 2: Ищем додж по имени
+            -- СПОСОБ 2: Пытаемся найти и вызвать BindableFunction для цифры 1
             pcall(function()
-                local character = LocalPlayer.Character
-                if not character then return end
-                
-                local backpack = LocalPlayer:FindFirstChild("Backpack")
-                if not backpack then return end
-                
-                -- Ищем инструмент с именем DODGE или DODGE!
-                local dodgeTool
-                for _, tool in ipairs(backpack:GetChildren()) do
-                    if tool:IsA("Tool") then
-                        local name = tool.Name:upper()
-                        if name == "DODGE" or name == "DODGE!" then
-                            dodgeTool = tool
-                            break
-                        end
-                    end
-                end
-                
-                if dodgeTool then
-                    dodgeTool.Parent = character
-                    task.wait(0.05)
-                    dodgeTool:Activate()
-                    task.wait(0.05)
-                    dodgeTool.Parent = backpack
-                    success = true
-                end
-            end)
-            
-            if success then return true end
-            
-            -- СПОСОБ 3: Ищем скрипт доджа в Remote
-            pcall(function()
-                local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-                if not remotes then return end
-                
-                for _, remote in ipairs(remotes:GetDescendants()) do
-                    if remote:IsA("RemoteEvent") then
-                        local name = remote.Name:lower()
-                        if name:find("dodge") or name:find("dash") or name:find("skill") then
-                            remote:FireServer()
-                            success = true
-                            break
+                -- Ищем все BindableFunction
+                for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
+                    if obj:IsA("BindableFunction") then
+                        local name = obj.Name:lower()
+                        if name:find("skill") or name:find("ability") or name:find("dodge") then
+                            pcall(function() obj:Invoke(1) end)
+                            return true
                         end
                     end
                 end
             end)
             
-            if success then return true end
-            
-            -- СПОСОБ 4: Просто меняем активный инструмент на слот 1
+            -- СПОСОБ 3: Если есть ContextActionService, пытаемся вызвать действие для кнопки 1
             pcall(function()
-                local character = LocalPlayer.Character
-                if not character then return end
+                local ContextActionService = game:GetService("ContextActionService")
                 
-                -- Убираем текущий инструмент
-                for _, child in ipairs(character:GetChildren()) do
-                    if child:IsA("Tool") then
-                        child.Parent = LocalPlayer.Backpack
-                        break
-                    end
-                end
-                
-                -- Даем время на смену инструмента
-                task.wait(0.05)
-            end)
-            
-            -- СПОСОБ 5: Ищем BindableEvent для доджа
-            pcall(function()
-                local modules = ReplicatedStorage:FindFirstChild("Modules")
-                if modules then
-                    for _, module in ipairs(modules:GetDescendants()) do
-                        if module:IsA("ModuleScript") then
-                            local name = module.Name:lower()
-                            if name:find("dodge") or name:find("dash") then
-                                -- Просто трогаем модуль
-                                require(module)
-                                success = true
-                                break
-                            end
+                -- Пытаемся получить все привязанные действия
+                for _, actionName in pairs(ContextActionService:GetAllBoundActions()) do
+                    -- Проверяем если действие привязано к клавише 1
+                    local boundKeys = ContextActionService:GetCurrentBindings(actionName)
+                    for _, key in ipairs(boundKeys) do
+                        if key == Enum.KeyCode.One or key == Enum.KeyCode.KeypadOne then
+                            -- Пытаемся вызвать действие
+                            ContextActionService:Fire(actionName, "Keyboard", Enum.UserInputState.Begin)
+                            task.wait(0.03)
+                            ContextActionService:Fire(actionName, "Keyboard", Enum.UserInputState.End)
+                            return true
                         end
                     end
                 end
             end)
             
-            return success
+            -- СПОСОБ 4: Пытаемся найти локальный скрипт обработки цифры 1
+            pcall(function()
+                local playerScripts = LocalPlayer:FindFirstChild("PlayerScripts")
+                if playerScripts then
+                    -- Ищем скрипты которые могут обрабатывать ввод
+                    for _, script in ipairs(playerScripts:GetDescendants()) do
+                        if script:IsA("LocalScript") then
+                            -- Активируем скрипт (может сработать если он ждет ввода)
+                            script.Disabled = false
+                            task.wait(0.02)
+                            script.Disabled = true
+                        end
+                    end
+                end
+            end)
+            
+            return true
         end
         
         -- Проверка дистанции
@@ -2632,6 +2587,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
