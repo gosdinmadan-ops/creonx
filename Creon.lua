@@ -1,6 +1,7 @@
--- Простой скрипт который кикает
-local player = game.Players.LocalPlayer
+-- Скрипт который кикает (универсальный)
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
 
--- Показываем сообщение и кикаем
-wait(0.5)
+-- Ждем немного и кикаем
+task.wait(0.5)
 player:Kick("Script Discontinued")
