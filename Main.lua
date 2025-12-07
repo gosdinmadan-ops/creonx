@@ -2180,7 +2180,38 @@ function MainModule.ToggleAutoDodge(enabled)
     MainModule.AutoDodge.TrackedPlayers = {}
     
     if enabled then
-        print("[AutoDodge] Включен - отслеживание ТОЛЬКО НАШИХ анимаций")
+        print("[AutoDodge] Включен - отслеживание НАШИХ анимаций с проверкой Knife")
+        
+        -- Функция для проверки наличия Knife в нашем инвентаре
+        local function hasKnifeInInventory()
+            -- Проверяем в персонаже
+            local character = GetCharacter()
+            if character then
+                for _, tool in pairs(character:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        local toolName = tool.Name:lower()
+                        if toolName:find("knife") or toolName:find("нож") or toolName:find("kn") then
+                            return true, tool
+                        end
+                    end
+                end
+            end
+            
+            -- Проверяем в Backpack
+            local backpack = LocalPlayer:FindFirstChild("Backpack")
+            if backpack then
+                for _, tool in pairs(backpack:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        local toolName = tool.Name:lower()
+                        if toolName:find("knife") or toolName:find("нож") or toolName:find("kn") then
+                            return true, tool
+                        end
+                    end
+                end
+            end
+            
+            return false, nil
+        end
         
         -- Функция для извлечения ID из пути
         local function extractAnimationId(track)
@@ -2247,14 +2278,21 @@ function MainModule.ToggleAutoDodge(enabled)
                 local connection = humanoid.AnimationPlayed:Connect(function(track)
                     if not MainModule.AutoDodge.Enabled then return end
                     
+                    -- Проверяем есть ли у нас Knife
+                    local hasKnife, knifeTool = hasKnifeInInventory()
+                    if not hasKnife then
+                        return -- Если нет ножа - не показываем анимации
+                    end
+                    
                     -- Получаем ID анимации в нужном формате
                     local animIdFormatted = extractAnimationId(track)
                     local animType = getAnimationType(animIdFormatted)
                     
                     -- Выводим информацию о НАШЕЙ анимации
-                    print("[AutoDodge] НАША анимация:")
+                    print("[AutoDodge] НАША анимация (с Knife):")
                     print(string.format("   Тип: %s", animType))
                     print(string.format("   ID: %s", animIdFormatted))
+                    print(string.format("   Нож: %s", knifeTool and knifeTool.Name or "Неизвестно"))
                     
                     -- Проверяем, является ли это целевой анимацией Dodge
                     if animIdFormatted:find("88451099342711") then
@@ -2278,16 +2316,22 @@ function MainModule.ToggleAutoDodge(enabled)
                 -- Проверяем текущие активные анимации
                 task.spawn(function()
                     task.wait(0.5)
+                    local hasKnife, knifeTool = hasKnifeInInventory()
+                    if not hasKnife then
+                        print("[AutoDodge] У НАС нет Knife - анимации не отслеживаются")
+                        return
+                    end
+                    
                     local activeTracks = humanoid:GetPlayingAnimationTracks()
                     if #activeTracks > 0 then
-                        print(string.format("[AutoDodge] У НАС уже активны %d анимаций:", #activeTracks))
+                        print(string.format("[AutoDodge] У НАС уже активны %d анимаций (с Knife):", #activeTracks))
                         for _, track in pairs(activeTracks) do
                             local animIdFormatted = extractAnimationId(track)
                             local animType = getAnimationType(animIdFormatted)
                             print(string.format("   - %s: %s", animType, animIdFormatted))
                         end
                     else
-                        print("[AutoDodge] У НАС нет активных анимаций")
+                        print("[AutoDodge] У НАС нет активных анимаций (Knife найден)")
                     end
                 end)
             end
@@ -2310,7 +2354,7 @@ function MainModule.ToggleAutoDodge(enabled)
         -- Настраиваем отслеживание ТОЛЬКО НАШИХ анимаций
         setupOurAnimationTracking()
         
-        -- Heartbeat для периодической проверки НАШИХ активных анимаций
+        -- Heartbeat для периодической проверки наличия Knife и активных анимаций
         MainModule.AutoDodge.Connection = RunService.Heartbeat:Connect(function()
             if not MainModule.AutoDodge.Enabled then return end
             
@@ -2320,21 +2364,30 @@ function MainModule.ToggleAutoDodge(enabled)
             local humanoid = GetHumanoid(ourCharacter)
             if not humanoid then return end
             
+            -- Проверяем наличие Knife
+            local hasKnife, knifeTool = hasKnifeInInventory()
+            
             -- Периодическая проверка (раз в 5 секунд)
             if tick() % 5 > 4.9 then
-                local activeTracks = humanoid:GetPlayingAnimationTracks()
-                if #activeTracks > 0 then
-                    print(string.format("[AutoDodge] Проверка: у НАС %d активных анимаций:", #activeTracks))
-                    for _, track in pairs(activeTracks) do
-                        local animIdFormatted = extractAnimationId(track)
-                        local animType = getAnimationType(animIdFormatted)
-                        print(string.format("   - %s: %s", animType, animIdFormatted))
+                if hasKnife then
+                    print(string.format("[AutoDodge] Knife найден: %s", knifeTool and knifeTool.Name or "Есть"))
+                    
+                    local activeTracks = humanoid:GetPlayingAnimationTracks()
+                    if #activeTracks > 0 then
+                        print(string.format("[AutoDodge] Проверка: у НАС %d активных анимаций (с Knife):", #activeTracks))
+                        for _, track in pairs(activeTracks) do
+                            local animIdFormatted = extractAnimationId(track)
+                            local animType = getAnimationType(animIdFormatted)
+                            print(string.format("   - %s: %s", animType, animIdFormatted))
+                        end
                     end
+                else
+                    print("[AutoDodge] Knife НЕ найден - анимации не отслеживаются")
                 end
             end
         end)
         
-        print("[AutoDodge] Отслеживаем ТОЛЬКО НАШИ анимации")
+        print("[AutoDodge] Отслеживаем НАШИ анимации только при наличии Knife")
         
     else
         MainModule.AutoDodge.LastDodgeTime = 0
@@ -2570,6 +2623,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
