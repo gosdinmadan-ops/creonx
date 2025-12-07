@@ -2203,8 +2203,15 @@ function MainModule.ToggleAutoDodge(enabled)
             return (dx*dx + dy*dy + dz*dz) <= MainModule.AutoDodge.RangeSquared
         end
         
-        -- Проверка анимации
-        local function isTargetAnimation(animId)
+        -- Безопасная проверка анимации
+        local function isTargetAnimation(track)
+            -- Проверяем, что track и Animation существуют
+            if not track then return false end
+            if not track.Animation then return false end
+            
+            local animId = track.Animation.AnimationId
+            if not animId or type(animId) ~= "string" then return false end
+            
             return MainModule.AutoDodge.AnimationIdsSet[animId] == true
         end
         
@@ -2238,10 +2245,16 @@ function MainModule.ToggleAutoDodge(enabled)
         -- Обновление списка игроков в радиусе
         local function updatePlayersInRange()
             local localCharacter = LocalPlayer.Character
-            if not localCharacter then return {} end
+            if not localCharacter then 
+                MainModule.AutoDodge.PlayersInRange = {}
+                return {}
+            end
             
             local localRoot = localCharacter:FindFirstChild("HumanoidRootPart")
-            if not localRoot then return {} end
+            if not localRoot then 
+                MainModule.AutoDodge.PlayersInRange = {}
+                return {}
+            end
             
             local playersInRange = {}
             
@@ -2286,7 +2299,8 @@ function MainModule.ToggleAutoDodge(enabled)
                 if not MainModule.AutoDodge.Enabled then return end
                 if player == LocalPlayer then return end
                 
-                if track.Animation and isTargetAnimation(track.Animation.AnimationId) then
+                -- Безопасная проверка анимации
+                if isTargetAnimation(track) then
                     -- Проверяем расстояние
                     local localCharacter = LocalPlayer.Character
                     local playerCharacter = player.Character
@@ -2351,14 +2365,19 @@ function MainModule.ToggleAutoDodge(enabled)
         end)
         table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
         
-        -- Heartbeat для обновления списка игроков в радиусе (раз в секунду)
+        -- Heartbeat для обновления списка игроков в радиусе (раз в 2 секунды)
         local heartbeatConn = RunService.Heartbeat:Connect(function()
             if not MainModule.AutoDodge.Enabled then return end
             
-            -- Обновляем список игроков в радиусе раз в секунду
-            if tick() - (MainModule.AutoDodge.LastRangeUpdate or 0) > 1 then
+            -- Обновляем список игроков в радиусе раз в 2 секунды
+            local currentTime = tick()
+            if not MainModule.AutoDodge.LastRangeUpdate then
+                MainModule.AutoDodge.LastRangeUpdate = currentTime
+            end
+            
+            if currentTime - MainModule.AutoDodge.LastRangeUpdate > 2 then
                 updatePlayersInRange()
-                MainModule.AutoDodge.LastRangeUpdate = tick()
+                MainModule.AutoDodge.LastRangeUpdate = currentTime
             end
         end)
         table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
@@ -2372,6 +2391,7 @@ function MainModule.ToggleAutoDodge(enabled)
         
     else
         MainModule.AutoDodge.LastDodgeTime = 0
+        MainModule.AutoDodge.LastRangeUpdate = nil
         MainModule.AutoDodge.PlayersInRange = {}
         print("[AutoDodge] Выключен")
     end
@@ -2605,6 +2625,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
