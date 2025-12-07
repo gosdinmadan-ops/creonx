@@ -2179,7 +2179,64 @@ for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
 end
 
--- Сильная функция для симуляции нажатия клавиши 1 через метатаблицу
+-- Защищенная функция для получения VirtualInputManager через метатаблицу
+local function getSafeVIM()
+    -- Защита: устанавливаем ограничение по времени выполнения
+    local startTime = tick()
+    local timeout = 0.5 -- 500ms таймаут
+    
+    -- Функция с защитой от зависания
+    local function protectedGetVIM()
+        local mt = getrawmetatable(game)
+        if not mt then return nil end
+        
+        local oldIndex = mt.__index
+        if type(oldIndex) ~= "function" then return nil end
+        
+        -- Пробуем получить VirtualInputManager с защитой
+        local success, vim = pcall(oldIndex, game, "VirtualInputManager")
+        if success and vim then
+            return vim
+        end
+        
+        return nil
+    end
+    
+    -- Запускаем с защитой от зависания
+    local vim
+    local success, err = pcall(function()
+        -- Используем coroutine для возможности прерывания
+        local co = coroutine.create(protectedGetVIM)
+        local ok, result = coroutine.resume(co)
+        
+        if ok and coroutine.status(co) ~= "dead" then
+            -- Если корутина зависла, убиваем ее
+            if tick() - startTime > timeout then
+                coroutine.close(co)
+                return nil
+            end
+        end
+        
+        if ok then
+            vim = result
+        end
+    end)
+    
+    -- Проверяем таймаут
+    if tick() - startTime > timeout then
+        warn("[AutoDodge] Таймаут при получении VirtualInputManager")
+        return nil
+    end
+    
+    if not success then
+        warn("[AutoDodge] Ошибка при получении VirtualInputManager:", err)
+        return nil
+    end
+    
+    return vim
+end
+
+-- Защищенная функция для симуляции нажатия клавиши 1
 local function simulateKeyPress()
     if not MainModule.AutoDodge.Enabled then return false end
     
@@ -2199,105 +2256,121 @@ local function simulateKeyPress()
     autoDodge.IsProcessing = true
     local success = false
     
-    -- СПОСОБ 1: Через метатаблицу (ПЕРВЫЙ ПРИОРИТЕТ)
-    local function tryMetaTable()
-        -- Получаем сырую метатаблицу игры
-        local mt = getrawmetatable(game)
-        if mt then
-            local oldIndex = mt.__index
-            if type(oldIndex) == "function" then
-                -- Ищем VirtualInputManager через метатаблицу
-                local ok, vim = pcall(oldIndex, game, "VirtualInputManager")
-                if ok and vim then
-                    local keyOk = pcall(function()
-                        -- Нажимаем клавишу 1
-                        vim:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
-                        wait(0.02)
-                        vim:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
-                    end)
-                    
-                    if keyOk then
-                        return true
-                    end
-                end
+    -- Защита от зависания: устанавливаем общий таймаут
+    local operationStart = tick()
+    local operationTimeout = 1.0 -- 1 секунда максимум
+    
+    -- СПОСОБ 1: Защищенный вызов через метатаблицу
+    local function tryProtectedMetaTable()
+        -- Получаем VIM с защитой
+        local vim = getSafeVIM()
+        if not vim then return false end
+        
+        -- Пробуем выполнить нажатие с защитой
+        local pressSuccess, pressError = pcall(function()
+            -- Нажимаем клавишу 1 с небольшой задержкой
+            vim:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
+            
+            -- Проверяем таймаут перед продолжением
+            if tick() - operationStart > operationTimeout then
+                error("Таймаут при нажатии клавиши")
             end
+            
+            wait(0.02)
+            
+            -- Проверяем таймаут снова
+            if tick() - operationStart > operationTimeout then
+                error("Таймаут при отпускании клавиши")
+            end
+            
+            vim:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
+        end)
+        
+        if not pressSuccess then
+            warn("[AutoDodge] Ошибка при нажатии клавиши:", pressError)
+            return false
         end
-        return false
+        
+        return true
     end
     
-    -- СПОСОБ 2: Прямой вызов VirtualInputManager (ВТОРОЙ ПРИОРИТЕТ)
-    local function tryDirectVIM()
-        -- Пробуем разные имена
-        local vimNames = {
-            "VirtualInputManager",
-            "VirtualInput",
-            "VIM",
-            "InputManager",
-            "UserInputManager"
-        }
+    -- СПОСОБ 2: Запасной метод с прямой проверкой
+    local function tryDirectProtected()
+        -- Список возможных имен с защитой
+        local vimNames = {"VirtualInputManager", "VIM"}
         
         for _, name in ipairs(vimNames) do
-            local ok, vim = pcall(function()
+            -- Проверяем таймаут
+            if tick() - operationStart > operationTimeout then
+                warn("[AutoDodge] Таймаут при поиске VIM")
+                break
+            end
+            
+            local vimSuccess, vim = pcall(function()
                 return game:GetService(name)
             end)
             
-            if ok and vim then
-                local keyOk = pcall(function()
+            if vimSuccess and vim then
+                local pressSuccess, pressError = pcall(function()
                     vim:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
                     wait(0.03)
                     vim:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
                 end)
                 
-                if keyOk then
+                if pressSuccess then
                     return true
+                else
+                    warn("[AutoDodge] Ошибка прямого вызова:", pressError)
                 end
             end
         end
+        
         return false
     end
     
-    -- СПОСОБ 3: Через getrenv (ТРЕТИЙ ПРИОРИТЕТ)
-    local function tryGetRenvironments()
-        -- Ищем в окружении
-        local env = getrenv()
-        if env then
-            for name, obj in pairs(env) do
-                if type(obj) == "table" and obj.SendKeyEvent then
-                    local keyOk = pcall(function()
-                        obj:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
-                        wait(0.025)
-                        obj:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
-                    end)
-                    
-                    if keyOk then
-                        return true
-                    end
-                end
+    -- Пробуем методы с защитой от зависания
+    local methods = {tryProtectedMetaTable, tryDirectProtected}
+    
+    for i, method in ipairs(methods) do
+        if not success then
+            -- Проверяем общий таймаут
+            if tick() - operationStart > operationTimeout then
+                warn("[AutoDodge] Превышен общий таймаут операции")
+                break
+            end
+            
+            -- Запускаем метод с защитой
+            local methodSuccess, methodResult = pcall(function()
+                return method()
+            end)
+            
+            if methodSuccess and methodResult then
+                success = true
+                autoDodge.LastDodgeTime = currentTime
+                print("[AutoDodge] Уклонение выполнено")
+                break
+            elseif not methodSuccess then
+                warn("[AutoDodge] Метод", i, "вызвал ошибку:", methodResult)
             end
         end
-        return false
     end
     
-    -- Пробуем строго по порядку: метатаблица -> прямой вызов -> getrenv
-    success = tryMetaTable()
-    
-    if not success then
-        success = tryDirectVIM()
+    -- Если операция заняла слишком много времени, логируем
+    local operationTime = tick() - operationStart
+    if operationTime > 0.1 then
+        warn(string.format("[AutoDodge] Операция заняла %.3f секунд", operationTime))
     end
     
     if not success then
-        success = tryGetRenvironments()
-    end
-    
-    if success then
-        autoDodge.LastDodgeTime = currentTime
-        print("[AutoDodge] Уклонение выполнено")
-    else
-        print("[AutoDodge] Не удалось выполнить уклонение")
+        print("[AutoDodge] Не удалось выполнить уклонение (безопасный режим)")
     end
     
     -- Задержка перед следующим действием
-    wait(autoDodge.ProcessingDelay)
+    local delayStart = tick()
+    while tick() - delayStart < autoDodge.ProcessingDelay do
+        wait(0.01)
+    end
+    
     autoDodge.IsProcessing = false
     
     return success
@@ -2348,8 +2421,11 @@ local function createAnimationHandler(player)
                 print(string.format("[AutoDodge] Атака от %s (анимация: %s)", 
                       player.Name, animNumber))
                 
-                -- Выполняем уклонение
-                simulateKeyPress()
+                -- Выполняем уклонение с защитой
+                local dodgeSuccess, dodgeError = pcall(simulateKeyPress)
+                if not dodgeSuccess then
+                    warn("[AutoDodge] Критическая ошибка при уклонении:", dodgeError)
+                end
             end
         end
     end
@@ -2462,9 +2538,9 @@ function MainModule.ToggleAutoDodge(enabled)
     if enabled then
         MainModule.AutoDodge.Enabled = true
         
-        print("[AutoDodge] Система активирована")
+        print("[AutoDodge] Система активирована (защищенный режим)")
         print("[AutoDodge] Радиус: 8 метров")
-        print("[AutoDodge] Метод: VirtualInputManager (метатаблица)")
+        print("[AutoDodge] Таймаут: 1 секунда")
         
         -- Настройка отслеживания для всех игроков
         for _, player in pairs(Players:GetPlayers()) do
@@ -2739,6 +2815,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
