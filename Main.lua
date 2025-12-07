@@ -2190,10 +2190,10 @@ function MainModule.ToggleAutoDodge(enabled)
     MainModule.AutoDodge.Connection = RunService.Heartbeat:Connect(function()
         if not MainModule.AutoDodge.Enabled then return end
         
-        local character = GetCharacter()
+        local character = LocalPlayer.Character
         if not character then return end
         
-        local localRoot = GetRootPart(character)
+        local localRoot = character:FindFirstChild("HumanoidRootPart")
         if not localRoot then return end
         
         local currentTime = tick()
@@ -2210,28 +2210,39 @@ function MainModule.ToggleAutoDodge(enabled)
             local distance = (playerRoot.Position - localRoot.Position).Magnitude
             if distance > MainModule.AutoDodge.Range then continue end
             
-            -- Проверяем анимации игрока
+            -- Проверяем анимации игрока (САМАЯ ВАЖНАЯ ЧАСТЬ - БЕЗОПАСНАЯ ПРОВЕРКА)
             local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
             if not humanoid then continue end
             
-            for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do
-                if not track.Animation then continue end
-                
-                local animId = track.Animation.AnimationId
-                for _, targetAnimId in ipairs(MainModule.AutoDodge.AnimationIds) do
-                    if animId == targetAnimId then
-                        -- Проверяем кулдаун
-                        if currentTime - MainModule.AutoDodge.LastDodgeTime >= MainModule.AutoDodge.DodgeCooldown then
-                            -- Нажимаем 1
-                            pcall(function()
-                                local vim = game:GetService("VirtualInputManager")
-                                vim:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
-                                task.wait(0.02)
-                                vim:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
-                                
-                                MainModule.AutoDodge.LastDodgeTime = currentTime
-                            end)
-                            return -- Один додж за тик
+            -- Безопасно получаем анимации
+            local playingTracks
+            local success, result = pcall(function()
+                return humanoid:GetPlayingAnimationTracks()
+            end)
+            
+            if not success then continue end
+            playingTracks = result
+            
+            for _, track in pairs(playingTracks) do
+                -- ПРОВЕРЯЕМ ЧТО TRACK И АНИМАЦИЯ СУЩЕСТВУЮТ!
+                if track and track.Animation and track.Animation.AnimationId then
+                    local animId = track.Animation.AnimationId
+                    
+                    for _, targetAnimId in ipairs(MainModule.AutoDodge.AnimationIds) do
+                        if animId == targetAnimId then
+                            -- Проверяем кулдаун
+                            if currentTime - MainModule.AutoDodge.LastDodgeTime >= MainModule.AutoDodge.DodgeCooldown then
+                                -- Нажимаем 1
+                                pcall(function()
+                                    local vim = game:GetService("VirtualInputManager")
+                                    vim:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
+                                    task.wait(0.02)
+                                    vim:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
+                                    
+                                    MainModule.AutoDodge.LastDodgeTime = currentTime
+                                end)
+                                return -- Один додж за тик
+                            end
                         end
                     end
                 end
@@ -2468,6 +2479,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
