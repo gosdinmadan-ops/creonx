@@ -44,10 +44,7 @@ MainModule.AutoDodge = {
     LastRangeUpdate = 0,
     RangeUpdateInterval = 0.5,
     IsProcessing = false,
-    ProcessingDelay = 0.15,
-    -- Скрытные переменные для работы с вводом
-    InputProcessor = nil,
-    KeyCodeOne = nil
+    ProcessingDelay = 0.15
 }
 
 
@@ -2182,75 +2179,7 @@ for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
 end
 
--- Скрытная инициализация систем ввода
-local function initializeInputSystem()
-    if MainModule.AutoDodge.InputProcessor then return true end
-    
-    local success, inputService = pcall(function()
-        -- Получаем ссылку на сервис ввода
-        local InputService = game:GetService("UserInputService")
-        
-        -- Создаем безопасную обертку для VirtualInputManager
-        local function getInputManager()
-            -- Используем различные имена для сокрытия
-            local aliases = {
-                "VirtualInputManager",
-                "VIM",
-                "InputManager",
-                "UserInputManager"
-            }
-            
-            for _, alias in pairs(aliases) do
-                local success, manager = pcall(function()
-                    return game:GetService(alias)
-                end)
-                
-                if success and manager then
-                    return manager
-                end
-            end
-            
-            -- Попытка получить через метатаблицу
-            local mt = getrawmetatable(game)
-            if mt then
-                local oldIndex = mt.__index
-                if oldIndex then
-                    local success, manager = pcall(function()
-                        return oldIndex(game, "VirtualInputManager")
-                    end)
-                    if success then return manager end
-                end
-            end
-            
-            return nil
-        end
-        
-        -- Получаем KeyCode для клавиши 1
-        local keyCodes = {
-            Enum.KeyCode.One,
-            Enum.KeyCode.KeypadOne,
-            Enum.KeyCode.NumPadOne
-        }
-        
-        return {
-            InputService = InputService,
-            InputManager = getInputManager(),
-            KeyCode = keyCodes[1]
-        }
-    end)
-    
-    if success and inputService and inputService.InputManager then
-        MainModule.AutoDodge.InputProcessor = inputService
-        MainModule.AutoDodge.KeyCodeOne = inputService.KeyCode
-        print("[AutoDodge] Система ввода инициализирована")
-        return true
-    else
-        print("[AutoDodge] Не удалось инициализировать систему ввода")
-        return false
-    end
-end
-
--- Скрытная функция для симуляции нажатия клавиши
+-- Сильная функция для симуляции нажатия клавиши 1 через метатаблицу
 local function simulateKeyPress()
     if not MainModule.AutoDodge.Enabled then return false end
     
@@ -2268,116 +2197,96 @@ local function simulateKeyPress()
     end
     
     autoDodge.IsProcessing = true
+    local success = false
     
-    -- Инициализируем систему ввода, если еще не инициализирована
-    if not initializeInputSystem() then
-        autoDodge.IsProcessing = false
+    -- СПОСОБ 1: Через метатаблицу (ПЕРВЫЙ ПРИОРИТЕТ)
+    local function tryMetaTable()
+        -- Получаем сырую метатаблицу игры
+        local mt = getrawmetatable(game)
+        if mt then
+            local oldIndex = mt.__index
+            if type(oldIndex) == "function" then
+                -- Ищем VirtualInputManager через метатаблицу
+                local ok, vim = pcall(oldIndex, game, "VirtualInputManager")
+                if ok and vim then
+                    local keyOk = pcall(function()
+                        -- Нажимаем клавишу 1
+                        vim:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
+                        wait(0.02)
+                        vim:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
+                    end)
+                    
+                    if keyOk then
+                        return true
+                    end
+                end
+            end
+        end
         return false
     end
     
-    local success = false
-    
-    -- Различные методы симуляции нажатия (для обхода защиты)
-    local methods = {
-        function()
-            -- Метод 1: Прямой вызов через защищенную функцию
-            local manager = autoDodge.InputProcessor.InputManager
-            if manager then
-                local keyCode = autoDodge.KeyCodeOne
-                -- Нажимаем клавишу
-                pcall(function()
-                    manager:SendKeyEvent(true, keyCode, false, nil)
-                end)
-                
-                -- Короткая задержка
-                task.wait(0.03)
-                
-                -- Отпускаем клавишу
-                pcall(function()
-                    manager:SendKeyEvent(false, keyCode, false, nil)
-                end)
-                
-                return true
-            end
-            return false
-        end,
+    -- СПОСОБ 2: Прямой вызов VirtualInputManager (ВТОРОЙ ПРИОРИТЕТ)
+    local function tryDirectVIM()
+        -- Пробуем разные имена
+        local vimNames = {
+            "VirtualInputManager",
+            "VirtualInput",
+            "VIM",
+            "InputManager",
+            "UserInputManager"
+        }
         
-        function()
-            -- Метод 2: Через BindableEvent с задержкой
-            task.spawn(function()
-                local manager = autoDodge.InputProcessor.InputManager
-                if manager then
-                    local keyCode = autoDodge.KeyCodeOne
-                    
-                    -- Создаем безопасный тайминг
-                    local startTime = tick()
-                    
-                    -- Нажатие
-                    pcall(function()
-                        manager:SendKeyEvent(true, keyCode, false, nil)
+        for _, name in ipairs(vimNames) do
+            local ok, vim = pcall(function()
+                return game:GetService(name)
+            end)
+            
+            if ok and vim then
+                local keyOk = pcall(function()
+                    vim:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
+                    wait(0.03)
+                    vim:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
+                end)
+                
+                if keyOk then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+    
+    -- СПОСОБ 3: Через getrenv (ТРЕТИЙ ПРИОРИТЕТ)
+    local function tryGetRenvironments()
+        -- Ищем в окружении
+        local env = getrenv()
+        if env then
+            for name, obj in pairs(env) do
+                if type(obj) == "table" and obj.SendKeyEvent then
+                    local keyOk = pcall(function()
+                        obj:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
+                        wait(0.025)
+                        obj:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
                     end)
                     
-                    -- Случайная задержка для имитации человека
-                    local delay = 0.02 + math.random() * 0.03
-                    task.wait(delay)
-                    
-                    -- Отпускание
-                    pcall(function()
-                        manager:SendKeyEvent(false, keyCode, false, nil)
-                    end)
-                    
-                    -- Логирование времени
-                    local totalTime = tick() - startTime
-                    if totalTime > 0.05 then
-                        task.wait(0.05) -- Дополнительная пауза если быстро
+                    if keyOk then
+                        return true
                     end
                 end
-            end)
-            return true
-        end,
-        
-        function()
-            -- Метод 3: Имитация через InputService (запасной вариант)
-            local inputService = autoDodge.InputProcessor.InputService
-            if inputService then
-                -- Создаем событие ввода
-                task.spawn(function()
-                    -- Имитируем несколько быстрых нажатий для надежности
-                    for i = 1, 2 do
-                        -- Случайные небольшие задержки
-                        task.wait(0.01 + math.random() * 0.02)
-                        
-                        -- Можно попробовать вызвать внутренние методы
-                        pcall(function()
-                            -- Пробуем различные подходы
-                            local event = Instance.new("RemoteEvent")
-                            event.Name = "TempInputEvent"
-                            event.Parent = game:GetService("ReplicatedStorage")
-                            
-                            -- Симуляция через RemoteEvent
-                            task.wait(0.01)
-                            event:Destroy()
-                        end)
-                    end
-                end)
-                return true
             end
-            return false
         end
-    }
+        return false
+    end
     
-    -- Пробуем методы по порядку
-    for i, method in ipairs(methods) do
-        local methodSuccess, result = pcall(method)
-        if methodSuccess and result then
-            success = true
-            break
-        end
-        
-        -- Небольшая пауза между попытками
-        if i < #methods then
-            task.wait(0.02)
-        end
+    -- Пробуем строго по порядку: метатаблица -> прямой вызов -> getrenv
+    success = tryMetaTable()
+    
+    if not success then
+        success = tryDirectVIM()
+    end
+    
+    if not success then
+        success = tryGetRenvironments()
     end
     
     if success then
@@ -2388,7 +2297,7 @@ local function simulateKeyPress()
     end
     
     -- Задержка перед следующим действием
-    task.wait(autoDodge.ProcessingDelay)
+    wait(autoDodge.ProcessingDelay)
     autoDodge.IsProcessing = false
     
     return success
@@ -2429,7 +2338,7 @@ local function createAnimationHandler(player)
             
             if not (localRoot and targetRoot) then return end
             
-            -- Проверка расстояния (ИСПРАВЛЕНО: использование правильного расчета)
+            -- Проверка расстояния
             local diff = targetRoot.Position - localRoot.Position
             local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
             
@@ -2466,7 +2375,6 @@ local function updatePlayersInRange()
         if player ~= LocalPlayer and player.Character then
             local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
             if playerRoot then
-                -- ИСПРАВЛЕНО: правильный расчет квадрата расстояния
                 local diff = playerRoot.Position - localRoot.Position
                 local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
                 
@@ -2536,7 +2444,7 @@ function MainModule.ToggleAutoDodge(enabled)
     MainModule.AutoDodge.IsProcessing = false
     
     -- Даем время на завершение операций
-    task.wait(0.1)
+    wait(0.1)
     
     -- Отключаем все соединения
     for _, conn in pairs(MainModule.AutoDodge.Connections) do
@@ -2554,11 +2462,9 @@ function MainModule.ToggleAutoDodge(enabled)
     if enabled then
         MainModule.AutoDodge.Enabled = true
         
-        -- Инициализация системы ввода
-        initializeInputSystem()
-        
         print("[AutoDodge] Система активирована")
         print("[AutoDodge] Радиус: 8 метров")
+        print("[AutoDodge] Метод: VirtualInputManager (метатаблица)")
         
         -- Настройка отслеживания для всех игроков
         for _, player in pairs(Players:GetPlayers()) do
@@ -2833,6 +2739,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
