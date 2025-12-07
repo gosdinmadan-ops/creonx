@@ -35,6 +35,7 @@ MainModule.AutoDodge = {
         "rbxassetid://73242877658272"
     },
     Connections = {},
+    LastDodgeTime = 0,
     DodgeCooldown = 0.8,
     Range = 8,
     RangeSquared = 8 * 8,
@@ -43,12 +44,7 @@ MainModule.AutoDodge = {
     LastRangeUpdate = 0,
     RangeUpdateInterval = 0.5,
     IsProcessing = false,
-    ProcessingDelay = 0.15,
-    -- Новые переменные
-    IsOnCooldown = false,
-    CooldownEndTime = 0,
-    CooldownConnection = nil,
-    TrackedPlayers = {} -- Храним отслеживаемых игроков
+    ProcessingDelay = 0.15
 }
 
 
@@ -2183,42 +2179,41 @@ for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
 end
 
--- Прямая и надежная функция нажатия клавиши 1
+-- Прямая функция нажатия клавиши 1
 local function pressKeyOne()
-    -- Пробуем VirtualInputManager через getservice
-    local vimSuccess, vim = pcall(function()
+    local startTime = tick()
+    
+    -- Способ 1: Через getservice
+    local success, vim = pcall(function()
         return game:GetService("VirtualInputManager")
     end)
     
-    if vimSuccess and vim then
-        local pressSuccess, pressError = pcall(function()
-            -- Нажимаем клавишу 1
+    if success and vim then
+        local pressOk = pcall(function()
             vim:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
             wait(0.02)
             vim:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
         end)
         
-        if pressSuccess then
+        if pressOk then
             return true
-        else
-            warn("[AutoDodge] Ошибка SendKeyEvent:", pressError)
         end
     end
     
-    -- Пробуем через метатаблицу как запасной вариант
+    -- Способ 2: Через метатаблицу
     local mt = getrawmetatable(game)
     if mt then
         local oldIndex = mt.__index
         if type(oldIndex) == "function" then
             local metaSuccess, metaVim = pcall(oldIndex, game, "VirtualInputManager")
             if metaSuccess and metaVim then
-                local metaPressSuccess = pcall(function()
+                local metaPressOk = pcall(function()
                     metaVim:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
                     wait(0.02)
                     metaVim:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
                 end)
                 
-                if metaPressSuccess then
+                if metaPressOk then
                     return true
                 end
             end
@@ -2228,67 +2223,104 @@ local function pressKeyOne()
     return false
 end
 
--- Очистка всего при отключении доджа
-local function cleanUpEverything()
-    local autoDodge = MainModule.AutoDodge
+-- Функция для получения всех RemoteEvent из предметов в инвентаре
+local function scanInventoryForRemotes()
+    local localCharacter = LocalPlayer.Character
+    if not localCharacter then return {} end
     
-    -- Отключаем все соединения
-    for _, conn in pairs(autoDodge.Connections) do
-        if conn then
-            pcall(function() conn:Disconnect() end)
+    local foundRemotes = {}
+    
+    for _, item in pairs(localCharacter:GetChildren()) do
+        if item:IsA("Tool") then
+            -- Ищем все RemoteEvent в инструменте
+            for _, child in pairs(item:GetDescendants()) do
+                if child:IsA("RemoteEvent") then
+                    local remoteInfo = {
+                        Tool = item.Name,
+                        RemoteEvent = child,
+                        Path = child:GetFullName()
+                    }
+                    
+                    table.insert(foundRemotes, remoteInfo)
+                    
+                    -- Логируем найденный RemoteEvent
+                    print(string.format("[AutoDodge] Найден RemoteEvent в %s: %s", 
+                          item.Name, child.Name))
+                end
+            end
         end
     end
-    autoDodge.Connections = {}
     
-    -- Очищаем отслеживаемых игроков
-    autoDodge.TrackedPlayers = {}
-    
-    -- Очищаем список игроков в радиусе
-    autoDodge.PlayersInRange = {}
-    
-    -- Отключаем кулдаун монитор
-    if autoDodge.CooldownConnection then
-        autoDodge.CooldownConnection:Disconnect()
-        autoDodge.CooldownConnection = nil
+    -- Пробуем использовать каждый найденный RemoteEvent
+    if #foundRemotes > 0 then
+        print(string.format("[AutoDodge] Всего RemoteEvent: %d", #foundRemotes))
+        
+        -- Пробуем FireServer на каждом RemoteEvent с разными аргументами
+        for _, remoteInfo in pairs(foundRemotes) do
+            local remote = remoteInfo.RemoteEvent
+            
+            -- Пробуем разные варианты вызова
+            local testArgs = {
+                {},
+                {"dodge"},
+                {"roll"},
+                {"evade"},
+                {true},
+                {false},
+                {1}
+            }
+            
+            for _, args in pairs(testArgs) do
+                local success, result = pcall(function()
+                    remote:FireServer(unpack(args))
+                end)
+                
+                if success then
+                    print(string.format("[AutoDodge] Успешный FireServer: %s с аргументами: %s", 
+                          remoteInfo.Tool, tostring(args[1] or "none")))
+                end
+            end
+        end
     end
     
-    autoDodge.IsOnCooldown = false
-    autoDodge.IsProcessing = false
-    autoDodge.LastRangeUpdate = 0
+    return foundRemotes
 end
 
--- Функция для начала кулдауна
-local function startCooldown()
+-- Функция для выполнения доджа
+local function executeDodge()
     local autoDodge = MainModule.AutoDodge
+    local currentTime = tick()
     
-    if autoDodge.IsOnCooldown then return end
+    -- Проверяем кулдаун
+    if currentTime - autoDodge.LastDodgeTime < autoDodge.DodgeCooldown then
+        return false
+    end
     
-    print("[AutoDodge] Додж выполнен, начинаю кулдаун 0.8с")
+    -- Защита от одновременных обработок
+    if autoDodge.IsProcessing then
+        return false
+    end
     
-    -- Очищаем все при начале кулдауна
-    cleanUpEverything()
+    autoDodge.IsProcessing = true
     
-    autoDodge.IsOnCooldown = true
-    autoDodge.CooldownEndTime = tick() + autoDodge.DodgeCooldown
+    -- Сначала сканируем инвентарь на предмет RemoteEvent
+    local foundRemotes = scanInventoryForRemotes()
     
-    -- Мониторим кулдаун
-    autoDodge.CooldownConnection = RunService.Heartbeat:Connect(function()
-        if tick() >= autoDodge.CooldownEndTime then
-            -- Завершаем кулдаун
-            if autoDodge.CooldownConnection then
-                autoDodge.CooldownConnection:Disconnect()
-                autoDodge.CooldownConnection = nil
-            end
-            
-            autoDodge.IsOnCooldown = false
-            
-            -- Включаем авто-додж заново
-            if MainModule.AutoDodge.Enabled then
-                print("[AutoDodge] Кулдаун завершен, включаю авто-додж")
-                MainModule.ToggleAutoDodge(true)
-            end
-        end
-    end)
+    -- Пробуем нажать клавишу 1
+    local pressed = pressKeyOne()
+    
+    if pressed then
+        autoDodge.LastDodgeTime = currentTime
+        print("[AutoDodge] Додж выполнен (клавиша 1)")
+    else
+        print("[AutoDodge] Не удалось нажать клавишу 1")
+    end
+    
+    -- Задержка перед следующей обработкой
+    task.wait(autoDodge.ProcessingDelay)
+    autoDodge.IsProcessing = false
+    
+    return pressed
 end
 
 -- Функция для обработки анимаций
@@ -2297,9 +2329,13 @@ local function createAnimationHandler(player)
         local autoDodge = MainModule.AutoDodge
         
         if not autoDodge.Enabled then return end
-        if autoDodge.IsOnCooldown then return end
-        if autoDodge.IsProcessing then return end
         if player == LocalPlayer then return end
+        
+        -- Проверяем кулдаун
+        local currentTime = tick()
+        if currentTime - autoDodge.LastDodgeTime < 0.1 then
+            return
+        end
         
         -- Безопасная проверка анимации
         local animId
@@ -2334,30 +2370,14 @@ local function createAnimationHandler(player)
                 print(string.format("[AutoDodge] Атака от %s (анимация: %s)", 
                       player.Name, animNumber))
                 
-                -- Защита от повторных срабатываний
-                autoDodge.IsProcessing = true
-                
-                -- Пробуем нажать клавишу 1
-                local pressed = pressKeyOne()
-                
-                if pressed then
-                    print("[AutoDodge] Клавиша 1 успешно нажата")
-                    
-                    -- Запускаем кулдаун
-                    task.spawn(startCooldown)
-                else
-                    warn("[AutoDodge] Не удалось нажать клавишу 1")
-                end
-                
-                -- Сбрасываем флаг обработки
-                task.wait(0.05)
-                autoDodge.IsProcessing = false
+                -- Выполняем додж
+                executeDodge()
             end
         end
     end
 end
 
--- Обновление списка игроков в радиусе (быстрое)
+-- Обновление списка игроков в радиусе
 local function updatePlayersInRange()
     if not LocalPlayer or not LocalPlayer.Character then 
         MainModule.AutoDodge.PlayersInRange = {}
@@ -2400,21 +2420,13 @@ end
 local function setupPlayerTracking(player)
     if player == LocalPlayer then return end
     
-    local autoDodge = MainModule.AutoDodge
-    local playerId = tostring(player.UserId)
-    
-    -- Уже отслеживаем этого игрока
-    if autoDodge.TrackedPlayers[playerId] then return end
-    
-    autoDodge.TrackedPlayers[playerId] = true
-    
     local function setupCharacter(character)
-        if not character or not autoDodge.Enabled then return end
+        if not character or not MainModule.AutoDodge.Enabled then return end
         
         -- Ожидание загрузки персонажа
         for i = 1, 3 do
             if character:FindFirstChild("Humanoid") then break end
-            task.wait(0.2)
+            task.wait(0.3)
         end
         
         local humanoid = character:FindFirstChild("Humanoid")
@@ -2426,7 +2438,7 @@ local function setupPlayerTracking(player)
             end)
             
             if success and conn then
-                table.insert(autoDodge.Connections, conn)
+                table.insert(MainModule.AutoDodge.Connections, conn)
             else
                 warn("[AutoDodge] Ошибка подключения:", errorMsg)
             end
@@ -2440,65 +2452,76 @@ local function setupPlayerTracking(player)
     
     -- Отслеживание новых персонажей
     local charConn = player.CharacterAdded:Connect(function(character)
-        if autoDodge.Enabled then
+        if MainModule.AutoDodge.Enabled then
             task.spawn(setupCharacter, character)
         end
     end)
-    table.insert(autoDodge.Connections, charConn)
+    table.insert(MainModule.AutoDodge.Connections, charConn)
 end
 
 -- Основная функция управления
 function MainModule.ToggleAutoDodge(enabled)
-    -- Очищаем всё при отключении
-    cleanUpEverything()
+    -- Отключаем все соединения
+    for _, conn in pairs(MainModule.AutoDodge.Connections) do
+        if conn then
+            pcall(function() conn:Disconnect() end)
+        end
+    end
+    MainModule.AutoDodge.Connections = {}
+    
+    -- Очищаем данные
+    MainModule.AutoDodge.PlayersInRange = {}
+    MainModule.AutoDodge.LastRangeUpdate = 0
     
     if enabled then
         MainModule.AutoDodge.Enabled = true
-        MainModule.AutoDodge.IsOnCooldown = false
         
         print("[AutoDodge] Система активирована")
         print("[AutoDodge] Радиус: 8 метров")
-        print("[AutoDodge] Клавиша доджа: 1")
+        print("[AutoDodge] Кулдаун: 0.8 секунд")
         
-        -- Немедленно получаем всех в радиусе
-        task.wait(0.3)
-        updatePlayersInRange()
+        -- Первоначальное сканирование инвентаря
+        task.spawn(function()
+            task.wait(1)
+            scanInventoryForRemotes()
+        end)
         
-        -- Настраиваем отслеживание для всех игроков
+        -- Настройка отслеживания для всех игроков
         for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                task.spawn(setupPlayerTracking, player)
-            end
+            task.spawn(setupPlayerTracking, player)
         end
         
         -- Отслеживание новых игроков
         local playerAddedConn = Players.PlayerAdded:Connect(function(player)
-            if MainModule.AutoDodge.Enabled and not MainModule.AutoDodge.IsOnCooldown then
+            if MainModule.AutoDodge.Enabled then
                 task.wait(1)
-                setupPlayerTracking(player)
+                task.spawn(setupPlayerTracking, player)
             end
         end)
         table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
         
-        -- Heartbeat для обновления списка игроков
+        -- Heartbeat для обновлений
         local heartbeatConn = RunService.Heartbeat:Connect(function()
-            local autoDodge = MainModule.AutoDodge
-            
-            if not autoDodge.Enabled or autoDodge.IsOnCooldown then return end
+            if not MainModule.AutoDodge.Enabled then return end
             
             local currentTime = tick()
-            if currentTime - autoDodge.LastRangeUpdate > autoDodge.RangeUpdateInterval then
+            if currentTime - MainModule.AutoDodge.LastRangeUpdate > MainModule.AutoDodge.RangeUpdateInterval then
                 updatePlayersInRange()
-                autoDodge.LastRangeUpdate = currentTime
+                MainModule.AutoDodge.LastRangeUpdate = currentTime
             end
         end)
         table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
+        
+        -- Первоначальное обновление
+        task.wait(1)
+        updatePlayersInRange()
         
         print(string.format("[AutoDodge] Отслеживание игроков: %d", 
               #Players:GetPlayers() - 1))
         
     else
         MainModule.AutoDodge.Enabled = false
+        MainModule.AutoDodge.LastDodgeTime = 0
         print("[AutoDodge] Система деактивирована")
     end
 end
@@ -2509,6 +2532,25 @@ Players.PlayerRemoving:Connect(function(player)
         MainModule.ToggleAutoDodge(false)
     end
 end)
+
+-- Сканирование инвентаря при изменении
+local function setupInventoryMonitoring()
+    local lastScanTime = 0
+    local scanInterval = 10 -- Сканировать каждые 10 секунд
+    
+    RunService.Heartbeat:Connect(function()
+        if not MainModule.AutoDodge.Enabled then return end
+        
+        local currentTime = tick()
+        if currentTime - lastScanTime > scanInterval then
+            scanInventoryForRemotes()
+            lastScanTime = currentTime
+        end
+    end)
+end
+
+-- Запуск мониторинга инвентаря
+task.spawn(setupInventoryMonitoring)
 
 function MainModule.Cleanup()
     local connections = {
@@ -2738,6 +2780,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
