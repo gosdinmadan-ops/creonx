@@ -2194,6 +2194,11 @@ function MainModule.ToggleAutoDodge(enabled)
     if enabled then
         print("[AutoDodge] Включен - радиус 8 метров")
         
+        -- Гарантируем что LastDodgeTime не nil
+        if MainModule.AutoDodge.LastDodgeTime == nil then
+            MainModule.AutoDodge.LastDodgeTime = 0
+        end
+        
         -- Быстрая проверка расстояния с квадратом
         local function isInRangeFast(playerRoot, localRoot)
             if not (playerRoot and localRoot) then return false end
@@ -2214,23 +2219,41 @@ function MainModule.ToggleAutoDodge(enabled)
                 return false
             end
             
-            -- Ищем Dodge инструмент
+            -- Ищем Dodge инструмент по разным возможным названиям
             local function findDodgeTool()
+                local toolNames = {"DODGE!", "DODGE", "Уворот", "Уклонение"}
+                
                 -- Проверяем бэкпак
                 local backpack = LocalPlayer:FindFirstChild("Backpack")
                 if backpack then
-                    local dodgeTool = backpack:FindFirstChild("DODGE!")
-                    if dodgeTool then
-                        return dodgeTool
+                    for _, toolName in ipairs(toolNames) do
+                        local tool = backpack:FindFirstChild(toolName)
+                        if tool and tool:IsA("Tool") then
+                            return tool
+                        end
+                    end
+                    -- Также проверяем по части имени
+                    for _, tool in pairs(backpack:GetChildren()) do
+                        if tool:IsA("Tool") and tool.Name:upper():find("DODGE") then
+                            return tool
+                        end
                     end
                 end
                 
                 -- Проверяем персонажа
                 local character = LocalPlayer.Character
                 if character then
-                    local dodgeTool = character:FindFirstChild("DODGE!")
-                    if dodgeTool then
-                        return dodgeTool
+                    for _, toolName in ipairs(toolNames) do
+                        local tool = character:FindFirstChild(toolName)
+                        if tool and tool:IsA("Tool") then
+                            return tool
+                        end
+                    end
+                    -- Также проверяем по части имени
+                    for _, tool in pairs(character:GetChildren()) do
+                        if tool:IsA("Tool") and tool.Name:upper():find("DODGE") then
+                            return tool
+                        end
                     end
                 end
                 
@@ -2238,20 +2261,88 @@ function MainModule.ToggleAutoDodge(enabled)
             end
             
             local dodgeTool = findDodgeTool()
-            if dodgeTool and dodgeTool:FindFirstChild("RemoteEvent") then
-                local success = pcall(function()
-                    dodgeTool.RemoteEvent:FireServer()
-                    print("[AutoDodge] Использован Dodge предмет")
-                end)
+            
+            if dodgeTool then
+                print("[AutoDodge] Найден инструмент: " .. dodgeTool.Name)
                 
-                if success then
+                -- Пробуем разные варианты активации
+                local activated = false
+                
+                -- Вариант 1: RemoteEvent
+                local remoteEvents = {"RemoteEvent", "Activate", "Activated", "Fire", "Use"}
+                for _, eventName in ipairs(remoteEvents) do
+                    local remote = dodgeTool:FindFirstChild(eventName)
+                    if remote and remote:IsA("RemoteEvent") then
+                        local success, result = pcall(function()
+                            remote:FireServer()
+                        end)
+                        if success then
+                            print("[AutoDodge] Использован RemoteEvent: " .. eventName)
+                            activated = true
+                            break
+                        end
+                    end
+                end
+                
+                -- Вариант 2: RemoteFunction
+                if not activated then
+                    local remoteFunctions = {"RemoteFunction", "Invoke", "InvokeServer"}
+                    for _, funcName in ipairs(remoteFunctions) do
+                        local remoteFunc = dodgeTool:FindFirstChild(funcName)
+                        if remoteFunc and remoteFunc:IsA("RemoteFunction") then
+                            local success, result = pcall(function()
+                                remoteFunc:InvokeServer()
+                            end)
+                            if success then
+                                print("[AutoDodge] Использован RemoteFunction: " .. funcName)
+                                activated = true
+                                break
+                            end
+                        end
+                    end
+                end
+                
+                -- Вариант 3: Прямой вызов Activate
+                if not activated then
+                    local success, result = pcall(function()
+                        dodgeTool:Activate()
+                    end)
+                    if success then
+                        print("[AutoDodge] Вызван Activate() напрямую")
+                        activated = true
+                    end
+                end
+                
+                -- Вариант 4: Пробуем найти и вызвать любой клиентский обработчик
+                if not activated then
+                    local success, result = pcall(function()
+                        -- Ищем любой скрипт или модуль в инструменте
+                        for _, child in pairs(dodgeTool:GetDescendants()) do
+                            if child:IsA("ModuleScript") then
+                                local module = require(child)
+                                if module and type(module) == "table" and module.Activate then
+                                    module.Activate()
+                                    break
+                                end
+                            end
+                        end
+                    end)
+                    if success then
+                        print("[AutoDodge] Использован модуль из инструмента")
+                        activated = true
+                    end
+                end
+                
+                if activated then
                     MainModule.AutoDodge.LastDodgeTime = currentTime
                     return true
+                else
+                    print("[AutoDodge] Не удалось активировать инструмент")
                 end
+            else
+                print("[AutoDodge] Dodge инструмент не найден в инвентаре")
             end
             
-            -- Если Dodge предмета нет, просто не делаем ничего
-            print("[AutoDodge] Dodge предмет не найден")
             return false
         end
         
@@ -2314,7 +2405,7 @@ function MainModule.ToggleAutoDodge(enabled)
                         if isInRangeFast(playerRoot, localRoot) then
                             -- Логируем атаку
                             local animNum = animId:match("rbxassetid://(%d+)") or animId
-                            print(string.format("[AutoDodge] Обнаружена анимация от %s (ID: %s)", 
+                            print(string.format("[AutoDodge] Обнаружена атака от %s (ID: %s)", 
                                   player.Name, animNum))
                             
                             useDodgeItem()
@@ -2619,3 +2710,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
