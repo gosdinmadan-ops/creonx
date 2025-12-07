@@ -2171,240 +2171,152 @@ function MainModule.ToggleAutoDodge(enabled)
         MainModule.AutoDodge.Connection = nil
     end
     
+    -- Очищаем старые соединения
+    for player, connection in pairs(MainModule.AutoDodge.TrackedPlayers) do
+        if connection then
+            connection:Disconnect()
+        end
+    end
+    MainModule.AutoDodge.TrackedPlayers = {}
+    
     if enabled then
-        print("[AutoDodge] Включен - мониторинг анимаций в радиусе 10")
+        print("[AutoDodge] Включен - отслеживание анимаций всех игроков")
         
-        -- Переменные для отслеживания
-        local trackedPlayers = {}
-        local lastProcessedAnimations = {}
-        
-        -- Функция для поиска Dodge в инвентаре
-        local function findDodgeTool()
-            local character = GetCharacter()
-            if character then
-                for _, tool in pairs(character:GetChildren()) do
-                    if tool:IsA("Tool") then
-                        local toolName = tool.Name:lower()
-                        if toolName:find("dodge") or toolName:find("уворот") or toolName:find("уклон") then
-                            return tool, "character"
-                        end
-                    end
-                end
+        -- Функция для получения информации об анимации
+        local function getAnimationInfo(track)
+            if not track or not track.Animation then return "Unknown" end
+            
+            local animId = track.Animation.AnimationId
+            local animName = "Анимация"
+            
+            -- Пытаемся определить тип анимации по ID
+            if animId:find("105341857343164") then
+                animName = "Атака шипами (Spikes)"
+            elseif animId:find("107989020363293") then
+                animName = "Атака в пустоту (Void)"
+            elseif animId:find("88451099342711") then
+                animName = "Уклонение (Dodge)"
+            elseif animId:find("walk") or animId:find("Walk") then
+                animName = "Ходьба"
+            elseif animId:find("run") or animId:find("Run") then
+                animName = "Бег"
+            elseif animId:find("jump") or animId:find("Jump") then
+                animName = "Прыжок"
+            elseif animId:find("idle") or animId:find("Idle") then
+                animName = "Бездействие"
+            elseif animId:find("attack") or animId:find("Attack") then
+                animName = "Атака"
+            elseif animId:find("swing") or animId:find("Swing") then
+                animName = "Удар"
+            elseif animId:find("stun") or animId:find("Stun") then
+                animName = "Оглушение"
+            elseif animId:find("death") or animId:find("Death") then
+                animName = "Смерть"
+            elseif animId:find("knife") or animId:find("Knife") then
+                animName = "Нож/Оружие"
             end
             
-            local backpack = LocalPlayer:FindFirstChild("Backpack")
-            if backpack then
-                for _, tool in pairs(backpack:GetChildren()) do
-                    if tool:IsA("Tool") then
-                        local toolName = tool.Name:lower()
-                        if toolName:find("dodge") or toolName:find("уворот") or toolName:find("уклон") then
-                            return tool, "backpack"
-                        end
-                    end
-                end
-            end
-            
-            return nil, nil
+            local animNumber = animId:match("rbxassetid://(%d+)") or animId
+            return string.format("%s [%s]", animName, animNumber)
         end
         
-        -- Функция для использования Dodge (иммитация нажатия на экран)
-        local function useDodge()
-            local dodgeTool, location = findDodgeTool()
-            if not dodgeTool then
-                print("[AutoDodge] Dodge не найден в инвентаре")
-                return false
-            end
-            
-            print("[AutoDodge] Найден Dodge: " .. dodgeTool.Name .. " в " .. location)
-            
-            local success = false
-            
-            -- Если Dodge в Backpack, сначала надеваем
-            if location == "backpack" then
-                local character = GetCharacter()
-                if character then
-                    dodgeTool.Parent = character
-                    print("[AutoDodge] Dodge надет на персонажа")
-                    task.wait(0.1)
-                end
-            end
-            
-            -- МЕТОД 1: Используем VirtualInput для имитации нажатия
-            pcall(function()
-                local VirtualInputManager = game:GetService("VirtualInputManager")
-                if VirtualInputManager then
-                    -- Имитируем нажатие левой кнопки мыши (это как клик на экран)
-                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, false, 0)
-                    print("[AutoDodge] Имитация нажатия мыши отправлена")
-                    task.wait(0.1)
-                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, false, 0)
-                    success = true
-                end
-            end)
-            
-            -- МЕТОД 2: Activate() если VirtualInput не сработал
-            if not success then
-                pcall(function()
-                    if dodgeTool:IsA("Tool") then
-                        dodgeTool:Activate()
-                        print("[AutoDodge] Activate() вызван")
-                        success = true
-                    end
-                end)
-            end
-            
-            -- МЕТОД 3: Быстро снять/надеть
-            if not success then
-                pcall(function()
-                    local character = GetCharacter()
-                    if character and dodgeTool.Parent == character then
-                        dodgeTool.Parent = LocalPlayer.Backpack
-                        task.wait(0.05)
-                        dodgeTool.Parent = character
-                        print("[AutoDodge] Dodge быстро снят/надет")
-                        success = true
-                    end
-                end)
-            end
-            
-            if success then
-                print("[AutoDodge] Dodge успешно использован")
-            else
-                print("[AutoDodge] Не удалось использовать Dodge")
-            end
-            
-            return success
-        end
-        
-        -- Функция для настройки отслеживания игрока
+        -- Функция для настройки отслеживания анимаций игрока
         local function setupPlayerTracking(player)
-            if player == LocalPlayer then return end
-            
-            -- Удаляем старое соединение если есть
-            if trackedPlayers[player] then
-                trackedPlayers[player]:Disconnect()
-                trackedPlayers[player] = nil
-            end
-            
-            -- Соединение для нового персонажа
-            player.CharacterAdded:Connect(function(character)
-                task.wait(1) -- Ждем загрузки персонажа
+            -- Создаем соединение для нового персонажа
+            local function setupCharacter(character)
+                if not character then return end
                 
                 local humanoid = character:WaitForChild("Humanoid", 2)
-                if humanoid then
-                    -- Отслеживаем ВСЕ новые анимации игрока (настоящее время)
-                    trackedPlayers[player] = humanoid.AnimationPlayed:Connect(function(track)
-                        if not MainModule.AutoDodge.Enabled then return end
-                        
-                        -- Проверяем кулдаун
-                        local currentTime = tick()
-                        if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then return end
-                        
-                        -- Проверяем расстояние (ВСЕГДА, независимо от направления)
-                        local localCharacter = GetCharacter()
-                        if not localCharacter then return end
-                        
-                        local localRoot = GetRootPart(localCharacter)
-                        local playerRoot = GetRootPart(character)
-                        
-                        if not (localRoot and playerRoot) then return end
-                        
-                        -- ПРОСТАЯ ПРОВЕРКА РАССТОЯНИЯ - без углов!
-                        local distance = (localRoot.Position - playerRoot.Position).Magnitude
-                        
-                        -- ЛОГИРУЕМ ВСЕ АНИМАЦИИ для отладки
-                        if track.Animation then
-                            local animId = track.Animation.AnimationId
-                            local animName = animId:match("rbxassetid://(%d+)") or animId
-                            print(string.format("[AutoDodge] Игрок %s запустил анимацию: %s (дистанция: %.1f)", 
-                                  player.Name, animName, distance))
-                        end
-                        
-                        -- Проверяем нашу целевую анимацию
-                        if track.Animation and track.Animation.AnimationId == MainModule.AutoDodge.AnimationId then
-                            -- Проверяем попадает ли игрок в радиус 10
-                            if distance <= MainModule.AutoDodge.Range then
-                                MainModule.AutoDodge.LastDodgeTime = currentTime
-                                
-                                print(string.format("[AutoDodge] !!! ЦЕЛЕВАЯ АНИМАЦИЯ от %s на дистанции %.1f !!!", 
-                                      player.Name, distance))
-                                
-                                -- Немедленно доджим
-                                task.spawn(function()
-                                    useDodge()
-                                end)
-                            else
-                                print(string.format("[AutoDodge] Анимация от %s вне радиуса (%.1f > 10)", 
-                                      player.Name, distance))
-                            end
-                        end
-                    end)
+                if not humanoid then return end
+                
+                -- Отслеживаем ВСЕ анимации игрока
+                local connection = humanoid.AnimationPlayed:Connect(function(track)
+                    if not MainModule.AutoDodge.Enabled then return end
                     
-                    -- Также проверяем текущие активные анимации при подключении
-                    task.spawn(function()
-                        task.wait(0.5)
-                        local activeTracks = humanoid:GetPlayingAnimationTracks()
-                        for _, track in pairs(activeTracks) do
-                            if track.Animation and track.Animation.AnimationId == MainModule.AutoDodge.AnimationId then
-                                print("[AutoDodge] Игрок " .. player.Name .. " уже имеет активную анимацию атаки")
-                            end
-                        end
-                    end)
-                end
-            end)
-            
-            -- Если персонаж уже существует, настраиваем сразу
-            if player.Character then
-                local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-                if humanoid then
-                    -- Отслеживаем текущие анимации
-                    trackedPlayers[player] = humanoid.AnimationPlayed:Connect(function(track)
-                        if not MainModule.AutoDodge.Enabled then return end
-                        
+                    local animInfo = getAnimationInfo(track)
+                    
+                    -- Получаем позиции для расчета расстояния
+                    local localCharacter = GetCharacter()
+                    if not localCharacter then return end
+                    
+                    local localRoot = GetRootPart(localCharacter)
+                    local playerRoot = GetRootPart(character)
+                    
+                    local distance = "N/A"
+                    if localRoot and playerRoot then
+                        distance = string.format("%.1f", (localRoot.Position - playerRoot.Position).Magnitude)
+                    end
+                    
+                    -- Выводим информацию об анимации
+                    local playerName = player == LocalPlayer and "МЫ" or player.Name
+                    local isTargetAnim = track.Animation and track.Animation.AnimationId == MainModule.AutoDodge.AnimationId
+                    
+                    if isTargetAnim then
+                        print(string.format("[AutoDodge] ⚠️ ЦЕЛЕВАЯ АНИМАЦИЯ от %s: %s (дистанция: %s)", 
+                              playerName, animInfo, distance))
+                    else
+                        print(string.format("[AutoDodge] Игрок %s: %s (дистанция: %s)", 
+                              playerName, animInfo, distance))
+                    end
+                    
+                    -- Если это целевая анимация от другого игрока в радиусе - делаем додж
+                    if isTargetAnim and player ~= LocalPlayer then
                         local currentTime = tick()
-                        if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then return end
-                        
-                        local localCharacter = GetCharacter()
-                        if not localCharacter then return end
-                        
-                        local localRoot = GetRootPart(localCharacter)
-                        local playerRoot = GetRootPart(player.Character)
-                        
-                        if not (localRoot and playerRoot) then return end
-                        
-                        -- Простая проверка расстояния
-                        local distance = (localRoot.Position - playerRoot.Position).Magnitude
-                        
-                        -- Логируем все анимации
-                        if track.Animation then
-                            local animId = track.Animation.AnimationId
-                            local animName = animId:match("rbxassetid://(%d+)") or animId
-                            print(string.format("[AutoDodge] Игрок %s: анимация %s (дистанция: %.1f)", 
-                                  player.Name, animName, distance))
+                        if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then
+                            print("[AutoDodge] Додж на кулдауне!")
+                            return
                         end
                         
-                        if track.Animation and track.Animation.AnimationId == MainModule.AutoDodge.AnimationId then
-                            if distance <= MainModule.AutoDodge.Range then
+                        if localRoot and playerRoot then
+                            local actualDistance = (localRoot.Position - playerRoot.Position).Magnitude
+                            if actualDistance <= MainModule.AutoDodge.Range then
                                 MainModule.AutoDodge.LastDodgeTime = currentTime
                                 
-                                print(string.format("[AutoDodge] !!! НЕМЕДЛЕННЫЙ ДОДЖ от %s (дистанция: %.1f) !!!", 
-                                      player.Name, distance))
+                                print(string.format("[AutoDodge] !!! АВТОМАТИЧЕСКИЙ ДОДЖ от %s (дистанция: %.1f) !!!", 
+                                      player.Name, actualDistance))
                                 
-                                task.spawn(function()
-                                    useDodge()
-                                end)
+                                -- Здесь будет код использования доджа
+                                -- useDodge()
                             end
                         end
-                    end)
-                end
+                    end
+                end)
+                
+                -- Запоминаем соединение
+                MainModule.AutoDodge.TrackedPlayers[player] = connection
+                
+                -- Также проверяем текущие активные анимации
+                task.spawn(function()
+                    task.wait(0.5)
+                    local activeTracks = humanoid:GetPlayingAnimationTracks()
+                    for _, track in pairs(activeTracks) do
+                        local animInfo = getAnimationInfo(track)
+                        local playerName = player == LocalPlayer and "МЫ" or player.Name
+                        print(string.format("[AutoDodge] Игрок %s уже имеет активную анимацию: %s", 
+                              playerName, animInfo))
+                    end
+                end)
             end
+            
+            -- Если персонаж уже существует
+            if player.Character then
+                setupCharacter(player.Character)
+            end
+            
+            -- Отслеживаем смену персонажа
+            player.CharacterAdded:Connect(function(character)
+                if MainModule.AutoDodge.TrackedPlayers[player] then
+                    MainModule.AutoDodge.TrackedPlayers[player]:Disconnect()
+                end
+                setupCharacter(character)
+            end)
         end
         
-        -- Настраиваем отслеживание для всех игроков
+        -- Настраиваем отслеживание для ВСЕХ игроков, включая нас самих
         for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                setupPlayerTracking(player)
-            end
+            setupPlayerTracking(player)
+            print(string.format("[AutoDodge] Начато отслеживание анимаций игрока: %s", 
+                  player == LocalPlayer and "МЫ" or player.Name))
         end
         
         -- Отслеживаем новых игроков
@@ -2412,65 +2324,53 @@ function MainModule.ToggleAutoDodge(enabled)
             if MainModule.AutoDodge.Enabled then
                 task.wait(1)
                 setupPlayerTracking(player)
+                print(string.format("[AutoDodge] Новый игрок добавлен в отслеживание: %s", player.Name))
             end
         end)
         
-        -- Heartbeat для дополнительной проверки (на всякий случай)
+        -- Heartbeat для дополнительной проверки активных анимаций
         MainModule.AutoDodge.Connection = RunService.Heartbeat:Connect(function()
             if not MainModule.AutoDodge.Enabled then return end
             
-            local currentTime = tick()
-            if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then return end
-            
-            local localCharacter = GetCharacter()
-            if not localCharacter then return end
-            
-            local localRoot = GetRootPart(localCharacter)
-            if not localRoot then return end
-            
-            local localPosition = localRoot.Position
-            
-            -- Дополнительная проверка всех игроков
+            -- Периодическая проверка активных анимаций
             for _, player in pairs(Players:GetPlayers()) do
-                if player == LocalPlayer then continue end
-                
                 local character = player.Character
                 if not character then continue end
-                
-                local rootPart = GetRootPart(character)
-                if not rootPart then continue end
-                
-                -- Простая проверка расстояния
-                local distance = (localPosition - rootPart.Position).Magnitude
-                if distance > MainModule.AutoDodge.Range then continue end
                 
                 local humanoid = GetHumanoid(character)
                 if not humanoid then continue end
                 
+                -- Получаем позиции для расчета расстояния
+                local localCharacter = GetCharacter()
+                if not localCharacter then continue end
+                
+                local localRoot = GetRootPart(localCharacter)
+                local playerRoot = GetRootPart(character)
+                
+                local distance = "N/A"
+                if localRoot and playerRoot then
+                    distance = string.format("%.1f", (localRoot.Position - playerRoot.Position).Magnitude)
+                end
+                
                 -- Проверяем активные анимации
                 local activeTracks = humanoid:GetPlayingAnimationTracks()
                 for _, track in pairs(activeTracks) do
-                    if track.Animation and track.Animation.AnimationId == MainModule.AutoDodge.AnimationId then
-                        MainModule.AutoDodge.LastDodgeTime = currentTime
-                        
-                        print(string.format("[AutoDodge] Heartbeat: анимация от %s (дистанция: %.1f)", 
-                              player.Name, distance))
-                        
-                        task.spawn(function()
-                            useDodge()
-                        end)
-                        
-                        return
+                    -- Выводим информацию об активных анимациях (реже, чтобы не спамить)
+                    if tick() % 5 < 0.1 then -- Раз в ~5 секунд
+                        local animInfo = getAnimationInfo(track)
+                        local playerName = player == LocalPlayer and "МЫ" or player.Name
+                        print(string.format("[AutoDodge] Активная анимация у %s: %s (дистанция: %s)", 
+                              playerName, animInfo, distance))
                     end
                 end
             end
         end)
         
-        print("[AutoDodge] Система запущена. Отслеживаем " .. (#Players:GetPlayers() - 1) .. " игроков")
+        print(string.format("[AutoDodge] Система запущена. Отслеживаем %d игрока(ов)", #Players:GetPlayers()))
         
     else
         MainModule.AutoDodge.LastDodgeTime = 0
-        print("[AutoDodge] Выключен")
+        print("[AutoDodge] Выключен - все соединения разорваны")
     end
 end
 
@@ -2702,5 +2602,6 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
