@@ -40,7 +40,7 @@ MainModule.AutoDodge = {
     Range = 9,
     RangeSquared = 9 * 9,
     AnimationIdsSet = {},
-    PlayersInRange = {} -- Храним игроков в радиусе
+    PlayersInRange = {}
 }
 
 
@@ -2170,23 +2170,6 @@ function MainModule.ToggleNoclip(enabled)
     end
 end
 
-MainModule.AutoDodge = {
-    Enabled = false,
-    AnimationIds = {
-        "rbxassetid://88451099342711",
-        "rbxassetid://79649041083405", 
-        "rbxassetid://73242877658272"
-    },
-    Range = 10,
-    Connections = {}, -- Все соединения храним здесь
-    LastDodgeTime = 0,
-    DodgeCooldown = 1.2,
-    LastAnimationCheck = 0,
-    AnimationCheckCooldown = 0.3, -- Дебаунс проверки
-    HasDodgeCache = false,
-    CacheTime = 0
-}
-
 -- Инициализируем быстрый набор для проверки
 for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
@@ -2622,6 +2605,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
