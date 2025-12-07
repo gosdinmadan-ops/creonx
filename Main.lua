@@ -2171,6 +2171,24 @@ function MainModule.ToggleNoclip(enabled)
     end
 end
 
+MainModule.AutoDodge = {
+    Enabled = false,
+    AnimationIds = {
+        "rbxassetid://88451099342711",
+        "rbxassetid://79649041083405", 
+        "rbxassetid://73242877658272"
+    },
+    AnimationIdsSet = {
+        ["rbxassetid://88451099342711"] = true,
+        ["rbxassetid://79649041083405"] = true,
+        ["rbxassetid://73242877658272"] = true
+    },
+    Connections = {},
+    LastDodgeTime = 0,
+    DodgeCooldown = 0.8,
+    Range = 9
+}
+
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.AutoDodge.Enabled = enabled
     
@@ -2185,8 +2203,7 @@ function MainModule.ToggleAutoDodge(enabled)
     if enabled then
         print("[AutoDodge] Включен - радиус 9 метров")
         
-        -- Нажатие клавиши 1
-        local function pressKey1()
+        local function performDodge()
             local currentTime = tick()
             
             if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then
@@ -2195,16 +2212,128 @@ function MainModule.ToggleAutoDodge(enabled)
             
             MainModule.AutoDodge.LastDodgeTime = currentTime
             
-            local VirtualInputManager = game:GetService("VirtualInputManager")
-            if VirtualInputManager then
-                pcall(function()
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
-                    task.wait(0.03)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
-                end)
-            end
+            -- Пробуем разные способы
+            local success = false
             
-            return true
+            -- СПОСОБ 1: Попробуем активировать слот 1 через Backpack
+            pcall(function()
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                if backpack then
+                    -- Ищем любой инструмент в бэкпаке
+                    local tools = {}
+                    for _, tool in ipairs(backpack:GetChildren()) do
+                        if tool:IsA("Tool") then
+                            table.insert(tools, tool)
+                        end
+                    end
+                    
+                    if #tools > 0 then
+                        local tool = tools[1] -- Берем первый инструмент
+                        local character = LocalPlayer.Character
+                        if character then
+                            tool.Parent = character
+                            task.wait(0.05)
+                            
+                            -- Пытаемся активировать
+                            tool:Activate()
+                            
+                            task.wait(0.05)
+                            tool.Parent = backpack
+                            success = true
+                        end
+                    end
+                end
+            end)
+            
+            if success then return true end
+            
+            -- СПОСОБ 2: Ищем додж по имени
+            pcall(function()
+                local character = LocalPlayer.Character
+                if not character then return end
+                
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                if not backpack then return end
+                
+                -- Ищем инструмент с именем DODGE или DODGE!
+                local dodgeTool
+                for _, tool in ipairs(backpack:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        local name = tool.Name:upper()
+                        if name == "DODGE" or name == "DODGE!" then
+                            dodgeTool = tool
+                            break
+                        end
+                    end
+                end
+                
+                if dodgeTool then
+                    dodgeTool.Parent = character
+                    task.wait(0.05)
+                    dodgeTool:Activate()
+                    task.wait(0.05)
+                    dodgeTool.Parent = backpack
+                    success = true
+                end
+            end)
+            
+            if success then return true end
+            
+            -- СПОСОБ 3: Ищем скрипт доджа в Remote
+            pcall(function()
+                local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+                if not remotes then return end
+                
+                for _, remote in ipairs(remotes:GetDescendants()) do
+                    if remote:IsA("RemoteEvent") then
+                        local name = remote.Name:lower()
+                        if name:find("dodge") or name:find("dash") or name:find("skill") then
+                            remote:FireServer()
+                            success = true
+                            break
+                        end
+                    end
+                end
+            end)
+            
+            if success then return true end
+            
+            -- СПОСОБ 4: Просто меняем активный инструмент на слот 1
+            pcall(function()
+                local character = LocalPlayer.Character
+                if not character then return end
+                
+                -- Убираем текущий инструмент
+                for _, child in ipairs(character:GetChildren()) do
+                    if child:IsA("Tool") then
+                        child.Parent = LocalPlayer.Backpack
+                        break
+                    end
+                end
+                
+                -- Даем время на смену инструмента
+                task.wait(0.05)
+            end)
+            
+            -- СПОСОБ 5: Ищем BindableEvent для доджа
+            pcall(function()
+                local modules = ReplicatedStorage:FindFirstChild("Modules")
+                if modules then
+                    for _, module in ipairs(modules:GetDescendants()) do
+                        if module:IsA("ModuleScript") then
+                            local name = module.Name:lower()
+                            if name:find("dodge") or name:find("dash") then
+                                -- Просто трогаем модуль
+                                require(module)
+                                success = true
+                                break
+                            end
+                        end
+                    end
+                end
+            end)
+            
+            return success
         end
         
         -- Проверка дистанции
@@ -2235,8 +2364,8 @@ function MainModule.ToggleAutoDodge(enabled)
             if MainModule.AutoDodge.AnimationIdsSet[animId] then
                 -- Проверяем дистанцию
                 if checkDistance(player.Character) then
-                    -- Нажимаем 1
-                    if pressKey1() then
+                    -- Выполняем додж
+                    if performDodge() then
                         local animNum = animId:match("rbxassetid://(%d+)") or animId
                         print(string.format("[AutoDodge] Уклонение от %s (анимация %s)", 
                               player.Name, animNum))
@@ -2252,7 +2381,7 @@ function MainModule.ToggleAutoDodge(enabled)
             local function setupCharacter(char)
                 if not char then return end
                 
-                task.wait(0.5) -- Даем время на загрузку
+                task.wait(0.5)
                 
                 local humanoid = char:FindFirstChild("Humanoid")
                 if humanoid then
@@ -2263,12 +2392,10 @@ function MainModule.ToggleAutoDodge(enabled)
                 end
             end
             
-            -- Настраиваем текущий характер
             if player.Character then
                 setupCharacter(player.Character)
             end
             
-            -- Следим за сменой характера
             local charConn = player.CharacterAdded:Connect(setupCharacter)
             table.insert(MainModule.AutoDodge.Connections, charConn)
         end
@@ -2523,4 +2650,5 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
