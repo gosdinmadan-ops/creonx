@@ -2429,8 +2429,9 @@ local function createAnimationHandler(player)
             
             if not (localRoot and targetRoot) then return end
             
-            -- Проверка расстояния
-            local distanceSquared = (targetRoot.Position - localRoot.Position).MagnitudeSquared
+            -- Проверка расстояния (ИСПРАВЛЕНО: использование правильного расчета)
+            local diff = targetRoot.Position - localRoot.Position
+            local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
             
             if distanceSquared <= MainModule.AutoDodge.RangeSquared then
                 -- Логирование для отладки
@@ -2465,7 +2466,9 @@ local function updatePlayersInRange()
         if player ~= LocalPlayer and player.Character then
             local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
             if playerRoot then
-                local distanceSquared = (playerRoot.Position - localRoot.Position).MagnitudeSquared
+                -- ИСПРАВЛЕНО: правильный расчет квадрата расстояния
+                local diff = playerRoot.Position - localRoot.Position
+                local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
                 
                 if distanceSquared <= rangeSquared then
                     table.insert(playersInRange, player.Name)
@@ -2830,6 +2833,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
