@@ -29,11 +29,15 @@ MainModule.Noclip = {
 
 MainModule.AutoDodge = {
     Enabled = false,
-    AnimationId = "rbxassetid://88451099342711",
+    AnimationIds = {
+        "rbxassetid://88451099342711",
+        "rbxassetid://79649041083405", 
+        "rbxassetid://73242877658272"
+    },
     Range = 10,
     Connection = nil,
     LastDodgeTime = 0,
-    DodgeCooldown = 1,
+    DodgeCooldown = 1.2,
     TrackedPlayers = {}
 }
 
@@ -2171,223 +2175,253 @@ function MainModule.ToggleAutoDodge(enabled)
         MainModule.AutoDodge.Connection = nil
     end
     
-    -- Очищаем старые соединения
-    for player, connection in pairs(MainModule.AutoDodge.TrackedPlayers) do
-        if connection then
-            connection:Disconnect()
+    -- Очищаем отслеживаемых игроков
+    for player, conn in pairs(MainModule.AutoDodge.TrackedPlayers) do
+        if conn then
+            conn:Disconnect()
         end
     end
     MainModule.AutoDodge.TrackedPlayers = {}
     
     if enabled then
-        print("[AutoDodge] Включен - отслеживание НАШИХ анимаций с проверкой Knife")
+        print("[AutoDodge] Включен - отслеживание атак в радиусе 10 метров")
         
-        -- Функция для проверки наличия Knife в нашем инвентаре
-        local function hasKnifeInInventory()
-            -- Проверяем в персонаже
-            local character = GetCharacter()
-            if character then
-                for _, tool in pairs(character:GetChildren()) do
-                    if tool:IsA("Tool") then
-                        local toolName = tool.Name:lower()
-                        if toolName:find("knife") or toolName:find("нож") or toolName:find("kn") then
-                            return true, tool
+        -- Функция для имитации нажатия клавиши 1
+        local function pressKey1()
+            local currentTime = tick()
+            if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then
+                return false
+            end
+            
+            -- Проверяем, можем ли мы использовать Dodge (есть ли в инвентаре)
+            local function hasDodgeTool()
+                local character = GetCharacter()
+                if character then
+                    for _, tool in pairs(character:GetChildren()) do
+                        if tool:IsA("Tool") then
+                            local toolName = tool.Name:lower()
+                            if toolName:find("dodge") or toolName:find("уворот") or toolName:find("уклон") then
+                                return true, tool
+                            end
                         end
+                    end
+                end
+                
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                if backpack then
+                    for _, tool in pairs(backpack:GetChildren()) do
+                        if tool:IsA("Tool") then
+                            local toolName = tool.Name:lower()
+                            if toolName:find("dodge") or toolName:find("уворот") or toolName:find("уклон") then
+                                return true, tool
+                            end
+                        end
+                    end
+                end
+                
+                return false, nil
+            end
+            
+            -- Используем VirtualInput для нажатия клавиши 1
+            local VirtualInputManager = game:GetService("VirtualInputManager")
+            if VirtualInputManager then
+                local hasDodge = hasDodgeTool()
+                
+                if hasDodge then
+                    -- Нажимаем клавишу 1
+                    local keyCode = Enum.KeyCode.One
+                    
+                    -- Нажатие вниз
+                    VirtualInputManager:SendKeyEvent(true, keyCode, false, nil)
+                    
+                    -- Кратковременная задержка
+                    task.wait(0.05)
+                    
+                    -- Отпускание клавиши
+                    VirtualInputManager:SendKeyEvent(false, keyCode, false, nil)
+                    
+                    MainModule.AutoDodge.LastDodgeTime = currentTime
+                    print("[AutoDodge] Нажата клавиша 1 (Dodge)")
+                    return true
+                else
+                    print("[AutoDodge] Dodge не найден в инвентаре")
+                    return false
+                end
+            else
+                print("[AutoDodge] VirtualInputManager не доступен")
+                return false
+            end
+        end
+        
+        -- Функция для проверки анимации
+        local function checkAnimation(player, track)
+            if not MainModule.AutoDodge.Enabled then return false end
+            if player == LocalPlayer then return false end
+            
+            if track.Animation then
+                local animId = track.Animation.AnimationId
+                
+                -- Проверяем, является ли это целевой анимацией
+                local isTargetAnimation = false
+                for _, targetAnimId in ipairs(MainModule.AutoDodge.AnimationIds) do
+                    if animId == targetAnimId then
+                        isTargetAnimation = true
+                        break
+                    end
+                end
+                
+                if isTargetAnimation then
+                    -- Проверяем расстояние
+                    local localCharacter = GetCharacter()
+                    local playerCharacter = player.Character
+                    
+                    if not (localCharacter and playerCharacter) then return false end
+                    
+                    local localRoot = GetRootPart(localCharacter)
+                    local playerRoot = GetRootPart(playerCharacter)
+                    
+                    if not (localRoot and playerRoot) then return false end
+                    
+                    local distance = (localRoot.Position - playerRoot.Position).Magnitude
+                    
+                    if distance <= MainModule.AutoDodge.Range then
+                        -- Анимация в радиусе 10 - нажимаем 1
+                        local animName = animId:match("rbxassetid://(%d+)") or animId
+                        print(string.format("[AutoDodge] Обнаружена атака от %s (анимация: %s, расстояние: %.1f)", 
+                              player.Name, animName, distance))
+                        
+                        return pressKey1()
                     end
                 end
             end
             
-            -- Проверяем в Backpack
-            local backpack = LocalPlayer:FindFirstChild("Backpack")
-            if backpack then
-                for _, tool in pairs(backpack:GetChildren()) do
-                    if tool:IsA("Tool") then
-                        local toolName = tool.Name:lower()
-                        if toolName:find("knife") or toolName:find("нож") or toolName:find("kn") then
-                            return true, tool
-                        end
-                    end
-                end
-            end
-            
-            return false, nil
+            return false
         end
         
-        -- Функция для извлечения ID из пути
-        local function extractAnimationId(track)
-            if not track or not track.Animation then 
-                return "Нет анимации"
+        -- Функция для настройки отслеживания игрока
+        local function setupPlayerTracking(player)
+            if player == LocalPlayer then return end
+            
+            -- Удаляем старое соединение если есть
+            if MainModule.AutoDodge.TrackedPlayers[player] then
+                MainModule.AutoDodge.TrackedPlayers[player]:Disconnect()
+                MainModule.AutoDodge.TrackedPlayers[player] = nil
             end
             
-            local animId = track.Animation.AnimationId
-            local idNumber = animId:match("rbxassetid://(%d+)") or 
-                             animId:match("rbxasset://(%d+)") or 
-                             animId:match("assetid://(%d+)") or
-                             animId:match("(%d+)")
-            
-            if idNumber then
-                return "rbxassetid://(" .. idNumber .. ")"
-            else
-                return animId
-            end
-        end
-        
-        -- Функция для определения типа анимации
-        local function getAnimationType(animId)
-            if not animId then return "Неизвестная анимация" end
-            
-            if animId:find("88451099342711") then
-                return "ЦЕЛЕВАЯ - Dodge (Уклонение)"
-            elseif animId:find("105341857343164") then
-                return "Spikes Kill (Шипы)"
-            elseif animId:find("107989020363293") then
-                return "Void Kill (Пустота)"
-            elseif animId:find("Walk") or animId:lower():find("walk") then
-                return "Ходьба"
-            elseif animId:find("Run") or animId:lower():find("run") then
-                return "Бег"
-            elseif animId:find("Jump") or animId:lower():find("jump") then
-                return "Прыжок"
-            elseif animId:find("Idle") or animId:lower():find("idle") then
-                return "Ожидание"
-            elseif animId:find("Attack") or animId:lower():find("attack") then
-                return "Атака"
-            elseif animId:find("Knife") or animId:lower():find("knife") then
-                return "Нож"
-            else
-                return "Другая анимация"
-            end
-        end
-        
-        -- Функция для настройки отслеживания НАШИХ анимаций
-        local function setupOurAnimationTracking()
-            -- Очищаем старые соединения для LocalPlayer
-            if MainModule.AutoDodge.TrackedPlayers[LocalPlayer] then
-                MainModule.AutoDodge.TrackedPlayers[LocalPlayer]:Disconnect()
-                MainModule.AutoDodge.TrackedPlayers[LocalPlayer] = nil
-            end
-            
-            -- Создаем соединение для НАШЕГО персонажа
-            local function setupOurCharacter(character)
+            local function setupCharacter(character)
                 if not character then return end
                 
-                local humanoid = character:WaitForChild("Humanoid", 2)
-                if not humanoid then return end
+                task.wait(0.5) -- Ждем загрузки персонажа
                 
-                -- Отслеживаем ВСЕ НАШИ анимации
-                local connection = humanoid.AnimationPlayed:Connect(function(track)
-                    if not MainModule.AutoDodge.Enabled then return end
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    -- Отслеживаем новые анимации
+                    local conn = humanoid.AnimationPlayed:Connect(function(track)
+                        checkAnimation(player, track)
+                    end)
                     
-                    -- Проверяем есть ли у нас Knife
-                    local hasKnife, knifeTool = hasKnifeInInventory()
-                    if not hasKnife then
-                        return -- Если нет ножа - не показываем анимации
-                    end
+                    MainModule.AutoDodge.TrackedPlayers[player] = conn
                     
-                    -- Получаем ID анимации в нужном формате
-                    local animIdFormatted = extractAnimationId(track)
-                    local animType = getAnimationType(animIdFormatted)
-                    
-                    -- Выводим информацию о НАШЕЙ анимации
-                    print("[AutoDodge] НАША анимация (с Knife):")
-                    print(string.format("   Тип: %s", animType))
-                    print(string.format("   ID: %s", animIdFormatted))
-                    print(string.format("   Нож: %s", knifeTool and knifeTool.Name or "Неизвестно"))
-                    
-                    -- Проверяем, является ли это целевой анимацией Dodge
-                    if animIdFormatted:find("88451099342711") then
-                        print("   ⚡ Это анимация Dodge!")
-                        
-                        -- Проверяем кулдаун
-                        local currentTime = tick()
-                        if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then
-                            print("   [Инфо] Dodge на кулдауне!")
-                            return
-                        end
-                        
-                        MainModule.AutoDodge.LastDodgeTime = currentTime
-                        print("   [Готов] Можно использовать Dodge!")
-                    end
-                end)
-                
-                -- Запоминаем соединение
-                MainModule.AutoDodge.TrackedPlayers[LocalPlayer] = connection
-                
-                -- Проверяем текущие активные анимации
-                task.spawn(function()
-                    task.wait(0.5)
-                    local hasKnife, knifeTool = hasKnifeInInventory()
-                    if not hasKnife then
-                        print("[AutoDodge] У НАС нет Knife - анимации не отслеживаются")
-                        return
-                    end
-                    
-                    local activeTracks = humanoid:GetPlayingAnimationTracks()
-                    if #activeTracks > 0 then
-                        print(string.format("[AutoDodge] У НАС уже активны %d анимаций (с Knife):", #activeTracks))
+                    -- Также проверяем текущие активные анимации
+                    task.spawn(function()
+                        task.wait(1)
+                        local activeTracks = humanoid:GetPlayingAnimationTracks()
                         for _, track in pairs(activeTracks) do
-                            local animIdFormatted = extractAnimationId(track)
-                            local animType = getAnimationType(animIdFormatted)
-                            print(string.format("   - %s: %s", animType, animIdFormatted))
+                            checkAnimation(player, track)
                         end
-                    else
-                        print("[AutoDodge] У НАС нет активных анимаций (Knife найден)")
-                    end
-                end)
-            end
-            
-            -- Если НАШ персонаж уже существует
-            if LocalPlayer.Character then
-                setupOurCharacter(LocalPlayer.Character)
-            end
-            
-            -- Отслеживаем смену НАШЕГО персонажа
-            LocalPlayer.CharacterAdded:Connect(function(character)
-                if MainModule.AutoDodge.TrackedPlayers[LocalPlayer] then
-                    MainModule.AutoDodge.TrackedPlayers[LocalPlayer]:Disconnect()
-                    MainModule.AutoDodge.TrackedPlayers[LocalPlayer] = nil
+                    end)
                 end
-                setupOurCharacter(character)
-            end)
+            end
+            
+            -- Если персонаж уже существует
+            if player.Character then
+                setupCharacter(player.Character)
+            end
+            
+            -- Слушаем добавление персонажа
+            player.CharacterAdded:Connect(setupCharacter)
         end
         
-        -- Настраиваем отслеживание ТОЛЬКО НАШИХ анимаций
-        setupOurAnimationTracking()
+        -- Настраиваем отслеживание для всех игроков
+        for _, player in pairs(Players:GetPlayers()) do
+            setupPlayerTracking(player)
+        end
         
-        -- Heartbeat для периодической проверки наличия Knife и активных анимаций
+        -- Отслеживаем новых игроков
+        Players.PlayerAdded:Connect(function(player)
+            if MainModule.AutoDodge.Enabled then
+                task.wait(1)
+                setupPlayerTracking(player)
+            end
+        end)
+        
+        -- Heartbeat для постоянной проверки активных анимаций
         MainModule.AutoDodge.Connection = RunService.Heartbeat:Connect(function()
             if not MainModule.AutoDodge.Enabled then return end
             
-            local ourCharacter = GetCharacter()
-            if not ourCharacter then return end
+            local currentTime = tick()
+            if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then return end
             
-            local humanoid = GetHumanoid(ourCharacter)
-            if not humanoid then return end
+            local localCharacter = GetCharacter()
+            if not localCharacter then return end
             
-            -- Проверяем наличие Knife
-            local hasKnife, knifeTool = hasKnifeInInventory()
+            local localRoot = GetRootPart(localCharacter)
+            if not localRoot then return end
             
-            -- Периодическая проверка (раз в 5 секунд)
-            if tick() % 5 > 4.9 then
-                if hasKnife then
-                    print(string.format("[AutoDodge] Knife найден: %s", knifeTool and knifeTool.Name or "Есть"))
-                    
-                    local activeTracks = humanoid:GetPlayingAnimationTracks()
-                    if #activeTracks > 0 then
-                        print(string.format("[AutoDodge] Проверка: у НАС %d активных анимаций (с Knife):", #activeTracks))
-                        for _, track in pairs(activeTracks) do
-                            local animIdFormatted = extractAnimationId(track)
-                            local animType = getAnimationType(animIdFormatted)
-                            print(string.format("   - %s: %s", animType, animIdFormatted))
+            local localPosition = localRoot.Position
+            
+            -- Проверяем всех игроков
+            for _, player in pairs(Players:GetPlayers()) do
+                if player == LocalPlayer then continue end
+                
+                local character = player.Character
+                if not character then continue end
+                
+                local rootPart = GetRootPart(character)
+                if not rootPart then continue end
+                
+                -- Проверяем расстояние
+                local distance = (localPosition - rootPart.Position).Magnitude
+                if distance > MainModule.AutoDodge.Range then continue end
+                
+                local humanoid = GetHumanoid(character)
+                if not humanoid then continue end
+                
+                -- Проверяем активные анимации
+                local activeTracks = humanoid:GetPlayingAnimationTracks()
+                for _, track in pairs(activeTracks) do
+                    if track.Animation then
+                        local animId = track.Animation.AnimationId
+                        
+                        -- Проверяем, является ли это целевой анимацией
+                        local isTargetAnimation = false
+                        for _, targetAnimId in ipairs(MainModule.AutoDodge.AnimationIds) do
+                            if animId == targetAnimId then
+                                isTargetAnimation = true
+                                break
+                            end
+                        end
+                        
+                        if isTargetAnimation then
+                            -- Нажимаем 1
+                            local animName = animId:match("rbxassetid://(%d+)") or animId
+                            print(string.format("[AutoDodge] Heartbeat: атака от %s (анимация: %s, расстояние: %.1f)", 
+                                  player.Name, animName, distance))
+                            
+                            pressKey1()
+                            return
                         end
                     end
-                else
-                    print("[AutoDodge] Knife НЕ найден - анимации не отслеживаются")
                 end
             end
         end)
         
-        print("[AutoDodge] Отслеживаем НАШИ анимации только при наличии Knife")
+        print(string.format("[AutoDodge] Отслеживаем %d игроков", #Players:GetPlayers() - 1))
+        print("[AutoDodge] Отслеживаемые анимации:")
+        for i, animId in ipairs(MainModule.AutoDodge.AnimationIds) do
+            local animNum = animId:match("rbxassetid://(%d+)") or animId
+            print(string.format("  %d. %s", i, animNum))
+        end
         
     else
         MainModule.AutoDodge.LastDodgeTime = 0
@@ -2623,6 +2657,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
