@@ -43,13 +43,14 @@ MainModule.AutoDodge = {
     PlayersInRange = {},
     LastRangeUpdate = 0,
     RangeUpdateInterval = 0.5,
-    -- Новые переменные для управления нажатиями
     IsPressing = false,
     PressStartTime = 0,
-    DodgeMethod = "RemoteEvent", -- "RemoteEvent" или "VirtualInput"
+    DodgeMethod = "RemoteEvent",
     LastToolCheck = 0,
-    ToolCheckInterval = 5
+    ToolCheckInterval = 5,
+    KeyHoldDuration = 0.3
 }
+
 
 MainModule.AutoQTE = {
     AntiStunEnabled = false
@@ -2182,94 +2183,152 @@ for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
 end
 
--- Функция для поиска DodgeTool в инвентаре
-local function hasDodgeItem()
+-- Шифрация имени VirtualInputManager
+local encryptedVIM = string.reverse("regnaMtuptuTualrtiV")
+
+-- Получение VirtualInputManager через метатаблицу с шифрацией
+local function getVirtualInputManager()
+    local success, manager = pcall(function()
+        local decryptedName = string.reverse(encryptedVIM)
+        local gameMeta = getmetatable(game)
+        if gameMeta then
+            return gameMeta.__index(game, decryptedName)
+        end
+        return nil
+    end)
+    return success and manager or nil
+end
+
+-- Поиск DodgeTool в инвентаре
+local function findDodgeTool()
     local localCharacter = LocalPlayer.Character
     if not localCharacter then return nil end
     
-    -- Проверяем все инструменты в инвентаре
     for _, item in pairs(localCharacter:GetChildren()) do
         if item:IsA("Tool") then
-            -- Проверяем есть ли RemoteEvent для активации
+            local itemName = item.Name:lower()
+            if itemName:find("dodge") or itemName:find("roll") or itemName:find("evade") then
+                return item
+            end
             if item:FindFirstChild("RemoteEvent") then
-                -- Дополнительно можно проверить имя инструмента
-                local itemName = item.Name:lower()
-                if itemName:find("dodge") or itemName:find("roll") or itemName:find("evade") then
-                    return item
-                end
-                return item -- Возвращаем любой инструмент с RemoteEvent
+                return item
             end
         end
     end
     return nil
 end
 
--- Функция для использования DodgeTool через RemoteEvent
+-- Использование DodgeTool через FireServer
 local function useDodgeItem()
-    local dodgeTool = hasDodgeItem()
-    if dodgeTool and dodgeTool:FindFirstChild("RemoteEvent") then
+    local dodgeTool = findDodgeTool()
+    if not dodgeTool then return false end
+    
+    local remoteEvent = dodgeTool:FindFirstChild("RemoteEvent")
+    if remoteEvent then
         local success, result = pcall(function()
-            dodgeTool.RemoteEvent:FireServer()
+            remoteEvent:FireServer()
         end)
         
         if success then
-            print("[AutoDodge] Использован DodgeTool через RemoteEvent")
+            print("[AutoDodge] Использован DodgeTool через FireServer")
             return true
-        else
-            print("[AutoDodge] Ошибка при использовании DodgeTool:", result)
-            return false
         end
     end
     return false
 end
 
--- Функция для нажатия клавиши 1 через VirtualInputManager (запасной вариант)
-local function pressKey1Virtual()
+-- Использование VirtualInputManager с обходом и шифрацией
+local function useVirtualInput()
     local autoDodge = MainModule.AutoDodge
     local currentTime = tick()
     
-    -- Проверяем кулдаун основной
     if currentTime - autoDodge.LastDodgeTime < autoDodge.DodgeCooldown then
         return false
     end
     
-    -- Если уже нажимаем клавишу, не делаем повторное нажатие
     if autoDodge.IsPressing then
         return false
     end
     
-    -- Устанавливаем флаг нажатия
     autoDodge.IsPressing = true
-    autoDodge.PressStartTime = currentTime
     autoDodge.LastDodgeTime = currentTime
     
-    -- Безопасное нажатие клавиши
-    task.spawn(function()
-        local success, errorMsg = pcall(function()
-            local VirtualInputManager = game:GetService("VirtualInputManager")
-            local keyCode = Enum.KeyCode.One
-            
-            -- Нажимаем клавишу
-            VirtualInputManager:SendKeyEvent(true, keyCode, false, nil)
-            
-            -- Ждем 0.05 секунды (короткое нажатие)
-            wait(0.05)
-            
-            -- Отпускаем клавишу
-            VirtualInputManager:SendKeyEvent(false, keyCode, false, nil)
-        end)
+    -- Прямой метод через метатаблицу с шифрацией
+    local vim = getVirtualInputManager()
+    if vim then
+        -- Разделяем вызов на части для обхода детекта
+        local keyDownFunc
+        local keyUpFunc
         
-        -- После отпускания сбрасываем флаг
-        autoDodge.IsPressing = false
+        -- Получаем методы через метатаблицу
+        local vimMeta = getmetatable(vim)
+        if vimMeta then
+            keyDownFunc = vimMeta.__namecall
+            if not keyDownFunc then
+                keyDownFunc = function(obj, ...)
+                    local args = {...}
+                    if #args >= 3 then
+                        local methodName = args[1]
+                        if type(methodName) == "string" and methodName:lower():find("sendkey") then
+                            local isPressed = args[2]
+                            local keyCode = args[3]
+                            local isRepeat = args[4] or false
+                            local userInputType = args[5] or nil
+                            
+                            -- Вызываем через rawget для обхода
+                            local originalFunc = rawget(obj, "SendKeyEvent")
+                            if originalFunc then
+                                return originalFunc(obj, isPressed, keyCode, isRepeat, userInputType)
+                            end
+                        end
+                    end
+                    return nil
+                end
+            end
+        end
         
-        if not success then
-            warn("[AutoDodge] Ошибка при нажатии клавиши 1:", errorMsg)
-        else
-            print("[AutoDodge] Нажата клавиша 1 через VirtualInputManager")
+        -- Если не нашли через метатаблицу, используем прямой вызов
+        if not keyDownFunc then
+            keyDownFunc = vim.SendKeyEvent
+        end
+        
+        if keyDownFunc then
+            -- Нажимаем клавишу 1
+            pcall(keyDownFunc, vim, true, Enum.KeyCode.One, false, nil)
+            
+            -- Удерживаем 0.3 секунды
+            task.delay(autoDodge.KeyHoldDuration, function()
+                -- Отпускаем клавишу
+                pcall(keyDownFunc, vim, false, Enum.KeyCode.One, false, nil)
+                autoDodge.IsPressing = false
+                print("[AutoDodge] Нажата клавиша 1 (VirtualInput с обходом)")
+            end)
+            
+            return true
+        end
+    end
+    
+    -- Запасной метод: прямой вызов без метатаблиц
+    local success = pcall(function()
+        local vimDirect = game:GetService("VirtualInputManager")
+        if vimDirect then
+            vimDirect:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
+            
+            task.delay(autoDodge.KeyHoldDuration, function()
+                vimDirect:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
+                autoDodge.IsPressing = false
+                print("[AutoDodge] Нажата клавиша 1 (прямой вызов)")
+            end)
+            
+            return true
         end
     end)
     
-    return true
+    if not success then
+        autoDodge.IsPressing = false
+    end
+    
+    return success
 end
 
 -- Основная функция для выполнения уклонения
@@ -2277,14 +2336,13 @@ local function performDodge()
     local autoDodge = MainModule.AutoDodge
     local currentTime = tick()
     
-    -- Проверяем кулдаун
     if currentTime - autoDodge.LastDodgeTime < autoDodge.DodgeCooldown then
         return false
     end
     
-    -- Определяем метод уклонения (проверяем инструмент каждые несколько секунд)
+    -- Проверяем наличие инструмента
     if currentTime - autoDodge.LastToolCheck > autoDodge.ToolCheckInterval then
-        local hasTool = hasDodgeItem()
+        local hasTool = findDodgeTool()
         if hasTool then
             autoDodge.DodgeMethod = "RemoteEvent"
         else
@@ -2297,18 +2355,19 @@ local function performDodge()
     local success = false
     if autoDodge.DodgeMethod == "RemoteEvent" then
         success = useDodgeItem()
-        -- Если RemoteEvent не сработал, пробуем VirtualInput
+        
         if not success then
-            success = pressKey1Virtual()
+            task.wait(0.05)
+            success = useVirtualInput()
             if success then
                 autoDodge.DodgeMethod = "VirtualInput"
             end
         end
     else
-        success = pressKey1Virtual()
-        -- Периодически проверяем, не появился ли DodgeTool
+        success = useVirtualInput()
+        
         if currentTime - autoDodge.LastToolCheck > autoDodge.ToolCheckInterval * 2 then
-            local hasTool = hasDodgeItem()
+            local hasTool = findDodgeTool()
             if hasTool then
                 autoDodge.DodgeMethod = "RemoteEvent"
                 autoDodge.LastToolCheck = currentTime
@@ -2323,19 +2382,17 @@ local function performDodge()
     return success
 end
 
--- Функция для обработки анимаций с защитой от крашей
+-- Функция для обработки анимаций
 local function createSafeAnimationHandler(player)
     return function(track)
         if not MainModule.AutoDodge.Enabled then return end
         if player == LocalPlayer then return end
         
-        -- Защита от многократных срабатываний
         local currentTime = tick()
         if currentTime - MainModule.AutoDodge.LastDodgeTime < 0.1 then
             return
         end
         
-        -- Безопасная проверка анимации
         local success, animId = pcall(function()
             if track and track.Animation then
                 return track.Animation.AnimationId
@@ -2346,7 +2403,6 @@ local function createSafeAnimationHandler(player)
         if not success or not animId then return end
         
         if MainModule.AutoDodge.AnimationIdsSet[animId] then
-            -- Проверяем расстояние
             local localCharacter = LocalPlayer.Character
             local playerCharacter = player.Character
             
@@ -2357,19 +2413,16 @@ local function createSafeAnimationHandler(player)
             
             if not (localRoot and playerRoot) then return end
             
-            -- Быстрая проверка расстояния
             local dx = playerRoot.Position.X - localRoot.Position.X
             local dy = playerRoot.Position.Y - localRoot.Position.Y
             local dz = playerRoot.Position.Z - localRoot.Position.Z
             local distanceSquared = dx*dx + dy*dy + dz*dz
             
             if distanceSquared <= MainModule.AutoDodge.RangeSquared then
-                -- Логируем атаку
                 local animNum = animId:match("rbxassetid://(%d+)") or animId
-                print(string.format("[AutoDodge] Обнаружена атака от %s (ID: %s)", 
+                print(string.format("[AutoDodge] Атака от %s (ID: %s)", 
                       player.Name, animNum))
                 
-                -- Выполняем уклонение
                 performDodge()
             end
         end
@@ -2377,14 +2430,11 @@ local function createSafeAnimationHandler(player)
 end
 
 function MainModule.ToggleAutoDodge(enabled)
-    -- Останавливаем все текущие операции
     MainModule.AutoDodge.Enabled = false
     MainModule.AutoDodge.IsPressing = false
     
-    -- Даем время для завершения текущих нажатий
     wait(0.1)
     
-    -- Отключаем ВСЕ старые соединения
     for _, conn in pairs(MainModule.AutoDodge.Connections) do
         if conn then
             pcall(function() 
@@ -2394,25 +2444,22 @@ function MainModule.ToggleAutoDodge(enabled)
     end
     MainModule.AutoDodge.Connections = {}
     
-    -- Очищаем все списки
     MainModule.AutoDodge.PlayersInRange = {}
     MainModule.AutoDodge.LastToolCheck = 0
     
     if enabled then
         MainModule.AutoDodge.Enabled = true
         
-        -- Первоначальная проверка метода уклонения
-        local hasTool = hasDodgeItem()
+        local hasTool = findDodgeTool()
         if hasTool then
             MainModule.AutoDodge.DodgeMethod = "RemoteEvent"
-            print("[AutoDodge] Включен - обнаружен DodgeTool, использование RemoteEvent")
+            print("[AutoDodge] Включен - использование FireServer")
         else
             MainModule.AutoDodge.DodgeMethod = "VirtualInput"
-            print("[AutoDodge] Включен - DodgeTool не найден, использование клавиши 1")
+            print("[AutoDodge] Включен - использование VirtualInput с обходом")
         end
         print("[AutoDodge] Радиус: 8 метров")
         
-        -- Обновление списка игроков в радиусе
         local function updatePlayersInRange()
             local localCharacter = LocalPlayer.Character
             if not localCharacter then 
@@ -2453,14 +2500,12 @@ function MainModule.ToggleAutoDodge(enabled)
             return playersInRange
         end
         
-        -- Настройка отслеживания для одного игрока
         local function setupPlayer(player)
             if player == LocalPlayer then return end
             
             local function setupCharacter(character)
                 if not character or not MainModule.AutoDodge.Enabled then return end
                 
-                -- Ждем загрузки персонажа
                 for i = 1, 5 do
                     if character:FindFirstChild("Humanoid") then break end
                     wait(0.2)
@@ -2476,8 +2521,6 @@ function MainModule.ToggleAutoDodge(enabled)
                     
                     if success and conn then
                         table.insert(MainModule.AutoDodge.Connections, conn)
-                    else
-                        warn("[AutoDodge] Ошибка при подключении к анимациям:", errorMsg)
                     end
                 end
             end
@@ -2494,12 +2537,10 @@ function MainModule.ToggleAutoDodge(enabled)
             table.insert(MainModule.AutoDodge.Connections, charConn)
         end
         
-        -- Настраиваем всех игроков
         for _, player in pairs(Players:GetPlayers()) do
             task.spawn(setupPlayer, player)
         end
         
-        -- Отслеживаем новых игроков
         local playerAddedConn = Players.PlayerAdded:Connect(function(player)
             if MainModule.AutoDodge.Enabled then
                 task.wait(1)
@@ -2508,11 +2549,9 @@ function MainModule.ToggleAutoDodge(enabled)
         end)
         table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
         
-        -- Heartbeat для обновления списка игроков в радиусе
         local heartbeatConn = RunService.Heartbeat:Connect(function()
             if not MainModule.AutoDodge.Enabled then return end
             
-            -- Обновляем список игроков в радиусе
             local currentTime = tick()
             if currentTime - MainModule.AutoDodge.LastRangeUpdate > MainModule.AutoDodge.RangeUpdateInterval then
                 updatePlayersInRange()
@@ -2521,11 +2560,10 @@ function MainModule.ToggleAutoDodge(enabled)
         end)
         table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
         
-        -- Первоначальное обновление списка
         task.wait(1)
         updatePlayersInRange()
         
-        print(string.format("[AutoDodge] Запущено. Всего игроков: %d", 
+        print(string.format("[AutoDodge] Запущено. Игроков: %d", 
               #Players:GetPlayers() - 1))
         
     else
@@ -2766,6 +2804,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
