@@ -34,12 +34,15 @@ MainModule.AutoDodge = {
         "rbxassetid://79649041083405", 
         "rbxassetid://73242877658272"
     },
-    Range = 9,
-    Connection = nil,
+    Connections = {},
     LastDodgeTime = 0,
-    DodgeCooldown = 1.2,
-    TrackedPlayers = {}
+    DodgeCooldown = 0.5,
+    Range = 9,
+    RangeSquared = 9 * 9,
+    AnimationIdsSet = {},
+    PlayersInRange = {} -- Храним игроков в радиусе
 }
+
 
 MainModule.AutoQTE = {
     AntiStunEnabled = false
@@ -2184,22 +2187,6 @@ MainModule.AutoDodge = {
     CacheTime = 0
 }
 
-MainModule.AutoDodge = {
-    Enabled = false,
-    AnimationIds = {
-        "rbxassetid://88451099342711",
-        "rbxassetid://79649041083405", 
-        "rbxassetid://73242877658272"
-    },
-    Connections = {},
-    LastDodgeTime = 0,
-    DodgeCooldown = 1.5,
-    Range = 9,
-    RangeSquared = 9 * 9,
-    AnimationIdsSet = {},
-    PlayersInRange = {} -- Храним игроков в радиусе
-}
-
 -- Инициализируем быстрый набор для проверки
 for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
@@ -2635,6 +2622,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
