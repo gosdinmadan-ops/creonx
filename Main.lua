@@ -42,7 +42,7 @@ MainModule.AutoDodge = {
     AnimationIdsSet = {},
     PlayersInRange = {},
     LastRangeUpdate = 0
-}=
+}
 
 
 MainModule.AutoQTE = {
@@ -2694,3 +2694,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
