@@ -2171,24 +2171,6 @@ function MainModule.ToggleNoclip(enabled)
     end
 end
 
-MainModule.AutoDodge = {
-    Enabled = false,
-    AnimationIds = {
-        "rbxassetid://88451099342711",
-        "rbxassetid://79649041083405", 
-        "rbxassetid://73242877658272"
-    },
-    AnimationIdsSet = {
-        ["rbxassetid://88451099342711"] = true,
-        ["rbxassetid://79649041083405"] = true,
-        ["rbxassetid://73242877658272"] = true
-    },
-    Connections = {},
-    LastDodgeTime = 0,
-    DodgeCooldown = 0.8,
-    Range = 9
-}
-
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.AutoDodge.Enabled = enabled
     
@@ -2650,5 +2632,6 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
