@@ -2193,7 +2193,7 @@ function MainModule.ToggleAutoDodge(enabled)
     if enabled then
         print("[AutoDodge] Включен - радиус 9 метров")
         
-        -- Функция для нажатия клавиши 1 через UserInputService
+        -- Функция для нажатия клавиши 1
         local function pressKey1()
             local currentTime = tick()
             
@@ -2201,77 +2201,91 @@ function MainModule.ToggleAutoDodge(enabled)
                 return false
             end
             
-            -- Пытаемся использовать несколько методов через UserInputService
+            -- Простой и надежный способ через активацию клавиши
             local success = false
             
-            -- Метод 1: Прямое создание InputObject (работает во многих играх)
+            -- Метод 1: Отправка нажатия через fireclickdetector если есть кнопка
             pcall(function()
-                -- Создаем объект ввода для клавиши 1
-                local inputObject = {
-                    KeyCode = Enum.KeyCode.One,
-                    UserInputType = Enum.UserInputType.Keyboard,
-                    UserInputState = Enum.UserInputState.Begin
-                }
-                
-                -- Попробуем вызвать через FireAllClients если есть
-                local inputRemote = ReplicatedStorage:FindFirstChild("InputRemote") or
-                                   ReplicatedStorage:FindFirstChild("UserInputRemote")
-                
-                if inputRemote and inputRemote:IsA("RemoteEvent") then
-                    inputRemote:FireServer("KeyPress", Enum.KeyCode.One, true)
-                    success = true
-                else
-                    -- Пробуем напрямую через симуляцию ввода
-                    -- Получаем все подключения к InputBegan
-                    for _, connection in pairs(getconnections(UserInputService.InputBegan)) do
-                        pcall(function()
-                            connection:Fire(inputObject)
-                        end)
+                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                if playerGui then
+                    -- Ищем кнопку с клавишей 1
+                    for _, guiObject in pairs(playerGui:GetDescendants()) do
+                        if guiObject:IsA("TextButton") or guiObject:IsA("ImageButton") then
+                            if guiObject.Text == "1" or guiObject.Name:match("Key1") or 
+                               guiObject.Name:match("Dodge") or guiObject.Name:match("Skill1") then
+                                -- Нажимаем на кнопку
+                                guiObject:Fire("Activated")
+                                success = true
+                                print("[AutoDodge] Нажата кнопка 1 через GUI")
+                                break
+                            end
+                        end
                     end
-                    
-                    task.wait(0.03)
-                    
-                    -- Завершаем нажатие
-                    inputObject.UserInputState = Enum.UserInputState.End
-                    for _, connection in pairs(getconnections(UserInputService.InputEnded)) do
-                        pcall(function()
-                            connection:Fire(inputObject)
-                        end)
-                    end
-                    
-                    success = true
                 end
             end)
             
-            -- Метод 2: Если первый не сработал, пробуем через BindableEvents
-            if not success then
-                pcall(function()
-                    -- Ищем BindableEvent для ввода в игре
-                    local inputBindable = ReplicatedStorage:FindFirstChild("InputBindable") or
-                                         workspace:FindFirstChild("InputEvents")
-                    
-                    if inputBindable and inputBindable:IsA("BindableEvent") then
-                        inputBindable:Fire("KeyDown", Enum.KeyCode.One)
-                        task.wait(0.03)
-                        inputBindable:Fire("KeyUp", Enum.KeyCode.One)
-                        success = true
-                    end
-                end)
-            end
-            
-            -- Метод 3: Пробуем через RemoteEvents которые могут отвечать за способности
+            -- Метод 2: Пробуем RemoteEvent для клавиши 1
             if not success then
                 pcall(function()
                     local remotes = ReplicatedStorage:FindFirstChild("Remotes")
                     if remotes then
-                        -- Ищем remote для уклонения/способностей
-                        local dodgeRemote = remotes:FindFirstChild("Dodge") or
-                                           remotes:FindFirstChild("Ability") or
-                                           remotes:FindFirstChild("Skill")
-                        
-                        if dodgeRemote and dodgeRemote:IsA("RemoteEvent") then
-                            dodgeRemote:FireServer()
-                            success = true
+                        -- Пробуем разные названия remote для клавиши 1
+                        local keyRemotes = {"KeyPress", "KeyInput", "Input", "Key1", "Skill1", "Ability1"}
+                        for _, remoteName in ipairs(keyRemotes) do
+                            local remote = remotes:FindFirstChild(remoteName)
+                            if remote and remote:IsA("RemoteEvent") then
+                                remote:FireServer(Enum.KeyCode.One)
+                                success = true
+                                print("[AutoDodge] Отправлен RemoteEvent для клавиши 1")
+                                break
+                            end
+                        end
+                    end
+                end)
+            end
+            
+            -- Метод 3: Просто отправляем в чат "1" (для некоторых игр работает)
+            if not success then
+                pcall(function()
+                    local chatService = game:GetService("TextChatService")
+                    if chatService then
+                        chatService:SendAsync("1")
+                        success = true
+                        print("[AutoDodge] Отправлено сообщение '1' в чат")
+                    end
+                end)
+            end
+            
+            -- Метод 4: Создаем фейковый InputObject и пытаемся его обработать
+            if not success then
+                pcall(function()
+                    -- Создаем простой объект для эмуляции ввода
+                    local inputObject = {
+                        KeyCode = Enum.KeyCode.One,
+                        UserInputType = Enum.UserInputType.Keyboard,
+                        UserInputState = Enum.UserInputState.Begin
+                    }
+                    
+                    -- Попробуем найти и вызвать обработчики ввода
+                    local character = GetCharacter()
+                    if character then
+                        -- Ищем LocalScript с обработкой ввода
+                        for _, script in pairs(character:GetDescendants()) do
+                            if script:IsA("LocalScript") and script.Name:match("Input") or script.Name:match("Control") then
+                                for _, func in pairs(getfenv(script)) do
+                                    if type(func) == "function" then
+                                        -- Пробуем вызвать функцию если она похожа на обработчик ввода
+                                        local info = debug.info(func, "n")
+                                        if info and (info:match("input") or info:match("key")) then
+                                            pcall(function() func(inputObject) end)
+                                            success = true
+                                            print("[AutoDodge] Вызван обработчик ввода")
+                                            break
+                                        end
+                                    end
+                                end
+                                if success then break end
+                            end
                         end
                     end
                 end)
@@ -2694,4 +2708,5 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
