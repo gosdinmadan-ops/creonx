@@ -2184,6 +2184,36 @@ for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
 end
 
+-- Улучшенная функция для поиска DodgeTool по различным паттернам
+local function findDodgePatterns(toolName)
+    local nameLower = toolName:lower()
+    local nameUpper = toolName:upper()
+    local nameClean = toolName:gsub("[!%-_%s]", ""):lower() -- Убираем знаки препинания
+    
+    -- Проверяем различные варианты
+    if nameLower:find("dodge") or nameUpper:find("DODGE") then
+        return true, "dodge"
+    end
+    
+    if nameClean:find("dodge") then
+        return true, "dodge_clean"
+    end
+    
+    -- Проверяем альтернативные названия
+    local patterns = {
+        "roll", "evade", "dash", "avoid", "escape", "sidestep", "parry",
+        "block", "counter", "defense", "protection", "move"
+    }
+    
+    for _, pattern in ipairs(patterns) do
+        if nameLower:find(pattern) then
+            return true, pattern
+        end
+    end
+    
+    return false, nil
+end
+
 -- Функция для обнаружения и мониторинга DodgeTool
 local function monitorDodgeTool()
     local autoDodge = MainModule.AutoDodge
@@ -2198,7 +2228,7 @@ local function monitorDodgeTool()
         return nil 
     end
     
-    -- Поиск DodgeTool в инвентаре
+    -- Поиск DodgeTool в инвентаре с улучшенной логикой
     local foundTools = {}
     
     for _, item in pairs(localCharacter:GetChildren()) do
@@ -2206,80 +2236,119 @@ local function monitorDodgeTool()
             -- Проверяем RemoteEvent для активации
             local remote = item:FindFirstChild("RemoteEvent")
             if remote then
-                -- Проверяем имя инструмента на наличие ключевых слов
-                local itemName = item.Name:lower()
-                if itemName:find("dodge") or itemName:find("roll") or itemName:find("evade") or 
-                   itemName:find("dash") or itemName:find("avoid") then
-                    table.insert(foundTools, {Tool = item, Remote = remote, Priority = 1})
+                -- Улучшенная проверка имени инструмента
+                local isDodge, patternType = findDodgePatterns(item.Name)
+                
+                if isDodge then
+                    -- Высокий приоритет для явных Dodge инструментов
+                    local priority = 1
+                    if patternType == "dodge" or patternType == "dodge_clean" then
+                        priority = 1
+                    elseif patternType == "roll" or patternType == "evade" then
+                        priority = 2
+                    else
+                        priority = 3
+                    end
+                    
+                    table.insert(foundTools, {
+                        Tool = item, 
+                        Remote = remote, 
+                        Priority = priority,
+                        Pattern = patternType,
+                        Name = item.Name
+                    })
                 else
-                    table.insert(foundTools, {Tool = item, Remote = remote, Priority = 2})
+                    -- Низкий приоритет для других инструментов с RemoteEvent
+                    table.insert(foundTools, {
+                        Tool = item, 
+                        Remote = remote, 
+                        Priority = 4,
+                        Pattern = "unknown",
+                        Name = item.Name
+                    })
                 end
             end
         end
     end
     
-    -- Сортируем по приоритету
-    table.sort(foundTools, function(a, b) return a.Priority < b.Priority end)
+    -- Если не нашли по паттернам, ищем ЛЮБОЙ инструмент с RemoteEvent
+    if #foundTools == 0 then
+        for _, item in pairs(localCharacter:GetChildren()) do
+            if item:IsA("Tool") then
+                local remote = item:FindFirstChild("RemoteEvent")
+                if remote then
+                    table.insert(foundTools, {
+                        Tool = item, 
+                        Remote = remote, 
+                        Priority = 5,
+                        Pattern = "any",
+                        Name = item.Name
+                    })
+                end
+            end
+        end
+    end
+    
+    -- Сортируем по приоритету (ниже число = выше приоритет)
+    table.sort(foundTools, function(a, b) 
+        if a.Priority == b.Priority then
+            return a.Name:len() < b.Name:len() -- Более короткие имена в первую очередь
+        end
+        return a.Priority < b.Priority 
+    end)
     
     if #foundTools > 0 then
         autoDodge.DodgeTool = foundTools[1].Tool
         autoDodge.DodgeRemote = foundTools[1].Remote
         
-        print(string.format("[AutoDodge] Обнаружен DodgeTool: %s (RemoteEvent найден)", 
-              autoDodge.DodgeTool.Name))
+        -- Детальная информация о найденном инструменте
+        print(string.format("[AutoDodge] Обнаружен инструмент: %s (приоритет: %d, паттерн: %s)", 
+              autoDodge.DodgeTool.Name, 
+              foundTools[1].Priority,
+              foundTools[1].Pattern))
         
-        -- Получаем информацию о том, что делает RemoteEvent
+        -- Пробуем определить, что делает RemoteEvent
         task.spawn(function()
-            -- Пробуем получить информацию о событиях, на которые подписан RemoteEvent
-            local toolInfo = autoDodge.DodgeTool
-            local remoteInfo = autoDodge.DodgeRemote
+            -- Проверяем, есть ли специфичные части инструмента
+            local toolParts = {}
+            for _, child in pairs(autoDodge.DodgeTool:GetChildren()) do
+                if child:IsA("BasePart") or child:IsA("MeshPart") then
+                    table.insert(toolParts, child.Name)
+                end
+            end
             
-            -- Ищем скрипты в инструменте для понимания его функциональности
+            if #toolParts > 0 then
+                print("[AutoDodge] Детали инструмента: " .. table.concat(toolParts, ", "))
+            end
+            
+            -- Проверяем анимации
+            local animations = {}
+            for _, anim in pairs(autoDodge.DodgeTool:GetChildren()) do
+                if anim:IsA("Animation") then
+                    table.insert(animations, anim.Name)
+                end
+            end
+            
+            if #animations > 0 then
+                print("[AutoDodge] Анимации: " .. table.concat(animations, ", "))
+            end
+            
+            -- Проверяем скрипты
             local scripts = {}
-            for _, script in pairs(toolInfo:GetChildren()) do
+            for _, script in pairs(autoDodge.DodgeTool:GetChildren()) do
                 if script:IsA("Script") or script:IsA("LocalScript") then
                     table.insert(scripts, script.Name)
                 end
             end
             
             if #scripts > 0 then
-                print("[AutoDodge] Скрипты в инструменте: " .. table.concat(scripts, ", "))
+                print("[AutoDodge] Скрипты: " .. table.concat(scripts, ", "))
             end
-            
-            -- Пробуем определить, что делает FireServer
-            pcall(function()
-                -- Читаем метаданные или пытаемся понять функционал
-                if toolInfo:FindFirstChild("DodgeCooldown") then
-                    print("[AutoDodge] Инструмент имеет настройку DodgeCooldown")
-                end
-                
-                if toolInfo:FindFirstChild("DodgeDistance") then
-                    print("[AutoDodge] Инструмент имеет настройку DodgeDistance")
-                end
-                
-                -- Проверяем анимации, связанные с инструментом
-                local animator = toolInfo:FindFirstChildOfClass("Animator")
-                if animator then
-                    print("[AutoDodge] Инструмент имеет аниматор")
-                end
-                
-                -- Проверяем звуки
-                local sounds = {}
-                for _, sound in pairs(toolInfo:GetChildren()) do
-                    if sound:IsA("Sound") then
-                        table.insert(sounds, sound.Name)
-                    end
-                end
-                
-                if #sounds > 0 then
-                    print("[AutoDodge] Звуки в инструменте: " .. table.concat(sounds, ", "))
-                end
-            end)
         end)
         
         return autoDodge.DodgeTool
     else
-        print("[AutoDodge] DodgeTool не найден в инвентаре")
+        print("[AutoDodge] Инструменты с RemoteEvent не найдены в инвентаре")
         return nil
     end
 end
@@ -2290,25 +2359,60 @@ local function useDodgeItem()
     
     -- Если инструмент еще не обнаружен, ищем его
     if not autoDodge.DodgeTool or not autoDodge.DodgeRemote then
-        monitorDodgeTool()
+        local found = monitorDodgeTool()
+        if not found then
+            print("[AutoDodge] ❌ Не удалось найти инструмент для уклонения")
+            return false
+        end
     end
     
     if autoDodge.DodgeTool and autoDodge.DodgeRemote then
+        -- Дополнительная проверка перед использованием
+        if not autoDodge.DodgeTool:IsDescendantOf(game) or not autoDodge.DodgeRemote:IsDescendantOf(game) then
+            print("[AutoDodge] ⚠️ Инструмент больше не доступен, пересканируем...")
+            monitorDodgeTool()
+            return false
+        end
+        
         local success, result = pcall(function()
+            -- Пробуем FireServer без аргументов
             autoDodge.DodgeRemote:FireServer()
         end)
         
         if success then
-            print("[AutoDodge] Использован DodgeTool: " .. autoDodge.DodgeTool.Name)
+            print(string.format("[AutoDodge] ✅ Использован инструмент: %s", autoDodge.DodgeTool.Name))
             return true
         else
-            print("[AutoDodge] Ошибка при использовании DodgeTool:", result)
-            -- Пробуем переобнаружить инструмент
-            monitorDodgeTool()
-            return false
+            -- Пробуем с аргументами
+            local success2, result2 = pcall(function()
+                autoDodge.DodgeRemote:FireServer("dodge")
+            end)
+            
+            if success2 then
+                print(string.format("[AutoDodge] ✅ Использован инструмент %s (с аргументом 'dodge')", 
+                      autoDodge.DodgeTool.Name))
+                return true
+            else
+                -- Пробуем другие варианты
+                local success3, result3 = pcall(function()
+                    autoDodge.DodgeRemote:FireServer(true)
+                end)
+                
+                if success3 then
+                    print(string.format("[AutoDodge] ✅ Использован инструмент %s (с аргументом true)", 
+                          autoDodge.DodgeTool.Name))
+                    return true
+                else
+                    print(string.format("[AutoDodge] ❌ Ошибка при использовании %s: %s", 
+                          autoDodge.DodgeTool.Name, result))
+                    -- Пробуем переобнаружить инструмент
+                    monitorDodgeTool()
+                    return false
+                end
+            end
         end
     else
-        print("[AutoDodge] Не удалось использовать DodgeTool - инструмент не найден")
+        print("[AutoDodge] ❌ Не удалось использовать инструмент - не найден")
         return false
     end
 end
@@ -2329,18 +2433,22 @@ local function setupInventoryMonitoring()
         -- Ждем загрузки персонажа
         wait(0.5)
         
+        print("[AutoDodge] 📦 Начинаем мониторинг инвентаря...")
+        
         -- Настраиваем мониторинг добавления инструментов
         autoDodge.ChildAddedConnection = character.ChildAdded:Connect(function(child)
             if child:IsA("Tool") and autoDodge.Enabled then
-                task.wait(0.1) -- Даем время для полной загрузки
-                print("[AutoDodge] Обнаружен новый инструмент в инвентаре: " .. child.Name)
+                task.wait(0.2) -- Даем время для полной загрузки
                 
-                -- Проверяем, является ли это DodgeTool
                 local remote = child:FindFirstChild("RemoteEvent")
                 if remote then
-                    local itemName = child.Name:lower()
-                    if itemName:find("dodge") or itemName:find("roll") or itemName:find("evade") then
-                        print("[AutoDodge] Возможный DodgeTool добавлен в инвентарь!")
+                    print(string.format("[AutoDodge] ➕ Добавлен инструмент: %s (RemoteEvent найден)", child.Name))
+                    
+                    -- Проверяем, является ли это DodgeTool
+                    local isDodge, patternType = findDodgePatterns(child.Name)
+                    if isDodge then
+                        print(string.format("[AutoDodge] 🎯 Обнаружен возможный DodgeTool: %s (паттерн: %s)", 
+                              child.Name, patternType))
                         monitorDodgeTool()
                     end
                 end
@@ -2351,7 +2459,7 @@ local function setupInventoryMonitoring()
         character.ChildRemoved:Connect(function(child)
             if child:IsA("Tool") and autoDodge.Enabled then
                 if autoDodge.DodgeTool and child == autoDodge.DodgeTool then
-                    print("[AutoDodge] DodgeTool удален из инвентаря!")
+                    print(string.format("[AutoDodge] ➖ DodgeTool удален: %s", child.Name))
                     monitorDodgeTool() -- Пересканируем инвентарь
                 end
             end
@@ -2385,13 +2493,11 @@ local function performDodge()
         autoDodge.LastToolCheck = currentTime
     end
     
-    -- Используем DodgeTool через RemoteEvent
+    -- Используем инструмент через RemoteEvent
     local success = useDodgeItem()
     
     if success then
         autoDodge.LastDodgeTime = currentTime
-    else
-        print("[AutoDodge] Не удалось выполнить уклонение - проверьте наличие DodgeTool")
     end
     
     return success
@@ -2859,6 +2965,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
