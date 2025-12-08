@@ -1,3 +1,4 @@
+вот запомни Main.lua
 local MainModule = {}
 
 local Players = game:GetService("Players")
@@ -42,6 +43,7 @@ MainModule.AutoDodge = {
     AnimationIdsSet = {},
     PlayersInRange = {}
 }
+
 
 MainModule.AutoQTE = {
     AntiStunEnabled = false
@@ -2169,6 +2171,11 @@ function MainModule.ToggleNoclip(enabled)
     end
 end
 
+-- Инициализируем быстрый набор для проверки
+for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
+    MainModule.AutoDodge.AnimationIdsSet[id] = true
+end
+
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.AutoDodge.Enabled = enabled
     
@@ -2183,176 +2190,212 @@ function MainModule.ToggleAutoDodge(enabled)
     -- Очищаем список игроков в радиусе
     MainModule.AutoDodge.PlayersInRange = {}
     
-    if not enabled then
+    if enabled then
+        print("[AutoDodge] Включен - радиус 9 метров")
+        
+        -- Быстрая проверка расстояния с квадратом
+        local function isInRangeFast(playerRoot, localRoot)
+            if not (playerRoot and localRoot) then return false end
+            
+            local dx = playerRoot.Position.X - localRoot.Position.X
+            local dy = playerRoot.Position.Y - localRoot.Position.Y
+            local dz = playerRoot.Position.Z - localRoot.Position.Z
+            
+            return (dx*dx + dy*dy + dz*dz) <= MainModule.AutoDodge.RangeSquared
+        end
+        
+        -- Безопасная проверка анимации
+        local function isTargetAnimation(track)
+            -- Проверяем, что track и Animation существуют
+            if not track then return false end
+            if not track.Animation then return false end
+            
+            local animId = track.Animation.AnimationId
+            if not animId or type(animId) ~= "string" then return false end
+            
+            return MainModule.AutoDodge.AnimationIdsSet[animId] == true
+        end
+        
+        -- Нажатие клавиши 1
+        local function pressKey1()
+            local currentTime = tick()
+            
+            if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then
+                return false
+            end
+            
+            local VirtualInputManager = game:GetService("VirtualInputManager")
+            if VirtualInputManager then
+                local keyCode = Enum.KeyCode.One
+                
+                local success = pcall(function()
+                    VirtualInputManager:SendKeyEvent(true, keyCode, false, nil)
+                    task.wait(0.03)
+                    VirtualInputManager:SendKeyEvent(false, keyCode, false, nil)
+                end)
+                
+                if success then
+                    MainModule.AutoDodge.LastDodgeTime = currentTime
+                    return true
+                end
+            end
+            
+            return false
+        end
+        
+        -- Обновление списка игроков в радиусе
+        local function updatePlayersInRange()
+            local localCharacter = LocalPlayer.Character
+            if not localCharacter then 
+                MainModule.AutoDodge.PlayersInRange = {}
+                return {}
+            end
+            
+            local localRoot = localCharacter:FindFirstChild("HumanoidRootPart")
+            if not localRoot then 
+                MainModule.AutoDodge.PlayersInRange = {}
+                return {}
+            end
+            
+            local playersInRange = {}
+            
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                    if playerRoot and isInRangeFast(playerRoot, localRoot) then
+                        table.insert(playersInRange, player.Name)
+                    end
+                end
+            end
+            
+            -- Проверяем, изменился ли список
+            local changed = false
+            if #MainModule.AutoDodge.PlayersInRange ~= #playersInRange then
+                changed = true
+            else
+                for i, name in ipairs(playersInRange) do
+                    if MainModule.AutoDodge.PlayersInRange[i] ~= name then
+                        changed = true
+                        break
+                    end
+                end
+            end
+            
+            if changed then
+                MainModule.AutoDodge.PlayersInRange = playersInRange
+                if #playersInRange > 0 then
+                    local playerList = table.concat(playersInRange, ", ")
+                    print("[AutoDodge] Игроки в радиусе 9м: " .. playerList)
+                else
+                    print("[AutoDodge] В радиусе 9м никого нет")
+                end
+            end
+            
+            return playersInRange
+        end
+        
+        -- Основной обработчик анимаций
+        local function createAnimationHandler(player)
+            return function(track)
+                if not MainModule.AutoDodge.Enabled then return end
+                if player == LocalPlayer then return end
+                
+                -- Безопасная проверка анимации
+                if isTargetAnimation(track) then
+                    -- Проверяем расстояние
+                    local localCharacter = LocalPlayer.Character
+                    local playerCharacter = player.Character
+                    
+                    if not (localCharacter and playerCharacter) then return end
+                    
+                    local localRoot = localCharacter:FindFirstChild("HumanoidRootPart")
+                    local playerRoot = playerCharacter:FindFirstChild("HumanoidRootPart")
+                    
+                    if not (localRoot and playerRoot) then return end
+                    
+                    -- Используем быструю проверку
+                    if isInRangeFast(playerRoot, localRoot) then
+                        -- Логируем атаку
+                        local animId = track.Animation.AnimationId
+                        local animNum = animId:match("rbxassetid://(%d+)") or animId
+                        print(string.format("[AutoDodge] Атака от %s (анимация: %s)", 
+                              player.Name, animNum))
+                        
+                        pressKey1()
+                    end
+                end
+            end
+        end
+        
+        -- Настройка отслеживания для одного игрока
+        local function setupPlayer(player)
+            if player == LocalPlayer then return end
+            
+            local function setupCharacter(character)
+                if not character then return end
+                
+                task.wait(0.5)
+                
+                local humanoid = character:FindFirstChild("Humanoid")
+                if humanoid then
+                    local animationHandler = createAnimationHandler(player)
+                    local conn = humanoid.AnimationPlayed:Connect(animationHandler)
+                    table.insert(MainModule.AutoDodge.Connections, conn)
+                end
+            end
+            
+            if player.Character then
+                setupCharacter(player.Character)
+            end
+            
+            local charConn = player.CharacterAdded:Connect(setupCharacter)
+            table.insert(MainModule.AutoDodge.Connections, charConn)
+        end
+        
+        -- Настраиваем всех игроков
+        for _, player in pairs(Players:GetPlayers()) do
+            setupPlayer(player)
+        end
+        
+        -- Отслеживаем новых игроков
+        local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+            if MainModule.AutoDodge.Enabled then
+                task.wait(1)
+                setupPlayer(player)
+            end
+        end)
+        table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
+        
+        -- Heartbeat для обновления списка игроков в радиусе (раз в 2 секунды)
+        local heartbeatConn = RunService.Heartbeat:Connect(function()
+            if not MainModule.AutoDodge.Enabled then return end
+            
+            -- Обновляем список игроков в радиусе раз в 2 секунды
+            local currentTime = tick()
+            if not MainModule.AutoDodge.LastRangeUpdate then
+                MainModule.AutoDodge.LastRangeUpdate = currentTime
+            end
+            
+            if currentTime - MainModule.AutoDodge.LastRangeUpdate > 2 then
+                updatePlayersInRange()
+                MainModule.AutoDodge.LastRangeUpdate = currentTime
+            end
+        end)
+        table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
+        
+        -- Первоначальное обновление списка
+        task.wait(1)
+        updatePlayersInRange()
+        
+        print(string.format("[AutoDodge] Запущено. Всего игроков: %d", 
+              #Players:GetPlayers() - 1))
+        
+    else
         MainModule.AutoDodge.LastDodgeTime = 0
         MainModule.AutoDodge.LastRangeUpdate = nil
         MainModule.AutoDodge.PlayersInRange = {}
         print("[AutoDodge] Выключен")
-        return
     end
-    
-    -- Инициализируем быстрый набор для проверки анимаций
-    MainModule.AutoDodge.AnimationIdsSet = {}
-    for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
-        MainModule.AutoDodge.AnimationIdsSet[id] = true
-    end
-    
-    print("[AutoDodge] Включен - радиус 9 метров, кулдаун 0.8с")
-    
-    -- Создаем виртуальный ввод
-    local VirtualInputManager = game:GetService("VirtualInputManager")
-    
-    -- Функция для нажатия клавиши 1
-    local function pressKey1()
-        local currentTime = tick()
-        
-        -- Проверка кулдауна
-        if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then
-            return false
-        end
-        
-        -- Нажимаем клавишу
-        local success = pcall(function()
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-            task.wait(0.03)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-        end)
-        
-        if success then
-            MainModule.AutoDodge.LastDodgeTime = currentTime
-            print(string.format("[AutoDodge] Додж выполнен в %.3f", currentTime))
-            return true
-        end
-        
-        return false
-    end
-    
-    -- Быстрая проверка расстояния
-    local function isInRange(playerRoot, localRoot)
-        if not (playerRoot and localRoot) then return false end
-        
-        local dx = playerRoot.Position.X - localRoot.Position.X
-        local dy = playerRoot.Position.Y - localRoot.Position.Y
-        local dz = playerRoot.Position.Z - localRoot.Position.Z
-        
-        return (dx*dx + dy*dy + dz*dz) <= MainModule.AutoDodge.RangeSquared
-    end
-    
-    -- Проверка анимаций у игрока
-    local function checkPlayerAnimations(player)
-        if player == LocalPlayer then return end
-        if not player.Character then return end
-        
-        local character = player.Character
-        local humanoid = character:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        
-        -- Проверяем анимации через Animator
-        local animator = humanoid:FindFirstChild("Animator")
-        if animator then
-            for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-                if track and track.Animation then
-                    local animId = tostring(track.Animation.AnimationId)
-                    if MainModule.AutoDodge.AnimationIdsSet[animId] then
-                        return true, animId
-                    end
-                end
-            end
-        end
-        
-        -- Также проверяем анимации в Character
-        for _, child in pairs(character:GetChildren()) do
-            if child:IsA("Animation") then
-                local animId = tostring(child.AnimationId)
-                if MainModule.AutoDodge.AnimationIdsSet[animId] then
-                    return true, animId
-                end
-            end
-        end
-        
-        return false, nil
-    end
-    
-    -- Основной цикл проверки
-    local heartbeatConnection = RunService.Heartbeat:Connect(function()
-        if not MainModule.AutoDodge.Enabled then 
-            heartbeatConnection:Disconnect()
-            return 
-        end
-        
-        -- Проверяем кулдаун
-        local currentTime = tick()
-        if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then
-            return
-        end
-        
-        -- Получаем информацию о своем персонаже
-        local localCharacter = LocalPlayer.Character
-        if not localCharacter then return end
-        
-        local localRoot = localCharacter:FindFirstChild("HumanoidRootPart")
-        local localHumanoid = localCharacter:FindFirstChild("Humanoid")
-        if not (localRoot and localHumanoid) then return end
-        if localHumanoid.Health <= 0 then return end
-        
-        -- Проверяем всех игроков
-        for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                local playerCharacter = player.Character
-                local playerRoot = playerCharacter:FindFirstChild("HumanoidRootPart")
-                local playerHumanoid = playerCharacter:FindFirstChild("Humanoid")
-                
-                if playerRoot and playerHumanoid and playerHumanoid.Health > 0 then
-                    -- Проверяем расстояние
-                    if isInRange(playerRoot, localRoot) then
-                        -- Проверяем анимации
-                        local hasDodgeAnim, animId = checkPlayerAnimations(player)
-                        
-                        if hasDodgeAnim then
-                            -- Извлекаем ID анимации
-                            local animNum = animId:match("rbxassetid://(%d+)") or animId
-                            print(string.format("[AutoDodge] Обнаружена анимация %s от %s", animNum, player.Name))
-                            
-                            -- Выполняем додж
-                            if pressKey1() then
-                                -- Можно добавить уведомление
-                                local Effects = ReplicatedStorage:FindFirstChild("Modules") and 
-                                               ReplicatedStorage.Modules:FindFirstChild("Effects")
-                                if Effects then
-                                    local success, effectModule = pcall(function()
-                                        return require(Effects)
-                                    end)
-                                    if success and effectModule and effectModule.AnnouncementTween then
-                                        effectModule.AnnouncementTween({
-                                            AnnouncementOneLine = true,
-                                            FasterTween = true,
-                                            DisplayTime = 2,
-                                            AnnouncementDisplayText = string.format("[AutoDodge] Уворот от %s", player.Name)
-                                        })
-                                    end
-                                end
-                                break -- Прерываем после успешного доджа
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
-    
-    -- Сохраняем соединение
-    table.insert(MainModule.AutoDodge.Connections, heartbeatConnection)
-    
-    -- Также отслеживаем добавление новых игроков (опционально)
-    local playerAddedConnection = Players.PlayerAdded:Connect(function(player)
-        if MainModule.AutoDodge.Enabled then
-            print(string.format("[AutoDodge] Новый игрок добавлен: %s", player.Name))
-        end
-    end)
-    table.insert(MainModule.AutoDodge.Connections, playerAddedConnection)
-    
-    print(string.format("[AutoDodge] Мониторинг запущен. Анимаций для отслеживания: %d", 
-          #MainModule.AutoDodge.AnimationIds))
 end
 
 function MainModule.Cleanup()
@@ -2583,7 +2626,3 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
-
-
-
-
