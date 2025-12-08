@@ -45,8 +45,8 @@ MainModule.AutoDodge = {
     RangeUpdateInterval = 0.5,
     IsProcessing = false,
     ProcessingDelay = 0.15,
-    DodgeTool = nil, -- Добавляем переменную для хранения инструмента уклонения
-    RemotesCache = {} -- Кэш для реплицированных объектов
+    DodgeTool = nil,
+    RemotesCache = {}
 }
 
 
@@ -2190,30 +2190,29 @@ local function getDodgeTool()
         return autoDodge.DodgeTool
     end
     
-    -- Получаем бэкпак локального игрока
-    local backpack = LocalPlayer:WaitForChild("Backpack", 2)
-    if not backpack then
-        warn("[AutoDodge] Бэкпак не найден")
-        return nil
+    -- Пробуем получить инструмент DODGE!
+    local dodgeTool
+    local success, err = pcall(function()
+        dodgeTool = LocalPlayer:WaitForChild("Backpack"):WaitForChild("DODGE!")
+    end)
+    
+    if success and dodgeTool then
+        autoDodge.DodgeTool = dodgeTool
+        print("[AutoDodge] Найден инструмент DODGE!")
+        return dodgeTool
     end
     
-    -- Ищем инструмент уклонения
+    -- Если точное имя не найдено, ищем любой инструмент с "dodge" в названии
+    warn("[AutoDodge] Точный инструмент DODGE! не найден, пробуем поиск по паттерну")
+    
+    local backpack = LocalPlayer:WaitForChild("Backpack", 2)
+    if not backpack then return nil end
+    
     for _, tool in pairs(backpack:GetChildren()) do
         if string.find(string.lower(tool.Name), "dodge") then
             autoDodge.DodgeTool = tool
             print("[AutoDodge] Найден инструмент Dodge:", tool.Name)
             return tool
-        end
-    end
-    
-    -- Ищем в инвентаре персонажа
-    if LocalPlayer.Character then
-        for _, tool in pairs(LocalPlayer.Character:GetChildren()) do
-            if tool:IsA("Tool") and string.find(string.lower(tool.Name), "dodge") then
-                autoDodge.DodgeTool = tool
-                print("[AutoDodge] Найден инструмент Dodge в инвентаре:", tool.Name)
-                return tool
-            end
         end
     end
     
@@ -2230,26 +2229,23 @@ local function getRemoteEvent()
         return autoDodge.RemotesCache.UsedTool
     end
     
-    -- Получаем RemoteEvent с таймаутом
-    local remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes", 2)
-    if not remotes then
-        warn("[AutoDodge] Папка Remotes не найдена")
+    -- Получаем RemoteEvent
+    local usedToolRemote
+    local success, err = pcall(function()
+        usedToolRemote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("UsedTool")
+    end)
+    
+    if success and usedToolRemote then
+        autoDodge.RemotesCache.UsedTool = usedToolRemote
+        print("[AutoDodge] RemoteEvent UsedTool получен")
+        return usedToolRemote
+    else
+        warn("[AutoDodge] Ошибка получения RemoteEvent:", err)
         return nil
     end
-    
-    local usedToolRemote = remotes:WaitForChild("UsedTool", 2)
-    if not usedToolRemote then
-        warn("[AutoDodge] RemoteEvent UsedTool не найден")
-        return nil
-    end
-    
-    -- Кэшируем результат
-    autoDodge.RemotesCache.UsedTool = usedToolRemote
-    print("[AutoDodge] RemoteEvent UsedTool получен")
-    return usedToolRemote
 end
 
--- Защищенная функция для выполнения уклонения
+-- Исправленная функция для выполнения уклонения
 local function performDodge()
     if not MainModule.AutoDodge.Enabled then return false end
     
@@ -2269,10 +2265,6 @@ local function performDodge()
     autoDodge.IsProcessing = true
     local success = false
     
-    -- Защита от зависания: устанавливаем общий таймаут
-    local operationStart = tick()
-    local operationTimeout = 1.0 -- 1 секунда максимум
-    
     -- Функция для безопасного выполнения уклонения
     local function executeSafeDodge()
         -- Получаем инструмент Dodge
@@ -2289,7 +2281,7 @@ local function performDodge()
             return false
         end
         
-        -- Подготавливаем аргументы
+        -- Создаем аргументы ТОЧНО как в примере
         local args = {
             "UsingMoveCustom",
             dodgeTool,
@@ -2298,14 +2290,26 @@ local function performDodge()
             }
         }
         
-        -- Выполняем вызов с защитой
+        -- Выполняем вызов - НЕ используем unpack!
         local fireSuccess, fireError = pcall(function()
-            usedToolRemote:FireServer(unpack(args))
+            -- Важно: вызываем FireServer с таблицей args как единым аргументом
+            usedToolRemote:FireServer(args)
         end)
         
         if not fireSuccess then
             warn("[AutoDodge] Ошибка при вызове FireServer:", fireError)
-            return false
+            
+            -- Пробуем альтернативный метод с unpack
+            print("[AutoDodge] Пробуем метод с unpack...")
+            local altSuccess, altError = pcall(function()
+                usedToolRemote:FireServer(unpack(args))
+            end)
+            
+            if not altSuccess then
+                warn("[AutoDodge] Ошибка при альтернативном вызове:", altError)
+                return false
+            end
+            return true
         end
         
         return true
@@ -2324,12 +2328,6 @@ local function performDodge()
         else
             print("[AutoDodge] Не удалось выполнить уклонение")
         end
-    end
-    
-    -- Если операция заняла слишком много времени, логируем
-    local operationTime = tick() - operationStart
-    if operationTime > 0.1 then
-        warn(string.format("[AutoDodge] Операция заняла %.3f секунд", operationTime))
     end
     
     -- Задержка перед следующим действием
@@ -2388,11 +2386,8 @@ local function createAnimationHandler(player)
                 print(string.format("[AutoDodge] Атака от %s (анимация: %s)", 
                       player.Name, animNumber))
                 
-                -- Выполняем уклонение с защитой
-                local dodgeSuccess, dodgeError = pcall(performDodge)
-                if not dodgeSuccess then
-                    warn("[AutoDodge] Критическая ошибка при уклонении:", dodgeError)
-                end
+                -- Выполняем уклонение
+                performDodge()
             end
         end
     end
@@ -2507,16 +2502,17 @@ function MainModule.ToggleAutoDodge(enabled)
     if enabled then
         MainModule.AutoDodge.Enabled = true
         
-        -- Попытка предварительной загрузки инструмента и RemoteEvent
+        -- Предварительная загрузка инструмента
         task.spawn(function()
             getDodgeTool()
             getRemoteEvent()
         end)
         
-        print("[AutoDodge] Система активирована (режим RemoteEvent)")
-        print("[AutoDodge] Используется инструмент Dodge через UsedTool RemoteEvent")
+        print("[AutoDodge] Система активирована")
+        print("[AutoDodge] Используется DODGE! инструмент через UsedTool RemoteEvent")
+        print("[AutoDodge] Формат вызова: FireServer({...})")
         print("[AutoDodge] Радиус: 8 метров")
-        print("[AutoDodge] Таймаут: 0.8 секунды")
+        print("[AutoDodge] Кулдаун: 0.8 секунды")
         
         -- Настройка отслеживания для всех игроков
         for _, player in pairs(Players:GetPlayers()) do
@@ -2791,6 +2787,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
