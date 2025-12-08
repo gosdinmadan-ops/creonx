@@ -10,6 +10,7 @@ local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 local Debris = game:GetService("Debris")
 local TeleportService = game:GetService("TeleportService")
+local VirtualInputManager = game:GetService("VirtualInputManager") -- Заранее импортируем
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -42,7 +43,6 @@ MainModule.AutoDodge = {
     AnimationIdsSet = {},
     PlayersInRange = {}
 }
-
 
 MainModule.AutoQTE = {
     AntiStunEnabled = false
@@ -2215,7 +2215,7 @@ function MainModule.ToggleAutoDodge(enabled)
             return MainModule.AutoDodge.AnimationIdsSet[animId] == true
         end
         
-        -- Нажатие клавиши 1
+        -- Нажатие клавиши 1 (используем заранее импортированный VirtualInputManager)
         local function pressKey1()
             local currentTime = tick()
             
@@ -2223,20 +2223,18 @@ function MainModule.ToggleAutoDodge(enabled)
                 return false
             end
             
-            local VirtualInputManager = game:GetService("VirtualInputManager")
-            if VirtualInputManager then
-                local keyCode = Enum.KeyCode.One
-                
-                local success = pcall(function()
-                    VirtualInputManager:SendKeyEvent(true, keyCode, false, nil)
-                    task.wait(0.03)
-                    VirtualInputManager:SendKeyEvent(false, keyCode, false, nil)
-                end)
-                
-                if success then
-                    MainModule.AutoDodge.LastDodgeTime = currentTime
-                    return true
-                end
+            -- Используем заранее импортированный VirtualInputManager
+            local keyCode = Enum.KeyCode.One
+            
+            local success = pcall(function()
+                VirtualInputManager:SendKeyEvent(true, keyCode, false, nil)
+                task.wait(0.03)
+                VirtualInputManager:SendKeyEvent(false, keyCode, false, nil)
+            end)
+            
+            if success then
+                MainModule.AutoDodge.LastDodgeTime = currentTime
+                return true
             end
             
             return false
@@ -2625,3 +2623,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
