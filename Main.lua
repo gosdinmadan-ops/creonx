@@ -38,7 +38,7 @@ MainModule.AutoDodge = {
     Connections = {},
     LastDodgeTime = 0,
     DodgeCooldown = 0.8,
-    Range = 8,
+    Range = 6,
     RangeSquared = 8 * 8,
     AnimationIdsSet = {},
     PlayersInRange = {},
@@ -2770,6 +2770,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
