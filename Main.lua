@@ -27,21 +27,22 @@ MainModule.Noclip = {
     NoclipParts = {}
 }
 
-MainModule = {
-    AutoDodge = {
-        Enabled = false,
-        AnimationIds = {
-            "rbxassetid://88451099342711",
-            "rbxassetid://79649041083405", 
-            "rbxassetid://73242877658272"
-        },
-        AnimationIdsSet = {},
-        Connections = {},
-        LastDodgeTime = 0,
-        DodgeCooldown = 0.5,
-        Range = 6,
-        RangeSquared = 6 * 6
-    }
+MainModule.AutoDodge = {
+    Enabled = false,
+    AnimationIds = {
+        "rbxassetid://88451099342711",
+        "rbxassetid://79649041083405", 
+        "rbxassetid://73242877658272"
+    },
+    Connections = {},
+    LastDodgeTime = 0,
+    DodgeCooldown = 0.5,
+    Range = 6,
+    RangeSquared = 6 * 6,
+    AnimationIdsSet = {},
+    PlayersInRange = {},
+    LastRangeUpdate = 0,
+    RangeUpdateInterval = 0.5
 }
 
 MainModule.AutoQTE = {
@@ -2187,8 +2188,8 @@ local function performDodge()
         return false
     end
     
-    -- Выполняем додж
-    local success, errorMsg = pcall(function()
+    -- Выполняем додж с защитой
+    local dodgeSuccess, dodgeError = pcall(function()
         local args = {
             "UsingMoveCustom",
             game:GetService("Players").LocalPlayer:WaitForChild("Backpack"):WaitForChild("DODGE!"),
@@ -2196,15 +2197,16 @@ local function performDodge()
                 AutoUse = true
             }
         }
+        
         game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("UsedTool"):FireServer(unpack(args))
     end)
     
-    if success then
+    if dodgeSuccess then
         autoDodge.LastDodgeTime = currentTime
         print("[AutoDodge] Додж выполнен!")
         return true
     else
-        warn("[AutoDodge] Ошибка при выполнении доджа:", errorMsg)
+        warn("[AutoDodge] Ошибка при выполнении доджа:", dodgeError)
         return false
     end
 end
@@ -2252,6 +2254,48 @@ local function createAnimationHandler(player)
             end
         end
     end
+end
+
+-- Обновление списка игроков в радиусе
+local function updatePlayersInRange()
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
+    
+    if not LocalPlayer or not LocalPlayer.Character then 
+        MainModule.AutoDodge.PlayersInRange = {}
+        return 
+    end
+    
+    local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not localRoot then 
+        MainModule.AutoDodge.PlayersInRange = {}
+        return 
+    end
+    
+    local playersInRange = {}
+    local rangeSquared = MainModule.AutoDodge.RangeSquared
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+            if playerRoot then
+                local diff = playerRoot.Position - localRoot.Position
+                local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
+                
+                if distanceSquared <= rangeSquared then
+                    table.insert(playersInRange, player.Name)
+                end
+            end
+        end
+    end
+    
+    MainModule.AutoDodge.PlayersInRange = playersInRange
+    
+    if #playersInRange > 0 then
+        print("[AutoDodge] Игроки в радиусе: " .. table.concat(playersInRange, ", "))
+    end
+    
+    return playersInRange
 end
 
 -- Настройка отслеживания игрока
@@ -2316,6 +2360,7 @@ function MainModule.ToggleAutoDodge(enabled)
         
         -- Получаем сервисы
         local Players = game:GetService("Players")
+        local RunService = game:GetService("RunService")
         
         -- Настройка отслеживания для всех игроков
         for _, player in pairs(Players:GetPlayers()) do
@@ -2330,6 +2375,22 @@ function MainModule.ToggleAutoDodge(enabled)
             end
         end)
         table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
+        
+        -- Heartbeat для обновлений
+        local heartbeatConn = RunService.Heartbeat:Connect(function()
+            if not MainModule.AutoDodge.Enabled then return end
+            
+            local currentTime = tick()
+            if currentTime - MainModule.AutoDodge.LastRangeUpdate > MainModule.AutoDodge.RangeUpdateInterval then
+                updatePlayersInRange()
+                MainModule.AutoDodge.LastRangeUpdate = currentTime
+            end
+        end)
+        table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
+        
+        -- Первоначальное обновление
+        task.wait(1)
+        updatePlayersInRange()
         
         print(string.format("[AutoDodge] Отслеживание игроков: %d", 
               #Players:GetPlayers() - 1))
@@ -2575,6 +2636,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
