@@ -2178,6 +2178,12 @@ for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
 end
 
+-- Сервисы
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 -- Функция для проверки наличия DODGE! предмета
 local function hasDodgeItem()
     local backpack = LocalPlayer:FindFirstChild("Backpack")
@@ -2193,77 +2199,10 @@ local function hasDodgeItem()
     return nil
 end
 
--- Функция для ВСЕГДА установки AutoUse = true
-local function setAutoUseForDodgeItem()
-    local dodgeItem = hasDodgeItem()
-    if not dodgeItem then
-        return false
-    end
-    
-    -- Всегда пробуем установить AutoUse = true через RemoteEvent
-    local success = pcall(function()
-        local args = {
-            "UsingMoveCustom",
-            dodgeItem,
-            [4] = {
-                AutoUse = true
-            }
-        }
-        
-        -- Метод 1: Через RemoteEvent в самом предмете
-        if dodgeItem:FindFirstChild("RemoteEvent") then
-            dodgeItem.RemoteEvent:FireServer(unpack(args))
-            print("[AutoDodge] AutoUse = true установлен (RemoteEvent в предмете)")
-            return true
-        end
-        
-        -- Метод 2: Через стандартный RemoteEvent в ReplicatedStorage
-        local replicatedStorage = game:GetService("ReplicatedStorage")
-        local remoteEvent = replicatedStorage:FindFirstChild("RemoteEvent")
-        if remoteEvent and remoteEvent:IsA("RemoteEvent") then
-            remoteEvent:FireServer(unpack(args))
-            print("[AutoDodge] AutoUse = true установлен (стандартный RemoteEvent)")
-            return true
-        end
-        
-        -- Метод 3: Через Remotes в ReplicatedStorage
-        local gameRemotes = replicatedStorage:FindFirstChild("Remotes")
-        if gameRemotes then
-            for _, remote in pairs(gameRemotes:GetChildren()) do
-                if remote:IsA("RemoteEvent") then
-                    remote:FireServer(unpack(args))
-                    print("[AutoDodge] AutoUse = true установлен (Remotes)")
-                    return true
-                end
-            end
-        end
-        
-        -- Метод 4: Через любые другие RemoteEvents
-        for _, remote in pairs(game:GetDescendants()) do
-            if remote:IsA("RemoteEvent") and remote.Name:match("Event") then
-                pcall(function()
-                    remote:FireServer(unpack(args))
-                    print("[AutoDodge] AutoUse = true установлен (" .. remote.Name .. ")")
-                end)
-                return true
-            end
-        end
-        
-        return false
-    end)
-    
-    return success
-end
-
--- Функция активации уклонения (после установки AutoUse = true)
+-- ЕДИНСТВЕННАЯ функция для активации уклонения
 local function useDodgeItem()
-    -- ВСЕГДА сначала устанавливаем AutoUse = true
-    setAutoUseForDodgeItem()
-    
-    local dodgeTool = hasDodgeItem()
-    if not dodgeTool then
-        return false
-    end
+    -- Получаем DODGE! предмет
+    local dodgeTool = LocalPlayer:WaitForChild("Backpack"):WaitForChild("DODGE!")
     
     -- Экипируем предмет, если он в рюкзаке
     if dodgeTool:IsA("Tool") and dodgeTool.Parent:IsA("Backpack") then
@@ -2273,83 +2212,36 @@ local function useDodgeItem()
             task.wait(0.05)
         end
     end
-
-    local activeDodgeTool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("DODGE!") 
-                             or LocalPlayer.Backpack:FindFirstChild("DODGE!")
     
-    if not activeDodgeTool then
+    -- Обновляем ссылку на экипированный предмет
+    dodgeTool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("DODGE!") 
+                or LocalPlayer.Backpack:FindFirstChild("DODGE!")
+    
+    if not dodgeTool then
         return false
     end
     
-    -- Пробуем разные методы активации уклонения
-    
-    -- Метод 1: Прямой вызов RemoteEvent
-    if activeDodgeTool:FindFirstChild("RemoteEvent") then
-        local success = pcall(function()
-            activeDodgeTool.RemoteEvent:FireServer()
-            print("[AutoDodge] Уклонение: RemoteEvent в предмете")
-            return true
-        end)
-        if success then return true end
-    end
-    
-    -- Метод 2: Через UsingMoveCustom
-    local success = pcall(function()
-        local args = {
-            "UsingMoveCustom",
-            activeDodgeTool,
-            [4] = {
-                AutoUse = true
-            }
+    -- Используем ТОЛЬКО указанный способ
+    local args = {
+        "UsingMoveCustom",
+        dodgeTool,
+        [4] = {
+            AutoUse = true
         }
-        
-        local remoteEvent = game:GetService("ReplicatedStorage"):FindFirstChild("RemoteEvent")
-        if remoteEvent and remoteEvent:IsA("RemoteEvent") then
-            remoteEvent:FireServer(unpack(args))
-            print("[AutoDodge] Уклонение: UsingMoveCustom")
-            return true
-        end
-    end)
-    if success then return true end
+    }
     
-    -- Метод 3: Activate()
-    local success = pcall(function()
-        activeDodgeTool:Activate()
-        print("[AutoDodge] Уклонение: Activate()")
+    local success, errorMsg = pcall(function()
+        ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("UsedTool"):FireServer(unpack(args))
         return true
     end)
-    if success then return true end
     
-    -- Метод 4: Через инструмент события
-    local success = pcall(function()
-        if activeDodgeTool:FindFirstChild("ToolScript") then
-            activeDodgeTool.ToolScript:FireServer()
-            print("[AutoDodge] Уклонение: ToolScript")
-            return true
-        end
-    end)
-    if success then return true end
-    
-    -- Метод 5: Через стандартный вызов использования
-    local success = pcall(function()
-        -- Попробуем вызвать через стандартный паттерн
-        local args = {
-            "UseDodge",
-            LocalPlayer,
-            activeDodgeTool
-        }
-        
-        -- Ищем любой RemoteEvent
-        for _, remote in pairs(game:GetDescendants()) do
-            if remote:IsA("RemoteEvent") then
-                remote:FireServer(unpack(args))
-                print("[AutoDodge] Уклонение: общий RemoteEvent")
-                return true
-            end
-        end
-    end)
-    
-    return success
+    if success then
+        print("[AutoDodge] Уклонение выполнено через UsedTool")
+        return true
+    else
+        warn("[AutoDodge] Ошибка при уклонении:", errorMsg)
+        return false
+    end
 end
 
 -- Защищенная функция для выполнения уклонения
@@ -2376,29 +2268,19 @@ local function simulateDodge()
     local operationStart = tick()
     local operationTimeout = 1.0
     
-    -- ВСЕГДА сначала устанавливаем AutoUse = true
-    setAutoUseForDodgeItem()
+    -- Проверяем наличие DODGE! предмета
+    if not hasDodgeItem() then
+        warn("[AutoDodge] DODGE! предмет не найден в инвентаре")
+        autoDodge.IsProcessing = false
+        return false
+    end
     
     -- Пробуем использовать DODGE! предмет
-    local dodgeSuccess, dodgeError = pcall(function()
-        -- Проверяем наличие DODGE! предмета
-        if not hasDodgeItem() then
-            warn("[AutoDodge] DODGE! предмет не найден в инвентаре")
-            return false
-        end
-        
-        -- Выполняем уклонение
-        if useDodgeItem() then
-            autoDodge.LastDodgeTime = currentTime
-            print("[AutoDodge] Уклонение выполнено")
-            return true
-        end
-        
-        return false
-    end)
+    local dodgeSuccess, dodgeError = pcall(useDodgeItem)
     
     if dodgeSuccess then
         success = true
+        autoDodge.LastDodgeTime = currentTime
     else
         warn("[AutoDodge] Ошибка при использовании DODGE!:", dodgeError)
     end
@@ -2468,9 +2350,6 @@ local function createAnimationHandler(player)
                 local animNumber = animId:match("rbxassetid://(%d+)") or "unknown"
                 print(string.format("[AutoDodge] Атака от %s (анимация: %s)", 
                       player.Name, animNumber))
-                
-                -- ВСЕГДА устанавливаем AutoUse = true перед уклонением
-                setAutoUseForDodgeItem()
                 
                 -- Выполняем уклонение
                 local dodgeSuccess, dodgeError = pcall(simulateDodge)
@@ -2589,12 +2468,9 @@ function MainModule.ToggleAutoDodge(enabled)
     if enabled then
         MainModule.AutoDodge.Enabled = true
         
-        print("[AutoDodge] Система активирована (DODGE! предмет)")
-        print("[AutoDodge] Автоматическая установка AutoUse = true")
+        print("[AutoDodge] Система активирована")
+        print("[AutoDodge] Используется UsedTool RemoteEvent")
         print("[AutoDodge] Радиус: 8 метров")
-        
-        -- Сразу устанавливаем AutoUse = true при активации
-        setAutoUseForDodgeItem()
         
         -- Настройка отслеживания для всех игроков
         for _, player in pairs(Players:GetPlayers()) do
@@ -2869,6 +2745,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
