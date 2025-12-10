@@ -2356,9 +2356,22 @@ local function executeInstantDodge()
     local player = game.Players.LocalPlayer
     if not player then return false end
     
-    local remote = game.ReplicatedStorage:FindFirstChild("Remotes")
-    if remote then
-        remote = remote:FindFirstChild("UsedTool")
+    -- Ищем remote разными способами
+    local remote = nil
+    local remotes = game.ReplicatedStorage:FindFirstChild("Remotes")
+    if remotes then
+        remote = remotes:FindFirstChild("UsedTool")
+    end
+    
+    if not remote then
+        -- Попробуем поискать напрямую
+        remote = game.ReplicatedStorage:FindFirstChild("UsedTool")
+        if not remote then
+            remote = game.ReplicatedStorage:FindFirstChild("Remotes")
+            if remote then
+                remote = remote:FindFirstChild("UsedTool")
+            end
+        end
     end
     
     if not remote then return false end
@@ -2376,9 +2389,24 @@ local function executeInstantDodge()
     end
     
     if tool then
-        local fireSuccess = pcall(function()
-            remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true})
-        end)
+        local fireSuccess = false
+        
+        -- Попробуем разные методы вызова
+        local methods = {
+            function() remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true}) end,
+            function() remote:FireServer(tool, "UsingMoveCustom", nil, {Clicked = true}) end,
+            function() remote:FireServer("UsingMoveCustom", tool, {Clicked = true}) end,
+            function() remote:InvokeServer("UsingMoveCustom", tool, nil, {Clicked = true}) end,
+            function() remote:InvokeServer(tool, "UsingMoveCustom", nil, {Clicked = true}) end,
+        }
+        
+        for _, method in ipairs(methods) do
+            local success = pcall(method)
+            if success then
+                fireSuccess = true
+                break
+            end
+        end
         
         if fireSuccess then
             autoDodge.LastDodgeTime = currentTime
@@ -2817,4 +2845,5 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
