@@ -36,15 +36,13 @@ MainModule.AutoDodge = {
     },
     Connections = {},
     LastDodgeTime = 0,
-    DodgeCooldown = 0.3, -- Кулдаун 0.3 секунды
+    DodgeCooldown = 0.6,
     Range = 6,
     RangeSquared = 6 * 6,
     AnimationIdsSet = {},
     PlayersInRange = {},
     LastRangeUpdate = 0,
-    RangeUpdateInterval = 0.5,
-    IsProcessing = false,
-    DodgeToolName = "DODGE!"
+    RangeUpdateInterval = 0.5
 }
 
 MainModule.AutoQTE = {
@@ -2178,7 +2176,7 @@ for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
 end
 
--- Функция для выполнения моментального доджа
+-- ФУНКЦИЯ МОМЕНТАЛЬНОГО ДОДЖА (ОПТИМИЗИРОВАНА)
 local function executeInstantDodge()
     if not MainModule.AutoDodge.Enabled then return false end
     
@@ -2190,173 +2188,90 @@ local function executeInstantDodge()
         return false
     end
     
-    -- Защита от одновременных обработок
-    if autoDodge.IsProcessing then
-        return false
+    -- МОМЕНТАЛЬНОЕ ВЫПОЛНЕНИЕ
+    local player = game.Players.LocalPlayer
+    if not player then return false end
+    
+    local remote = game.ReplicatedStorage:FindFirstChild("Remotes")
+    if remote then
+        remote = remote:FindFirstChild("UsedTool")
     end
     
-    autoDodge.IsProcessing = true
-    local success = false
+    if not remote then return false end
     
-    -- МОМЕНТАЛЬНЫЙ ДОДЖ БЕЗ ЗАДЕРЖЕК
-    local function performInstantDodge()
-        local remote = game.ReplicatedStorage.Remotes.UsedTool
-        if not remote then
-            warn("[AutoDodge] Remote не найден")
-            return false
-        end
-        
-        local player = game.Players.LocalPlayer
-        local toolName = autoDodge.DodgeToolName
-        
-        -- Ищем инструмент максимально быстро
-        local tool = nil
-        
-        -- Сначала проверяем в персонаже (быстрее всего)
-        local character = player.Character
-        if character then
-            tool = character:FindFirstChild(toolName)
-        end
-        
-        -- Если не нашли, проверяем в рюкзаке
+    -- Ищем инструмент моментально
+    local tool = nil
+    local char = player.Character
+    if char then
+        tool = char:FindFirstChild("DODGE!")
         if not tool then
-            tool = player.Backpack:FindFirstChild(toolName)
+            local backpack = player:FindFirstChild("Backpack")
+            if backpack then
+                tool = backpack:FindFirstChild("DODGE!")
+            end
         end
-        
-        if not tool then
-            -- Если инструмента нет вообще, пробуем переподготовить
-            warn("[AutoDodge] Инструмент не найден, проверка инвентаря...")
-            return false
-        end
-        
-        -- Мгновенно экипируем если нужно
-        if tool.Parent == player.Backpack then
-            tool.Parent = player.Character
-            -- МИНИМАЛЬНАЯ пауза для обновления
-            task.wait(0.001)
-        end
-        
-        -- Моментальная отправка доджа
-        local fireSuccess = pcall(function()
+    end
+    
+    if tool then
+        -- МОМЕНТАЛЬНОЕ ИСПОЛЬЗОВАНИЕ
+        local fireSuccess, err = pcall(function()
             remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true})
         end)
         
-        return fireSuccess
-    end
-    
-    -- Выполняем додж с защитой
-    local dodgeSuccess, dodgeResult = pcall(performInstantDodge)
-    
-    if dodgeSuccess and dodgeResult then
-        success = true
-        autoDodge.LastDodgeTime = currentTime
-    elseif not dodgeSuccess then
-        warn("[AutoDodge] Ошибка при выполнении доджа:", dodgeResult)
-    end
-    
-    autoDodge.IsProcessing = false
-    
-    return success
-end
-
--- Функция для проверки наличия DODGE! инструмента
-local function hasDodgeTool()
-    local player = game.Players.LocalPlayer
-    local toolName = MainModule.AutoDodge.DodgeToolName
-    
-    -- Проверяем в персонаже
-    if player.Character and player.Character:FindFirstChild(toolName) then
-        return true
-    end
-    
-    -- Проверяем в рюкзаке
-    if player.Backpack:FindFirstChild(toolName) then
-        return true
+        if fireSuccess then
+            autoDodge.LastDodgeTime = currentTime
+            return true
+        end
     end
     
     return false
 end
 
--- Функция для экипировки DODGE! инструмента при включении
-local function equipDodgeTool()
-    local player = game.Players.LocalPlayer
-    local toolName = MainModule.AutoDodge.DodgeToolName
-    
-    -- Ищем инструмент в рюкзаке
-    local tool = player.Backpack:FindFirstChild(toolName)
-    
-    if tool then
-        -- Экипируем в персонажа
-        tool.Parent = player.Character
-        task.wait(0.01) -- Минимальная задержка для обновления
-        print("[AutoDodge] Инструмент DODGE! экипирован")
-        return true
-    end
-    
-    -- Проверяем, может уже экипирован
-    if player.Character and player.Character:FindFirstChild(toolName) then
-        return true
-    end
-    
-    return false
-end
-
--- Функция для обработки анимаций (моментальный додж)
-local function createAnimationHandler(player)
+-- ОПТИМИЗИРОВАННЫЙ ОБРАБОТЧИК АНИМАЦИЙ (МОМЕНТАЛЬНЫЙ)
+local function createFastAnimationHandler(player)
     return function(track)
         if not MainModule.AutoDodge.Enabled then return end
         if player == LocalPlayer then return end
         
-        -- Проверка кулдауна (0.3 секунды)
+        -- Быстрая проверка кулдауна
         local currentTime = tick()
-        if currentTime - MainModule.AutoDodge.LastDodgeTime < 0.3 then
+        if currentTime - MainModule.AutoDodge.LastDodgeTime < 0.05 then -- Минимальная задержка 50мс
             return
         end
         
-        -- Быстрая проверка анимации
+        -- МОМЕНТАЛЬНАЯ ПРОВЕРКА АНИМАЦИИ
         local animId
-        local success = pcall(function()
-            if track and track.Animation then
-                animId = track.Animation.AnimationId
-            end
-        end)
+        if track and track.Animation then
+            animId = track.Animation.AnimationId
+        end
         
-        if not success or not animId then return end
+        if not animId then return end
         
-        -- Проверяем ID анимации
+        -- Быстрая проверка ID
         if MainModule.AutoDodge.AnimationIdsSet[animId] then
             -- Быстрая проверка расстояния
             if not LocalPlayer or not LocalPlayer.Character then return end
-            
-            local targetPlayer = player
-            if not targetPlayer or not targetPlayer.Character then return end
+            if not player or not player.Character then return end
             
             local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
             
             if not (localRoot and targetRoot) then return end
             
-            -- Быстрая проверка расстояния (без лишних вычислений)
+            -- Быстрый расчет расстояния
             local diff = targetRoot.Position - localRoot.Position
             local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
             
             if distanceSquared <= MainModule.AutoDodge.RangeSquared then
-                -- МОМЕНТАЛЬНОЕ выполнение доджа
-                local dodgeSuccess = pcall(executeInstantDodge)
-                
-                if dodgeSuccess then
-                    -- Быстрое логирование
-                    local animNumber = animId:match("rbxassetid://(%d+)") or "unknown"
-                    print(string.format("[AutoDodge] Уклонение от атаки %s (игрок: %s)", 
-                          animNumber, player.Name))
-                end
+                -- МОМЕНТАЛЬНЫЙ ДОДЖ БЕЗ ВСЯКИХ ЗАДЕРЖЕК
+                executeInstantDodge()
             end
         end
     end
 end
 
--- Обновление списка игроков в радиусе
-local function updatePlayersInRange()
+-- БЫСТРОЕ ОБНОВЛЕНИЕ ИГРОКОВ В РАДИУСЕ
+local function fastUpdatePlayersInRange()
     if not LocalPlayer or not LocalPlayer.Character then 
         MainModule.AutoDodge.PlayersInRange = {}
         return 
@@ -2387,21 +2302,17 @@ local function updatePlayersInRange()
     
     MainModule.AutoDodge.PlayersInRange = playersInRange
     
-    if #playersInRange > 0 then
-        print("[AutoDodge] Игроки в радиусе 6m: " .. table.concat(playersInRange, ", "))
-    end
-    
     return playersInRange
 end
 
--- Настройка отслеживания игрока
-local function setupPlayerTracking(player)
+-- БЫСТРАЯ НАСТРОЙКА ОТСЛЕЖИВАНИЯ
+local function setupFastPlayerTracking(player)
     if player == LocalPlayer then return end
     
     local function setupCharacter(character)
         if not character or not MainModule.AutoDodge.Enabled then return end
         
-        -- Быстрая загрузка персонажа
+        -- МИНИМАЛЬНОЕ ОЖИДАНИЕ
         for i = 1, 2 do
             if character:FindFirstChild("Humanoid") then break end
             task.wait(0.1)
@@ -2409,26 +2320,17 @@ local function setupPlayerTracking(player)
         
         local humanoid = character:FindFirstChild("Humanoid")
         if humanoid then
-            local handler = createAnimationHandler(player)
-            local conn
-            local success, errorMsg = pcall(function()
-                conn = humanoid.AnimationPlayed:Connect(handler)
-            end)
-            
-            if success and conn then
-                table.insert(MainModule.AutoDodge.Connections, conn)
-            else
-                warn("[AutoDodge] Ошибка подключения:", errorMsg)
-            end
+            local handler = createFastAnimationHandler(player)
+            local conn = humanoid.AnimationPlayed:Connect(handler)
+            table.insert(MainModule.AutoDodge.Connections, conn)
         end
     end
     
-    -- Настройка текущего персонажа
+    -- Быстрая настройка
     if player.Character then
         task.spawn(setupCharacter, player.Character)
     end
     
-    -- Отслеживание новых персонажей
     local charConn = player.CharacterAdded:Connect(function(character)
         if MainModule.AutoDodge.Enabled then
             task.spawn(setupCharacter, character)
@@ -2437,16 +2339,12 @@ local function setupPlayerTracking(player)
     table.insert(MainModule.AutoDodge.Connections, charConn)
 end
 
--- Основная функция управления
+-- ОПТИМИЗИРОВАННАЯ ФУНКЦИЯ УПРАВЛЕНИЯ
 function MainModule.ToggleAutoDodge(enabled)
-    -- Отключение предыдущих подключений
+    -- Быстрое отключение
     MainModule.AutoDodge.Enabled = false
-    MainModule.AutoDodge.IsProcessing = false
     
-    -- Даем время на завершение операций
-    task.wait(0.05)
-    
-    -- Отключаем все соединения
+    -- Мгновенное отключение всех соединений
     for _, conn in pairs(MainModule.AutoDodge.Connections) do
         if conn then
             pcall(function() conn:Disconnect() end)
@@ -2454,84 +2352,56 @@ function MainModule.ToggleAutoDodge(enabled)
     end
     MainModule.AutoDodge.Connections = {}
     
-    -- Очистка данных
+    -- Быстрая очистка данных
     MainModule.AutoDodge.PlayersInRange = {}
     MainModule.AutoDodge.LastDodgeTime = 0
     MainModule.AutoDodge.LastRangeUpdate = 0
     
     if enabled then
-        -- ПРОВЕРКА НАЛИЧИЯ ИНСТРУМЕНТА DODGE!
-        if not hasDodgeTool() then
-            print("[AutoDodge] ❌ Инструмент DODGE! не найден")
-            print("[AutoDodge] Игра не началась, либо вы не Hider")
-            return false
-        end
-        
-        -- ЭКИПИРОВКА ИНСТРУМЕНТА ПРИ ВКЛЮЧЕНИИ
-        if not equipDodgeTool() then
-            print("[AutoDodge] ❌ Не удалось экипировать инструмент DODGE!")
-            return false
-        end
-        
         MainModule.AutoDodge.Enabled = true
         
-        print("[AutoDodge] ✅ Система активирована")
-        print("[AutoDodge] 📏 Радиус: 6 метров")
-        print("[AutoDodge] ⏱️ Кулдаун доджа: 0.3 секунды")
-        print("[AutoDodge] ⚡ Режим: Мгновенный додж")
+        print("[AutoDodge] Система активирована (МОМЕНТАЛЬНЫЙ режим)")
+        print("[AutoDodge] Радиус: 6 метров | Кулдаун: 0.6с")
         
-        -- Настройка отслеживания для всех игроков
+        -- Быстрая настройка отслеживания
         for _, player in pairs(Players:GetPlayers()) do
-            task.spawn(setupPlayerTracking, player)
+            task.spawn(setupFastPlayerTracking, player)
         end
         
-        -- Отслеживание новых игроков
+        -- Быстрое отслеживание новых игроков
         local playerAddedConn = Players.PlayerAdded:Connect(function(player)
             if MainModule.AutoDodge.Enabled then
-                task.wait(0.5)
-                task.spawn(setupPlayerTracking, player)
+                task.spawn(setupFastPlayerTracking, player)
             end
         end)
         table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
         
-        -- Heartbeat для обновлений
+        -- Оптимизированный heartbeat
         local heartbeatConn = RunService.Heartbeat:Connect(function()
             if not MainModule.AutoDodge.Enabled then return end
             
             local currentTime = tick()
             if currentTime - MainModule.AutoDodge.LastRangeUpdate > MainModule.AutoDodge.RangeUpdateInterval then
-                updatePlayersInRange()
+                fastUpdatePlayersInRange()
                 MainModule.AutoDodge.LastRangeUpdate = currentTime
             end
         end)
         table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
         
-        -- Первоначальное обновление
-        task.wait(0.5)
-        updatePlayersInRange()
-        
-        print(string.format("[AutoDodge] Отслеживание игроков: %d", 
-              #Players:GetPlayers() - 1))
-        
-        return true
+        -- Быстрое первоначальное обновление
+        task.spawn(fastUpdatePlayersInRange)
         
     else
         print("[AutoDodge] Система деактивирована")
-        return true
     end
 end
 
--- Автоматическая очистка при выходе
+-- Автоматическая очистка
 Players.PlayerRemoving:Connect(function(player)
     if player == LocalPlayer then
         MainModule.ToggleAutoDodge(false)
     end
 end)
-
--- Функция для быстрой проверки готовности
-function MainModule.IsAutoDodgeReady()
-    return hasDodgeTool()
-end
 
 function MainModule.Cleanup()
     local connections = {
@@ -2761,6 +2631,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
