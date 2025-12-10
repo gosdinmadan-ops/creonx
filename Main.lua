@@ -27,7 +27,6 @@ MainModule.Noclip = {
     NoclipParts = {}
 }
 
-запомни код
 MainModule.AutoDodge = {
     Enabled = false,
     AnimationIds = {
@@ -2601,6 +2600,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
