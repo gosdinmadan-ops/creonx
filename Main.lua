@@ -27,6 +27,7 @@ MainModule.Noclip = {
     NoclipParts = {}
 }
 
+запомни код
 MainModule.AutoDodge = {
     Enabled = false,
     AnimationIds = {
@@ -35,13 +36,14 @@ MainModule.AutoDodge = {
         "rbxassetid://73242877658272",
         "rbxassetid://114928327045353",
         "rbxassetid://135690448001690", 
-        "rbxassetid://103355259844069"
+        "rbxassetid://103355259844069",
+        "rbxassetid://125906547773381"  -- Новая анимация с картинки
     },
     Connections = {},
     LastDodgeTime = 0,
     DodgeCooldown = 0.6,
-    Range = 8,
-    RangeSquared = 8 * 8,
+    Range = 7,
+    RangeSquared = 7 * 7,
     AnimationIdsSet = {},
     PlayersInRange = {},
     LastRangeUpdate = 0,
@@ -2599,6 +2601,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
