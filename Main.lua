@@ -2356,10 +2356,9 @@ local function executeInstantDodge()
     local player = game.Players.LocalPlayer
     if not player then return false end
     
-    local remote = game.ReplicatedStorage:FindFirstChild("Remotes")
-    if remote then
-        remote = remote:FindFirstChild("UsedTool")
-    end
+    -- Получаем remote
+    local remoteFolder = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
+    local remote = remoteFolder:WaitForChild("UsedTool")
     
     if not remote then return false end
     
@@ -2375,30 +2374,65 @@ local function executeInstantDodge()
         end
     end
     
-    if tool then
-        -- Первый способ вызова
-        local fireSuccess = pcall(function()
-            remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true})
+    if not tool then return false end
+    
+    -- Пробуем разные форматы вызова (особенно для мобильной Delta)
+    local success = false
+    
+    -- Вариант 1: Только имя move
+    success = pcall(function()
+        remote:FireServer("DODGE!", tool)
+    end)
+    
+    if success then
+        autoDodge.LastDodgeTime = currentTime
+        return true
+    end
+    
+    -- Вариант 2: С параметром Clicked
+    success = pcall(function()
+        remote:FireServer("DODGE!", tool, {Clicked = true})
+    end)
+    
+    if success then
+        autoDodge.LastDodgeTime = currentTime
+        return true
+    end
+    
+    -- Вариант 3: UsingMoveCustom формат
+    success = pcall(function()
+        remote:FireServer("UsingMoveCustom", tool, "DODGE!", {Clicked = true})
+    end)
+    
+    if success then
+        autoDodge.LastDodgeTime = currentTime
+        return true
+    end
+    
+    -- Вариант 4: Для RemoteFunction (если это функция, а не событие)
+    if remote:IsA("RemoteFunction") then
+        success = pcall(function()
+            remote:InvokeServer("UsingMoveCustom", tool, nil, {Clicked = true})
         end)
         
-        -- Если первый способ не сработал, пробуем второй способ
-        if not fireSuccess then
-            local secondSuccess = pcall(function()
-                -- Попробуем вызвать напрямую через WaitForChild для надежности
-                local safeRemote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("UsedTool")
-                safeRemote:FireServer("UsingMoveCustom", tool, {Clicked = true})
-            end)
-            
-            if secondSuccess then
-                autoDodge.LastDodgeTime = currentTime
-                return true
-            end
-        else
-            -- Первый способ успешен
+        if success then
             autoDodge.LastDodgeTime = currentTime
             return true
         end
     end
+    
+    -- Вариант 5: Простой вызов (без дополнительных параметров)
+    success = pcall(function()
+        remote:FireServer(tool)
+    end)
+    
+    if success then
+        autoDodge.LastDodgeTime = currentTime
+        return true
+    end
+    
+    -- Для дебага выводим информацию
+    warn("[AutoDodge] Все способы не сработали. Remote тип: " .. remote.ClassName)
     
     return false
 end
@@ -2831,6 +2865,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
