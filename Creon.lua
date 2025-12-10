@@ -140,8 +140,11 @@ else
     -- Для ПК кнопки сворачивания нет
 end
 
+-- УВЕЛИЧИВАЕМ ШИРИНУ ЛЕВОЙ ПАНЕЛИ С ВКЛАДКАМИ
+local TAB_PANEL_WIDTH = 180 -- Было 150, увеличили на 30 пикселей
+
 -- Фрейм для кнопок вкладок с прокруткой
-TabButtons.Size = UDim2.new(0, 150, 1, -35)
+TabButtons.Size = UDim2.new(0, TAB_PANEL_WIDTH, 1, -35)
 TabButtons.Position = UDim2.new(0, 0, 0, 35)
 TabButtons.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
 TabButtons.BorderSizePixel = 0
@@ -169,9 +172,9 @@ TabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 end)
 TabLayout.Parent = TabScrolling
 
--- Content Frame с прокруткой
-ContentFrame.Size = UDim2.new(1, -150, 1, -35)
-ContentFrame.Position = UDim2.new(0, 150, 0, 35)
+-- Content Frame с прокруткой (УМЕНЬШАЕМ ШИРИНУ ИЗ-ЗА УВЕЛИЧЕНИЯ ЛЕВОЙ ПАНЕЛИ)
+ContentFrame.Size = UDim2.new(1, -TAB_PANEL_WIDTH, 1, -35)
+ContentFrame.Position = UDim2.new(0, TAB_PANEL_WIDTH, 0, 35)
 ContentFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 ContentFrame.BorderSizePixel = 0
 ContentFrame.Parent = MainFrame
@@ -1447,10 +1450,13 @@ end
 local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Sky Squid", "Last Dinner", "Settings"}
 local tabButtons = {}
 
+-- УВЕЛИЧИВАЕМ ШИРИНУ КНОПОК ВКЛАДОК
+local TAB_BUTTON_WIDTH_PERCENT = 1.00 -- 95% ширины контейнера (было 0.9)
+
 for i, name in pairs(tabs) do
     local buttonContainer = Instance.new("Frame")
-    buttonContainer.Size = UDim2.new(0.9, 0, 0, 36)
-    buttonContainer.Position = UDim2.new(0.05, 0, 0, (i-1)*42 + 10) -- Увеличен отступ между вкладками
+    buttonContainer.Size = UDim2.new(TAB_BUTTON_WIDTH_PERCENT, 0, 0, 36)
+    buttonContainer.Position = UDim2.new((1 - TAB_BUTTON_WIDTH_PERCENT)/2, 0, 0, (i-1)*42 + 10) -- Центрируем
     buttonContainer.BackgroundTransparency = 1
     buttonContainer.LayoutOrder = i
     buttonContainer.Parent = TabScrolling
