@@ -74,9 +74,9 @@ MainModule.RLGL = {
     StartPosition = Vector3.new(-55.3, 1023.1, -545.8),
     EndPosition = Vector3.new(-214.4, 1023.1, 146.7),
     Connection = nil,
-    PocketSandCheckConnection = nil,
-    GameActive = false,
-    GameCheckInterval = 2
+    PocketSandCheck = nil,
+    NoPocketSandTimer = 0,
+    NoPocketSandCooldown = 3
 }
 
 MainModule.Guards = {
@@ -175,10 +175,7 @@ MainModule.ZoneKill = {
     CharacterAddedConnection = nil,
     AnimationStoppedConnections = {},
     AnimationCheckConnection = nil,
-    TrackedAnimations = {},
-    SafetyCheckConnection = nil,
-    GameCheckConnection = nil,
-    LastGameCheck = 0
+    TrackedAnimations = {}
 }
 
 MainModule.AntiTimeStop = {
@@ -219,28 +216,12 @@ MainModule.Misc = {
     UnlockDashEnabled = false,
     UnlockPhantomStepEnabled = false,
     LastInjuredNotify = 0,
-    LastESPUpdate = 0,
-    AlertFunction = nil
+    LastESPUpdate = 0
 }
 
 MainModule.HNS = {
     InfinityStaminaEnabled = false,
-    InfinityStaminaConnection = nil,
-    GameCheckConnection = nil,
-    LastGameCheck = 0,
-    IsSeeker = false,
-    IsHider = false,
-    HasKnife = false,
-    HasDodge = false
-}
-
-MainModule.LastDinner = {
-    ZoneKillEnabled = false
-}
-
-MainModule.Teleport = {
-    TeleportToHiderEnabled = false,
-    TeleportConnection = nil
+    InfinityStaminaConnection = nil
 }
 
 MainModule.ESP = {
@@ -282,87 +263,21 @@ local function GetRootPart(character)
     return character and character:FindFirstChild("HumanoidRootPart")
 end
 
-local function ShowAlert(message)
-    if MainModule.Misc.AlertFunction then
-        MainModule.Misc.AlertFunction(message)
-    else
-        warn("[CreonX] " .. message)
-    end
-end
-
 local function playerHasKnife(player)
     if not player or not player.Character then return false end
-    
-    -- Проверка в инвентаре персонажа
     for _, tool in pairs(player.Character:GetChildren()) do
         if tool:IsA("Tool") then
             local toolName = tool.Name:lower()
-            if toolName:find("knife") or toolName:find("fork") or toolName:find("dagger") or toolName:find("нож") or toolName == "knife" then
+            if toolName:find("knife") or toolName:find("fork") or toolName:find("dagger") or toolName:find("нож") then
                 return true, tool
             end
         end
     end
-    
-    -- Проверка в бэкпаке
     if player:FindFirstChild("Backpack") then
         for _, tool in pairs(player.Backpack:GetChildren()) do
             if tool:IsA("Tool") then
                 local toolName = tool.Name:lower()
-                if toolName:find("knife") or toolName:find("fork") or toolName:find("dagger") or toolName:find("нож") or toolName == "knife" then
-                    return true, tool
-                end
-            end
-        end
-    end
-    return false, nil
-end
-
-local function playerHasDodge(player)
-    if not player or not player.Character then return false end
-    
-    -- Проверка в инвентаре персонажа
-    for _, tool in pairs(player.Character:GetChildren()) do
-        if tool:IsA("Tool") then
-            local toolName = tool.Name:lower()
-            if toolName:find("dodge") or toolName == "dodge!" then
-                return true, tool
-            end
-        end
-    end
-    
-    -- Проверка в бэкпаке
-    if player:FindFirstChild("Backpack") then
-        for _, tool in pairs(player.Backpack:GetChildren()) do
-            if tool:IsA("Tool") then
-                local toolName = tool.Name:lower()
-                if toolName:find("dodge") or toolName == "dodge!" then
-                    return true, tool
-                end
-            end
-        end
-    end
-    return false, nil
-end
-
-local function playerHasPocketSand(player)
-    if not player or not player.Character then return false end
-    
-    -- Проверка в инвентаре персонажа
-    for _, tool in pairs(player.Character:GetChildren()) do
-        if tool:IsA("Tool") then
-            local toolName = tool.Name:lower()
-            if toolName:find("pocket") and (toolName:find("sand") or toolName:find("песок")) then
-                return true, tool
-            end
-        end
-    end
-    
-    -- Проверка в бэкпаке
-    if player:FindFirstChild("Backpack") then
-        for _, tool in pairs(player.Backpack:GetChildren()) do
-            if tool:IsA("Tool") then
-                local toolName = tool.Name:lower()
-                if toolName:find("pocket") and (toolName:find("sand") or toolName:find("песок")) then
+                if toolName:find("knife") or toolName:find("fork") or toolName:find("dagger") or toolName:find("нож") then
                     return true, tool
                 end
             end
@@ -510,125 +425,6 @@ local function KillEnemy(enemyName)
     end)
 end
 
--- Функция для получения Hider'а
-function MainModule.GetHider()
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr == LocalPlayer then continue end
-        if not plr.Character then continue end
-        if not IsHider(plr) then continue end
-        if plr.Character ~= nil and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
-            return plr.Character
-        else
-            continue
-        end
-    end
-    return nil
-end
-
--- Функция телепорта к Hider'у
-function MainModule.TeleportToHider()
-    if not GetCharacter() then 
-        ShowAlert("Character not found!")
-        return 
-    end
-    
-    -- Проверяем активность игры HNS
-    MainModule.CheckHNSGameState()
-    if not MainModule.HNS.HasDodge and not MainModule.HNS.HasKnife then
-        ShowAlert("Game not running!")
-        return
-    end
-    
-    -- Находим игрока-прячущегося
-    local hider = MainModule.GetHider()
-    if not hider then
-        ShowAlert("No hider found :(")
-        return 
-    end
-    
-    -- Телепортируемся к нему
-    local character = GetCharacter()
-    if character and character.PrimaryPart then
-        character:PivotTo(hider:GetPrimaryPartCFrame())
-        ShowAlert("Teleported to hider!")
-    end
-end
-
--- Функция проверки состояния игры RLGL
-function MainModule.CheckRLGLGameState()
-    local currentTime = tick()
-    if currentTime - MainModule.RLGL.LastGameCheck < MainModule.RLGL.GameCheckInterval then
-        return MainModule.RLGL.GameActive
-    end
-    
-    MainModule.RLGL.LastGameCheck = currentTime
-    local hasPocketSand = false
-    
-    -- Проверяем у всех игроков
-    for _, player in pairs(Players:GetPlayers()) do
-        if playerHasPocketSand(player) then
-            hasPocketSand = true
-            break
-        end
-    end
-    
-    MainModule.RLGL.GameActive = hasPocketSand
-    if not hasPocketSand and MainModule.RLGL.GodMode then
-        ShowAlert("RLGL: Game not active")
-        MainModule.ToggleGodMode(false)
-    end
-    
-    return hasPocketSand
-end
-
--- Функция проверки состояния игры HNS
-function MainModule.CheckHNSGameState()
-    local currentTime = tick()
-    if currentTime - MainModule.HNS.LastGameCheck < 2 then
-        return MainModule.HNS.HasKnife or MainModule.HNS.HasDodge
-    end
-    
-    MainModule.HNS.LastGameCheck = currentTime
-    local hasKnife = playerHasKnife(LocalPlayer)
-    local hasDodge = playerHasDodge(LocalPlayer)
-    
-    MainModule.HNS.HasKnife = hasKnife
-    MainModule.HNS.HasDodge = hasDodge
-    MainModule.HNS.IsSeeker = hasKnife
-    MainModule.HNS.IsHider = hasDodge
-    
-    -- Если потеряли нож/додж, выключаем соответствующие функции
-    if not hasKnife and MainModule.SpikesKill.Enabled then
-        ShowAlert("HNS: Game not active (Lost Knife)")
-        MainModule.ToggleSpikesKill(false)
-    end
-    
-    if not hasDodge then
-        if MainModule.AutoDodge.Enabled then
-            ShowAlert("HNS: Game not active (Lost DODGE!)")
-            MainModule.ToggleAutoDodge(false)
-        end
-        if MainModule.HNS.InfinityStaminaEnabled then
-            ShowAlert("HNS: Game not active (Lost DODGE!)")
-            MainModule.ToggleHNSInfinityStamina(false)
-        end
-    end
-    
-    return hasKnife or hasDodge
-end
-
--- Функция проверки состояния игры для Zone Kill
-function MainModule.CheckZoneKillGameState()
-    local hasKnife = playerHasKnife(LocalPlayer)
-    
-    if not hasKnife and MainModule.ZoneKill.Enabled then
-        ShowAlert("Last Dinner: Game not active (No Knife)")
-        MainModule.ToggleZoneKill(false)
-    end
-    
-    return hasKnife
-end
-
 function MainModule.ToggleAntiTimeStop(enabled)
     MainModule.AntiTimeStop.Enabled = enabled
     if MainModule.AntiTimeStop.Connection then
@@ -733,24 +529,39 @@ function MainModule.ToggleRebel(enabled)
     end
 end
 
-function MainModule.ToggleGodMode(enabled)
-    -- Проверяем активность игры RLGL
-    if enabled then
-        if not MainModule.CheckRLGLGameState() then
-            ShowAlert("RLGL: Game not active")
-            return
+function MainModule.HasPocketSand()
+    local character = GetCharacter()
+    if character then
+        for _, tool in pairs(character:GetChildren()) do
+            if tool:IsA("Tool") and tool.Name == "Pocket Sand" then
+                return true
+            end
         end
     end
     
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        for _, tool in pairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") and tool.Name == "Pocket Sand" then
+                return true
+            end
+        end
+    end
+    
+    return false
+end
+
+function MainModule.ToggleGodMode(enabled)
     MainModule.RLGL.GodMode = enabled
+    
     if MainModule.RLGL.Connection then
         MainModule.RLGL.Connection:Disconnect()
         MainModule.RLGL.Connection = nil
     end
     
-    if MainModule.RLGL.PocketSandCheckConnection then
-        MainModule.RLGL.PocketSandCheckConnection:Disconnect()
-        MainModule.RLGL.PocketSandCheckConnection = nil
+    if MainModule.RLGL.PocketSandCheck then
+        MainModule.RLGL.PocketSandCheck:Disconnect()
+        MainModule.RLGL.PocketSandCheck = nil
     end
     
     if enabled then
@@ -758,12 +569,9 @@ function MainModule.ToggleGodMode(enabled)
         if character then
             local rootPart = GetRootPart(character)
             if rootPart then
-                -- Запоминаем оригинальную высоту
                 MainModule.RLGL.OriginalHeight = rootPart.Position.Y
-                
-                local currentPos = rootPart.Position
-                local targetHeight = currentPos.Y + MainModule.RLGL.GodModeHeight
-                local targetPos = Vector3.new(currentPos.X, targetHeight, currentPos.Z)
+                local targetHeight = rootPart.Position.Y + MainModule.RLGL.GodModeHeight
+                local targetPos = Vector3.new(rootPart.Position.X, targetHeight, rootPart.Position.Z)
                 SafeTeleport(targetPos)
             end
         end
@@ -771,24 +579,14 @@ function MainModule.ToggleGodMode(enabled)
         MainModule.RLGL.Connection = RunService.Heartbeat:Connect(function()
             if not MainModule.RLGL.GodMode then return end
             
-            -- Проверяем наличие Pocket Sand
-            if not playerHasPocketSand(LocalPlayer) then
-                task.wait(3) -- Ждем 3 секунды
-                if not playerHasPocketSand(LocalPlayer) then
-                    -- Возвращаем на оригинальную высоту и отключаем GodMode
-                    local character = GetCharacter()
-                    if character then
-                        local rootPart = GetRootPart(character)
-                        if rootPart and MainModule.RLGL.OriginalHeight then
-                            local currentPos = rootPart.Position
-                            local targetPos = Vector3.new(currentPos.X, MainModule.RLGL.OriginalHeight, currentPos.Z)
-                            SafeTeleport(targetPos)
-                        end
-                    end
+            if not MainModule.HasPocketSand() then
+                MainModule.RLGL.NoPocketSandTimer = MainModule.RLGL.NoPocketSandTimer + task.wait()
+                if MainModule.RLGL.NoPocketSandTimer >= MainModule.RLGL.NoPocketSandCooldown then
                     MainModule.ToggleGodMode(false)
-                    ShowAlert("RLGL: Pocket Sand lost, GodMode disabled")
                     return
                 end
+            else
+                MainModule.RLGL.NoPocketSandTimer = 0
             end
             
             local currentTime = tick()
@@ -807,33 +605,39 @@ function MainModule.ToggleGodMode(enabled)
                     humanoid.Health = MainModule.RLGL.LastHealth
                     task.wait(0.1)
                     MainModule.ToggleGodMode(false)
-                    ShowAlert("RLGL: Damage detected, GodMode disabled")
                 else
                     MainModule.RLGL.LastHealth = humanoid.Health
                 end
             end)
         end)
         
-        -- Проверка наличия Pocket Sand каждые 2 секунды
-        MainModule.RLGL.PocketSandCheckConnection = RunService.Heartbeat:Connect(function()
+        MainModule.RLGL.PocketSandCheck = RunService.Heartbeat:Connect(function()
             if not MainModule.RLGL.GodMode then return end
-            MainModule.CheckRLGLGameState()
+            
+            if not MainModule.HasPocketSand() then
+                MainModule.RLGL.NoPocketSandTimer = MainModule.RLGL.NoPocketSandTimer + task.wait()
+                if MainModule.RLGL.NoPocketSandTimer >= MainModule.RLGL.NoPocketSandCooldown then
+                    MainModule.ToggleGodMode(false)
+                end
+            else
+                MainModule.RLGL.NoPocketSandTimer = 0
+            end
         end)
-        
     else
-        -- Возвращаем на оригинальную высоту
-        local character = GetCharacter()
-        if character then
-            local rootPart = GetRootPart(character)
-            if rootPart and MainModule.RLGL.OriginalHeight then
-                local currentPos = rootPart.Position
-                local targetHeight = MainModule.RLGL.OriginalHeight
-                local targetPos = Vector3.new(currentPos.X, targetHeight, currentPos.Z)
-                SafeTeleport(targetPos)
+        if MainModule.RLGL.OriginalHeight then
+            local character = GetCharacter()
+            if character then
+                local rootPart = GetRootPart(character)
+                if rootPart then
+                    local targetPos = Vector3.new(rootPart.Position.X, MainModule.RLGL.OriginalHeight, rootPart.Position.Z)
+                    SafeTeleport(targetPos)
+                end
             end
         end
+        
         MainModule.RLGL.LastHealth = 100
         MainModule.RLGL.OriginalHeight = nil
+        MainModule.RLGL.NoPocketSandTimer = 0
     end
 end
 
@@ -1297,15 +1101,6 @@ function MainModule.ClearESP()
 end
 
 function MainModule.ToggleSpikesKill(enabled)
-    -- Проверяем наличие ножа для HNS
-    if enabled then
-        MainModule.CheckHNSGameState()
-        if not MainModule.HNS.HasKnife then
-            ShowAlert("HNS: This function is not available. You are not a Seeker.")
-            return
-        end
-    end
-    
     MainModule.SpikesKill.Enabled = enabled
     if MainModule.SpikesKill.AnimationConnection then
         MainModule.SpikesKill.AnimationConnection:Disconnect()
@@ -1369,7 +1164,8 @@ function MainModule.ToggleSpikesKill(enabled)
                             local targetPosition = currentPos + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
                             character:SetPrimaryPartCFrame(CFrame.new(targetPosition))
                         end
-                        task.delay(MainModule.SpikesKill.ReturnDelay, function()
+                        local stoppedConn = track.Stopped:Connect(function()
+                            task.wait(1)
                             if MainModule.SpikesKill.ActiveAnimation and MainModule.SpikesKill.SavedCFrame then
                                 character:SetPrimaryPartCFrame(MainModule.SpikesKill.SavedCFrame)
                                 MainModule.SpikesKill.SavedCFrame = nil
@@ -1379,11 +1175,8 @@ function MainModule.ToggleSpikesKill(enabled)
                                 end
                             end
                         end)
+                        table.insert(MainModule.SpikesKill.AnimationStoppedConnections, stoppedConn)
                     end
-                    local stoppedConn = track.Stopped:Connect(function()
-                        MainModule.SpikesKill.TrackedAnimations[track] = nil
-                    end)
-                    table.insert(MainModule.SpikesKill.AnimationStoppedConnections, stoppedConn)
                 end
             end
         end
@@ -1417,7 +1210,8 @@ function MainModule.ToggleSpikesKill(enabled)
                         local targetPosition = currentPos + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
                         char:SetPrimaryPartCFrame(CFrame.new(targetPosition))
                     end
-                    task.delay(MainModule.SpikesKill.ReturnDelay, function()
+                    local stoppedConn = track.Stopped:Connect(function()
+                        task.wait(1)
                         if MainModule.SpikesKill.ActiveAnimation and MainModule.SpikesKill.SavedCFrame then
                             char:SetPrimaryPartCFrame(MainModule.SpikesKill.SavedCFrame)
                             MainModule.SpikesKill.SavedCFrame = nil
@@ -1427,11 +1221,8 @@ function MainModule.ToggleSpikesKill(enabled)
                             end
                         end
                     end)
+                    table.insert(MainModule.SpikesKill.AnimationStoppedConnections, stoppedConn)
                 end
-                local stoppedConn = track.Stopped:Connect(function()
-                    MainModule.SpikesKill.TrackedAnimations[track] = nil
-                end)
-                table.insert(MainModule.SpikesKill.AnimationStoppedConnections, stoppedConn)
             end
         end)
     end
@@ -1532,11 +1323,11 @@ function MainModule.ToggleVoidKill(enabled)
                         MainModule.VoidKill.SavedCFrame = character:GetPrimaryPartCFrame()
                         local currentCFrame = character:GetPrimaryPartCFrame()
                         local lookVector = currentCFrame.LookVector
-                        local backOffset = lookVector * -10 -- Тепаем на 10 блоков назад
+                        local backOffset = lookVector * -10
                         local targetPosition = currentCFrame.Position + backOffset
                         character:SetPrimaryPartCFrame(CFrame.new(targetPosition))
                         local stoppedConn = track.Stopped:Connect(function()
-                            task.wait(MainModule.VoidKill.ReturnDelay) -- Ждем 1 секунду
+                            task.wait(1)
                             if MainModule.VoidKill.SavedCFrame then
                                 character:SetPrimaryPartCFrame(MainModule.VoidKill.SavedCFrame)
                                 MainModule.VoidKill.SavedCFrame = nil
@@ -1560,11 +1351,11 @@ function MainModule.ToggleVoidKill(enabled)
                     MainModule.VoidKill.SavedCFrame = char:GetPrimaryPartCFrame()
                     local currentCFrame = char:GetPrimaryPartCFrame()
                     local lookVector = currentCFrame.LookVector
-                    local backOffset = lookVector * -10 -- Тепаем на 10 блоков назад
+                    local backOffset = lookVector * -10
                     local targetPosition = currentCFrame.Position + backOffset
                     char:SetPrimaryPartCFrame(CFrame.new(targetPosition))
                     local stoppedConn = track.Stopped:Connect(function()
-                        task.wait(MainModule.VoidKill.ReturnDelay) -- Ждем 1 секунду
+                        task.wait(1)
                         if MainModule.VoidKill.SavedCFrame then
                             char:SetPrimaryPartCFrame(MainModule.VoidKill.SavedCFrame)
                             MainModule.VoidKill.SavedCFrame = nil
@@ -1590,16 +1381,7 @@ function MainModule.ToggleVoidKill(enabled)
     end)
 end
 
--- Новая функция: Zone Kill
 function MainModule.ToggleZoneKill(enabled)
-    -- Проверяем наличие ножа
-    if enabled then
-        if not MainModule.CheckZoneKillGameState() then
-            ShowAlert("Last Dinner: Game not active (No Knife)")
-            return
-        end
-    end
-    
     MainModule.ZoneKill.Enabled = enabled
     if MainModule.ZoneKill.AnimationConnection then
         MainModule.ZoneKill.AnimationConnection:Disconnect()
@@ -1613,14 +1395,6 @@ function MainModule.ToggleZoneKill(enabled)
         MainModule.ZoneKill.AnimationCheckConnection:Disconnect()
         MainModule.ZoneKill.AnimationCheckConnection = nil
     end
-    if MainModule.ZoneKill.SafetyCheckConnection then
-        MainModule.ZoneKill.SafetyCheckConnection:Disconnect()
-        MainModule.ZoneKill.SafetyCheckConnection = nil
-    end
-    if MainModule.ZoneKill.GameCheckConnection then
-        MainModule.ZoneKill.GameCheckConnection:Disconnect()
-        MainModule.ZoneKill.GameCheckConnection = nil
-    end
     for _, conn in ipairs(MainModule.ZoneKill.AnimationStoppedConnections) do
         pcall(function() conn:Disconnect() end)
     end
@@ -1632,7 +1406,6 @@ function MainModule.ToggleZoneKill(enabled)
     if not enabled then
         return
     end
-    
     local function checkAnimations()
         local character = GetCharacter()
         if not character then return end
@@ -1647,13 +1420,10 @@ function MainModule.ToggleZoneKill(enabled)
                         MainModule.ZoneKill.ActiveAnimation = true
                         MainModule.ZoneKill.AnimationStartTime = tick()
                         MainModule.ZoneKill.SavedCFrame = character:GetPrimaryPartCFrame()
-                        
-                        -- Телепортируем в зону
-                        character:SetPrimaryPartCFrame(CFrame.new(MainModule.ZoneKill.ZonePosition))
-                        
+                        SafeTeleport(MainModule.ZoneKill.ZonePosition)
                         local stoppedConn = track.Stopped:Connect(function()
-                            task.wait(MainModule.ZoneKill.ReturnDelay) -- Ждем 1 секунду
-                            if MainModule.ZoneKill.SavedCFrame then
+                            task.wait(1)
+                            if MainModule.ZoneKill.ActiveAnimation and MainModule.ZoneKill.SavedCFrame then
                                 character:SetPrimaryPartCFrame(MainModule.ZoneKill.SavedCFrame)
                                 MainModule.ZoneKill.SavedCFrame = nil
                                 MainModule.ZoneKill.ActiveAnimation = false
@@ -1668,7 +1438,6 @@ function MainModule.ToggleZoneKill(enabled)
             end
         end
     end
-    
     local function setupCharacter(char)
         local humanoid = char:WaitForChild("Humanoid")
         MainModule.ZoneKill.AnimationConnection = humanoid.AnimationPlayed:Connect(function(track)
@@ -1678,13 +1447,10 @@ function MainModule.ToggleZoneKill(enabled)
                     MainModule.ZoneKill.ActiveAnimation = true
                     MainModule.ZoneKill.AnimationStartTime = tick()
                     MainModule.ZoneKill.SavedCFrame = char:GetPrimaryPartCFrame()
-                    
-                    -- Телепортируем в зону
-                    char:SetPrimaryPartCFrame(CFrame.new(MainModule.ZoneKill.ZonePosition))
-                    
+                    SafeTeleport(MainModule.ZoneKill.ZonePosition)
                     local stoppedConn = track.Stopped:Connect(function()
-                        task.wait(MainModule.ZoneKill.ReturnDelay) -- Ждем 1 секунду
-                        if MainModule.ZoneKill.SavedCFrame then
+                        task.wait(1)
+                        if MainModule.ZoneKill.ActiveAnimation and MainModule.ZoneKill.SavedCFrame then
                             char:SetPrimaryPartCFrame(MainModule.ZoneKill.SavedCFrame)
                             MainModule.ZoneKill.SavedCFrame = nil
                             MainModule.ZoneKill.ActiveAnimation = false
@@ -1698,37 +1464,17 @@ function MainModule.ToggleZoneKill(enabled)
             end
         end)
     end
-    
     local char = LocalPlayer.Character
     if char then
         setupCharacter(char)
     end
-    
     MainModule.ZoneKill.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(char)
         task.wait(1)
         setupCharacter(char)
     end)
-    
     MainModule.ZoneKill.AnimationCheckConnection = RunService.Heartbeat:Connect(function()
         if not MainModule.ZoneKill.Enabled then return end
         checkAnimations()
-    end)
-    
-    MainModule.ZoneKill.SafetyCheckConnection = RunService.Heartbeat:Connect(function()
-        if not MainModule.ZoneKill.ActiveAnimation then return end
-        if tick() - MainModule.ZoneKill.AnimationStartTime >= 10 then
-            MainModule.ZoneKill.ActiveAnimation = false
-        end
-    end)
-    
-    -- Проверка состояния игры каждые 2 секунды
-    MainModule.ZoneKill.GameCheckConnection = RunService.Heartbeat:Connect(function()
-        if not MainModule.ZoneKill.Enabled then return end
-        local currentTime = tick()
-        if currentTime - MainModule.ZoneKill.LastGameCheck > 2 then
-            MainModule.ZoneKill.LastGameCheck = currentTime
-            MainModule.CheckZoneKillGameState()
-        end
     end)
 end
 
@@ -2473,26 +2219,11 @@ function MainModule.TeleportToGlassBridgeEnd()
 end
 
 function MainModule.ToggleHNSInfinityStamina(enabled)
-    -- Проверяем наличие DODGE! для HNS
-    if enabled then
-        MainModule.CheckHNSGameState()
-        if not MainModule.HNS.HasDodge then
-            ShowAlert("HNS: This function is not available. You don't have DODGE!")
-            return
-        end
-    end
-    
     MainModule.HNS.InfinityStaminaEnabled = enabled
     if MainModule.HNS.InfinityStaminaConnection then
         MainModule.HNS.InfinityStaminaConnection:Disconnect()
         MainModule.HNS.InfinityStaminaConnection = nil
     end
-    
-    if MainModule.HNS.GameCheckConnection then
-        MainModule.HNS.GameCheckConnection:Disconnect()
-        MainModule.HNS.GameCheckConnection = nil
-    end
-    
     if enabled then
         MainModule.HNS.InfinityStaminaConnection = RunService.Heartbeat:Connect(function()
             if not MainModule.HNS.InfinityStaminaEnabled then return end
@@ -2505,68 +2236,106 @@ function MainModule.ToggleHNSInfinityStamina(enabled)
                 end
             end)
         end)
-        
-        -- Проверка состояния игры каждые 2 секунды
-        MainModule.HNS.GameCheckConnection = RunService.Heartbeat:Connect(function()
-            if not MainModule.HNS.InfinityStaminaEnabled then return end
-            local currentTime = tick()
-            if currentTime - MainModule.HNS.LastGameCheck > 2 then
-                MainModule.HNS.LastGameCheck = currentTime
-                MainModule.CheckHNSGameState()
+    end
+end
+
+function MainModule.ToggleInstaInteract(enabled)
+    MainModule.Misc.InstaInteract = enabled
+    if instaInteractConnection then
+        instaInteractConnection:Disconnect()
+        instaInteractConnection = nil
+    end
+    if enabled then
+        local function makePromptInstant(prompt)
+            if prompt:IsA("ProximityPrompt") then
+                prompt.HoldDuration = 0
+            end
+        end
+        for _, obj in pairs(Workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") then
+                makePromptInstant(obj)
+            end
+        end
+        instaInteractConnection = Workspace.DescendantAdded:Connect(function(obj)
+            if obj:IsA("ProximityPrompt") then
+                makePromptInstant(obj)
             end
         end)
     end
 end
 
-function MainModule.ToggleAutoDodge(enabled)
-    -- Проверяем наличие DODGE! для HNS
+function MainModule.ToggleNoCooldownProximity(enabled)
+    MainModule.Misc.NoCooldownProximity = enabled
+    if noCooldownConnection then
+        noCooldownConnection:Disconnect()
+        noCooldownConnection = nil
+    end
     if enabled then
-        MainModule.CheckHNSGameState()
-        if not MainModule.HNS.HasDodge then
-            ShowAlert("HNS: This function is not available. You don't have DODGE!")
-            return
+        for _, v in pairs(Workspace:GetDescendants()) do
+            if v.ClassName == "ProximityPrompt" then
+                v.HoldDuration = 0
+            end
+        end
+        noCooldownConnection = Workspace.DescendantAdded:Connect(function(obj)
+            if MainModule.Misc.NoCooldownProximity then
+                if obj:IsA("ProximityPrompt") then
+                    obj.HoldDuration = 0
+                end
+            end
+        end)
+    end
+end
+
+function MainModule.GetPlayerPosition()
+    local character = GetCharacter()
+    if character then
+        local rootPart = GetRootPart(character)
+        if rootPart then
+            local position = rootPart.Position
+            return string.format("X: %.1f, Y: %.1f, Z: %.1f", position.X, position.Y, position.Z)
+        end
+    end
+    return "Не доступно"
+end
+
+function MainModule.ToggleNoclip(enabled)
+    MainModule.Noclip.Enabled = enabled
+    
+    if MainModule.Noclip.Connection then
+        MainModule.Noclip.Connection:Disconnect()
+        MainModule.Noclip.Connection = nil
+    end
+    
+    local function NoclipLoop()
+        if not MainModule.Noclip.Enabled then return end
+        
+        local character = GetCharacter()
+        if not character then return end
+        
+        for _, child in pairs(character:GetDescendants()) do
+            if child:IsA("BasePart") and child.CanCollide == true then
+                child.CanCollide = false
+                MainModule.Noclip.NoclipParts[child] = true
+            end
         end
     end
     
-    MainModule.AutoDodge.Enabled = false
-    
-    for _, conn in pairs(MainModule.AutoDodge.Connections) do
-        if conn then
-            pcall(function() conn:Disconnect() end)
-        end
-    end
-    MainModule.AutoDodge.Connections = {}
-    
-    MainModule.AutoDodge.PlayersInRange = {}
-    MainModule.AutoDodge.LastDodgeTime = 0
-    MainModule.AutoDodge.LastRangeUpdate = 0
-    
     if enabled then
-        MainModule.AutoDodge.Enabled = true
-        
-        for _, player in pairs(Players:GetPlayers()) do
-            task.spawn(setupFastPlayerTracking, player)
+        MainModule.Noclip.Connection = RunService.Heartbeat:Connect(function()
+            if MainModule.Noclip.Enabled then
+                NoclipLoop()
+            end
+        end)
+    else
+        local character = GetCharacter()
+        if character and MainModule.Noclip.NoclipParts then
+            for part, _ in pairs(MainModule.Noclip.NoclipParts) do
+                if part and part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+            MainModule.Noclip.NoclipParts = {}
         end
-        
-        local playerAddedConn = Players.PlayerAdded:Connect(function(player)
-            if MainModule.AutoDodge.Enabled then
-                task.spawn(setupFastPlayerTracking, player)
-            end
-        end)
-        table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
-        
-        local heartbeatConn = RunService.Heartbeat:Connect(function()
-            if not MainModule.AutoDodge.Enabled then return end
-            
-            local currentTime = tick()
-            if currentTime - MainModule.AutoDodge.LastRangeUpdate > MainModule.AutoDodge.RangeUpdateInterval then
-                fastUpdatePlayersInRange()
-                MainModule.AutoDodge.LastRangeUpdate = currentTime
-            end
-        end)
-        table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
-        
-        task.spawn(fastUpdatePlayersInRange)
     end
 end
 
@@ -2718,120 +2487,79 @@ local function setupFastPlayerTracking(player)
     table.insert(MainModule.AutoDodge.Connections, charConn)
 end
 
-function MainModule.ToggleInstaInteract(enabled)
-    MainModule.Misc.InstaInteract = enabled
-    if instaInteractConnection then
-        instaInteractConnection:Disconnect()
-        instaInteractConnection = nil
-    end
-    if enabled then
-        local function makePromptInstant(prompt)
-            if prompt:IsA("ProximityPrompt") then
-                prompt.HoldDuration = 0
-            end
-        end
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("ProximityPrompt") then
-                makePromptInstant(obj)
-            end
-        end
-        instaInteractConnection = Workspace.DescendantAdded:Connect(function(obj)
-            if obj:IsA("ProximityPrompt") then
-                makePromptInstant(obj)
-            end
-        end)
-    end
-end
-
-function MainModule.ToggleNoCooldownProximity(enabled)
-    MainModule.Misc.NoCooldownProximity = enabled
-    if noCooldownConnection then
-        noCooldownConnection:Disconnect()
-        noCooldownConnection = nil
-    end
-    if enabled then
-        for _, v in pairs(Workspace:GetDescendants()) do
-            if v.ClassName == "ProximityPrompt" then
-                v.HoldDuration = 0
-            end
-        end
-        noCooldownConnection = Workspace.DescendantAdded:Connect(function(obj)
-            if MainModule.Misc.NoCooldownProximity then
-                if obj:IsA("ProximityPrompt") then
-                    obj.HoldDuration = 0
-                end
-            end
-        end)
-    end
-end
-
-function MainModule.GetPlayerPosition()
-    local character = GetCharacter()
-    if character then
-        local rootPart = GetRootPart(character)
-        if rootPart then
-            local position = rootPart.Position
-            return string.format("X: %.1f, Y: %.1f, Z: %.1f", position.X, position.Y, position.Z)
-        end
-    end
-    return "Не доступно"
-end
-
-function MainModule.ToggleNoclip(enabled)
-    MainModule.Noclip.Enabled = enabled
+function MainModule.ToggleAutoDodge(enabled)
+    MainModule.AutoDodge.Enabled = false
     
-    if MainModule.Noclip.Connection then
-        MainModule.Noclip.Connection:Disconnect()
-        MainModule.Noclip.Connection = nil
+    for _, conn in pairs(MainModule.AutoDodge.Connections) do
+        if conn then
+            pcall(function() conn:Disconnect() end)
+        end
     end
+    MainModule.AutoDodge.Connections = {}
     
-    local function NoclipLoop()
-        if not MainModule.Noclip.Enabled then return end
+    MainModule.AutoDodge.PlayersInRange = {}
+    MainModule.AutoDodge.LastDodgeTime = 0
+    MainModule.AutoDodge.LastRangeUpdate = 0
+    
+    if enabled then
+        MainModule.AutoDodge.Enabled = true
         
-        local character = GetCharacter()
-        if not character then return end
-        
-        for _, child in pairs(character:GetDescendants()) do
-            if child:IsA("BasePart") and child.CanCollide == true then
-                child.CanCollide = false
-                MainModule.Noclip.NoclipParts[child] = true
-            end
+        for _, player in pairs(Players:GetPlayers()) do
+            task.spawn(setupFastPlayerTracking, player)
         end
-    end
-    
-    if enabled then
-        MainModule.Noclip.Connection = RunService.Heartbeat:Connect(function()
-            if MainModule.Noclip.Enabled then
-                NoclipLoop()
+        
+        local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+            if MainModule.AutoDodge.Enabled then
+                task.spawn(setupFastPlayerTracking, player)
             end
         end)
-    else
-        local character = GetCharacter()
-        if character and MainModule.Noclip.NoclipParts then
-            for part, _ in pairs(MainModule.Noclip.NoclipParts) do
-                if part and part:IsA("BasePart") then
-                    part.CanCollide = true
-                end
+        table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
+        
+        local heartbeatConn = RunService.Heartbeat:Connect(function()
+            if not MainModule.AutoDodge.Enabled then return end
+            
+            local currentTime = tick()
+            if currentTime - MainModule.AutoDodge.LastRangeUpdate > MainModule.AutoDodge.RangeUpdateInterval then
+                fastUpdatePlayersInRange()
+                MainModule.AutoDodge.LastRangeUpdate = currentTime
             end
-            MainModule.Noclip.NoclipParts = {}
-        end
+        end)
+        table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
+        
+        task.spawn(fastUpdatePlayersInRange)
     end
 end
 
-function MainModule.ToggleTeleportToHider(enabled)
-    MainModule.Teleport.TeleportToHiderEnabled = enabled
+Players.PlayerRemoving:Connect(function(player)
+    if player == LocalPlayer then
+        MainModule.ToggleAutoDodge(false)
+    end
+end)
+
+function MainModule.GetHider()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        if not plr.Character then continue end
+        if not IsHider(plr) then continue end
+        if plr.Character ~= nil and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
+            return plr.Character
+        else
+            continue
+        end
+    end
+    return nil
+end
+
+function MainModule.TeleportToHider()
+    if not LocalPlayer.Character then return end
     
-    if MainModule.Teleport.TeleportConnection then
-        MainModule.Teleport.TeleportConnection:Disconnect()
-        MainModule.Teleport.TeleportConnection = nil
+    local hider = MainModule.GetHider()
+    if not hider then
+        return false
     end
     
-    if enabled then
-        -- Однократный телепорт при включении
-        MainModule.TeleportToHider()
-        -- Отключаем после использования
-        MainModule.ToggleTeleportToHider(false)
-    end
+    LocalPlayer.Character:PivotTo(hider:GetPrimaryPartCFrame())
+    return true
 end
 
 function MainModule.Cleanup()
@@ -2854,9 +2582,9 @@ function MainModule.Cleanup()
         MainModule.RLGL.Connection = nil
     end
     
-    if MainModule.RLGL.PocketSandCheckConnection then
-        MainModule.RLGL.PocketSandCheckConnection:Disconnect()
-        MainModule.RLGL.PocketSandCheckConnection = nil
+    if MainModule.RLGL.PocketSandCheck then
+        MainModule.RLGL.PocketSandCheck:Disconnect()
+        MainModule.RLGL.PocketSandCheck = nil
     end
     
     if MainModule.Rebel.Connection then
@@ -2867,11 +2595,6 @@ function MainModule.Cleanup()
     if MainModule.HNS.InfinityStaminaConnection then
         MainModule.HNS.InfinityStaminaConnection:Disconnect()
         MainModule.HNS.InfinityStaminaConnection = nil
-    end
-    
-    if MainModule.HNS.GameCheckConnection then
-        MainModule.HNS.GameCheckConnection:Disconnect()
-        MainModule.HNS.GameCheckConnection = nil
     end
     
     if MainModule.SpikesKill.AnimationConnection then
@@ -2934,16 +2657,6 @@ function MainModule.Cleanup()
         MainModule.ZoneKill.AnimationCheckConnection = nil
     end
     
-    if MainModule.ZoneKill.SafetyCheckConnection then
-        MainModule.ZoneKill.SafetyCheckConnection:Disconnect()
-        MainModule.ZoneKill.SafetyCheckConnection = nil
-    end
-    
-    if MainModule.ZoneKill.GameCheckConnection then
-        MainModule.ZoneKill.GameCheckConnection:Disconnect()
-        MainModule.ZoneKill.GameCheckConnection = nil
-    end
-    
     for _, conn in ipairs(MainModule.ZoneKill.AnimationStoppedConnections) do
         pcall(function() conn:Disconnect() end)
     end
@@ -2992,11 +2705,6 @@ function MainModule.Cleanup()
     if MainModule.Noclip.Connection then
         MainModule.Noclip.Connection:Disconnect()
         MainModule.Noclip.Connection = nil
-    end
-    
-    if MainModule.Teleport.TeleportConnection then
-        MainModule.Teleport.TeleportConnection:Disconnect()
-        MainModule.Teleport.TeleportConnection = nil
     end
     
     MainModule.StopEnhancedProtection()
@@ -3081,8 +2789,6 @@ function MainModule.Cleanup()
     MainModule.Hitbox.Enabled = false
     MainModule.AntiTimeStop.Enabled = false
     MainModule.HNS.InfinityStaminaEnabled = false
-    MainModule.HNS.HasKnife = false
-    MainModule.HNS.HasDodge = false
     MainModule.Misc.ESPEnabled = false
     MainModule.Misc.InstaInteract = false
     MainModule.Misc.NoCooldownProximity = false
@@ -3102,8 +2808,6 @@ function MainModule.Cleanup()
     MainModule.VoidKill.TrackedAnimations = {}
     MainModule.ZoneKill.Enabled = false
     MainModule.ZoneKill.TrackedAnimations = {}
-    MainModule.LastDinner.ZoneKillEnabled = false
-    MainModule.Teleport.TeleportToHiderEnabled = false
 end
 
 LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
