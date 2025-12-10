@@ -964,6 +964,8 @@ local function CreateMainContent()
     tpUpBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportUp100 then
             MainModule.TeleportUp100()
+        else
+            ShowAlert("TeleportUp100 function not found!")
         end
     end)
     
@@ -972,11 +974,13 @@ local function CreateMainContent()
     tpDownBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportDown40 then
             MainModule.TeleportDown40()
+        else
+            ShowAlert("TeleportDown40 function not found!")
         end
     end)
     
     -- Position display
-    local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
+    local positionLabel = CreateButton("Position: Loading...")
     positionLabel.LayoutOrder = 9
     positionLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     positionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
@@ -984,7 +988,11 @@ local function CreateMainContent()
     -- Update position
     game:GetService("RunService").Heartbeat:Connect(function()
         if positionLabel and positionLabel.Parent then
-            positionLabel.Text = "Position: " .. MainModule.GetPlayerPosition()
+            if MainModule.GetPlayerPosition then
+                positionLabel.Text = "Position: " .. MainModule.GetPlayerPosition()
+            else
+                positionLabel.Text = "Position: Function not available"
+            end
         end
     end)
 end
@@ -1737,3 +1745,4 @@ else
 end
 
 ShowAlert("Creon X v2.5 loaded! Hotkey: " .. menuHotkey.Name, 3)
+
