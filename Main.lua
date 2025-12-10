@@ -2356,22 +2356,9 @@ local function executeInstantDodge()
     local player = game.Players.LocalPlayer
     if not player then return false end
     
-    -- Ищем remote разными способами
-    local remote = nil
-    local remotes = game.ReplicatedStorage:FindFirstChild("Remotes")
-    if remotes then
-        remote = remotes:FindFirstChild("UsedTool")
-    end
-    
-    if not remote then
-        -- Попробуем поискать напрямую
-        remote = game.ReplicatedStorage:FindFirstChild("UsedTool")
-        if not remote then
-            remote = game.ReplicatedStorage:FindFirstChild("Remotes")
-            if remote then
-                remote = remote:FindFirstChild("UsedTool")
-            end
-        end
+    local remote = game.ReplicatedStorage:FindFirstChild("Remotes")
+    if remote then
+        remote = remote:FindFirstChild("UsedTool")
     end
     
     if not remote then return false end
@@ -2389,26 +2376,25 @@ local function executeInstantDodge()
     end
     
     if tool then
-        local fireSuccess = false
+        -- Первый способ вызова
+        local fireSuccess = pcall(function()
+            remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true})
+        end)
         
-        -- Попробуем разные методы вызова
-        local methods = {
-            function() remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true}) end,
-            function() remote:FireServer(tool, "UsingMoveCustom", nil, {Clicked = true}) end,
-            function() remote:FireServer("UsingMoveCustom", tool, {Clicked = true}) end,
-            function() remote:InvokeServer("UsingMoveCustom", tool, nil, {Clicked = true}) end,
-            function() remote:InvokeServer(tool, "UsingMoveCustom", nil, {Clicked = true}) end,
-        }
-        
-        for _, method in ipairs(methods) do
-            local success = pcall(method)
-            if success then
-                fireSuccess = true
-                break
+        -- Если первый способ не сработал, пробуем второй способ
+        if not fireSuccess then
+            local secondSuccess = pcall(function()
+                -- Попробуем вызвать напрямую через WaitForChild для надежности
+                local safeRemote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("UsedTool")
+                safeRemote:FireServer("UsingMoveCustom", tool, {Clicked = true})
+            end)
+            
+            if secondSuccess then
+                autoDodge.LastDodgeTime = currentTime
+                return true
             end
-        end
-        
-        if fireSuccess then
+        else
+            -- Первый способ успешен
             autoDodge.LastDodgeTime = currentTime
             return true
         end
@@ -2845,5 +2831,6 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
