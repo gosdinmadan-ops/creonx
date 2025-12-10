@@ -1,4 +1,4 @@
--- Creon X v2.5 (исправленная версия для ПК и Delta Mobile)
+-- Creon X v2.6 (улучшенная версия для ПК и Delta Mobile)
 -- Проверка исполнителя
 local executorName = "Unknown"
 if identifyexecutor then
@@ -38,11 +38,6 @@ if not success then
     return
 end
 
--- Настройка Alert функции
-MainModule.Misc.AlertFunction = function(message)
-    warn("[CreonX Alert] " .. message)
-end
-
 -- Переменные для отслеживания статуса AntiFall
 local GlassBridgeAntiFallEnabled = false
 local JumpRopeAntiFallEnabled = false
@@ -53,160 +48,100 @@ local menuHotkey = Enum.KeyCode.M
 local isChoosingKey = false
 local keyChangeButton = nil
 
--- GUI Creon X v2.5
+-- GUI Creon X v2.6
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
 local TitleBar = Instance.new("Frame")
 local TitleLabel = Instance.new("TextLabel")
 local MinimizeButton = Instance.new("TextButton")
-local TabButtons = Instance.new("Frame")
+local TabButtonsFrame = Instance.new("Frame")
+local TabScrollingFrame = Instance.new("ScrollingFrame")
+local TabButtonsLayout = Instance.new("UIListLayout")
 local ContentFrame = Instance.new("Frame")
 local ContentScrolling = Instance.new("ScrollingFrame")
 local ContentLayout = Instance.new("UIListLayout")
-
--- Alert GUI для уведомлений
-local AlertGui = Instance.new("ScreenGui")
-local AlertFrame = Instance.new("Frame")
-local AlertText = Instance.new("TextLabel")
-local AlertClose = Instance.new("TextButton")
 
 -- Кнопка для мобильных устройств (Delta Mobile)
 local MobileOpenButton = Instance.new("TextButton")
 
 ScreenGui.Parent = game.CoreGui
-ScreenGui.Name = "CreonXv25"
+ScreenGui.Name = "CreonXv26"
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 ScreenGui.ResetOnSpawn = false
 
--- Alert GUI setup
-AlertGui.Name = "CreonXAlerts"
-AlertGui.Parent = game.CoreGui
-AlertGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-AlertGui.ResetOnSpawn = false
-
-AlertFrame.Size = UDim2.new(0, 300, 0, 80)
-AlertFrame.Position = UDim2.new(0.5, -150, 0.9, -40)
-AlertFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-AlertFrame.BorderSizePixel = 0
-AlertFrame.Visible = false
-AlertFrame.Parent = AlertGui
-
-local alertCorner = Instance.new("UICorner")
-alertCorner.CornerRadius = UDim.new(0, 8)
-alertCorner.Parent = AlertFrame
-
-local alertStroke = Instance.new("UIStroke")
-alertStroke.Color = Color3.fromRGB(60, 60, 80)
-alertStroke.Thickness = 2
-alertStroke.Parent = AlertFrame
-
-AlertText.Size = UDim2.new(1, -20, 0.7, 0)
-AlertText.Position = UDim2.new(0, 10, 0, 10)
-AlertText.BackgroundTransparency = 1
-AlertText.Text = "Alert Message"
-AlertText.TextColor3 = Color3.fromRGB(220, 220, 255)
-AlertText.TextSize = 14
-AlertText.Font = Enum.Font.Gotham
-AlertText.TextWrapped = true
-AlertText.Parent = AlertFrame
-
-AlertClose.Size = UDim2.new(0, 80, 0, 25)
-AlertClose.Position = UDim2.new(0.5, -40, 1, -35)
-AlertClose.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-AlertClose.BorderSizePixel = 0
-AlertClose.Text = "Close"
-AlertClose.TextColor3 = Color3.fromRGB(240, 240, 255)
-AlertClose.TextSize = 12
-AlertClose.Font = Enum.Font.Gotham
-AlertClose.Parent = AlertFrame
-
-local closeCorner = Instance.new("UICorner")
-closeCorner.CornerRadius = UDim.new(0, 6)
-closeCorner.Parent = AlertClose
-
-AlertClose.MouseButton1Click:Connect(function()
-    AlertFrame.Visible = false
-end)
-
--- Функция для показа Alert
-local function ShowAlert(message, duration)
-    if not duration then duration = 3 end
-    AlertText.Text = message
-    AlertFrame.Visible = true
-    
-    task.delay(duration, function()
-        if AlertFrame.Visible then
-            AlertFrame.Visible = false
-        end
-    end)
-end
-
--- Обновляем Alert функцию в MainModule
-MainModule.Misc.AlertFunction = ShowAlert
-
 -- Размеры GUI
-local GUI_WIDTH = 860
-local GUI_HEIGHT = 595
+local GUI_WIDTH = 900
+local GUI_HEIGHT = 620
+local TAB_WIDTH = 160  -- Ширина вкладок
 
 -- Для мобильных устройств уменьшаем размер на 40%
 if UIS.TouchEnabled then
-    GUI_WIDTH = 700
-    GUI_HEIGHT = 500
+    GUI_WIDTH = 540  -- 900 * 0.6 (уменьшение на 40%)
+    GUI_HEIGHT = 372  -- 620 * 0.6
+    TAB_WIDTH = 96  -- 160 * 0.6
 end
 
 -- Основной фрейм
 MainFrame.Size = UDim2.new(0, GUI_WIDTH, 0, GUI_HEIGHT)
 MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
 MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
 
 local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 8)
+mainCorner.CornerRadius = UDim.new(0, 12)
 mainCorner.Parent = MainFrame
 
 local mainStroke = Instance.new("UIStroke")
-mainStroke.Color = Color3.fromRGB(60, 60, 80)
+mainStroke.Color = Color3.fromRGB(40, 120, 220)
 mainStroke.Thickness = 2
+mainStroke.Transparency = 0.3
 mainStroke.Parent = MainFrame
 
 -- TitleBar для перемещения
-TitleBar.Size = UDim2.new(1, 0, 0, 35)
-TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+TitleBar.Size = UDim2.new(1, 0, 0, 42)
+TitleBar.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
 TitleBar.BorderSizePixel = 0
 TitleBar.Parent = MainFrame
 
 local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 8)
+titleCorner.CornerRadius = UDim.new(0, 12)
 titleCorner.Parent = TitleBar
+
+-- Градиент для заголовка
+local titleGradient = Instance.new("UIGradient")
+titleGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 120, 220)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(25, 25, 40))
+})
+titleGradient.Rotation = -15
+titleGradient.Parent = TitleBar
 
 TitleLabel.Size = UDim2.new(0.7, 0, 1, 0)
 TitleLabel.Position = UDim2.new(0.1, 0, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "Creon X v2.5"
-TitleLabel.TextColor3 = Color3.fromRGB(220, 220, 255)
-TitleLabel.TextSize = 14
+TitleLabel.Text = "CREON X v2.6"
+TitleLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
+TitleLabel.TextSize = 16
 TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+TitleLabel.TextStrokeTransparency = 0.7
 TitleLabel.Parent = TitleBar
 
--- Кнопка сворачивания (увеличиваем для мобильных)
-local minimizeButtonSize = 25
-if UIS.TouchEnabled then
-    minimizeButtonSize = 35  -- Увеличиваем кнопку для мобильных
-end
-
-MinimizeButton.Size = UDim2.new(0, minimizeButtonSize, 0, minimizeButtonSize)
-MinimizeButton.Position = UDim2.new(1, -minimizeButtonSize-5, 0.5, -minimizeButtonSize/2)
-MinimizeButton.BackgroundColor3 = Color3.fromRGB(100, 100, 120)
+-- Кнопка сворачивания (только для мобильных)
+MinimizeButton.Size = UDim2.new(0, 32, 0, 32)
+MinimizeButton.Position = UDim2.new(1, -36, 0.5, -16)
+MinimizeButton.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
 MinimizeButton.BorderSizePixel = 0
-MinimizeButton.Text = "_"
+MinimizeButton.Text = "×"
 MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinimizeButton.TextSize = 18
+MinimizeButton.TextSize = 20
 MinimizeButton.Font = Enum.Font.GothamBold
+MinimizeButton.Visible = UIS.TouchEnabled  -- Показываем только на мобильных
 MinimizeButton.Parent = TitleBar
 
 local minimizeCorner = Instance.new("UICorner")
-minimizeCorner.CornerRadius = UDim.new(0, 6)
+minimizeCorner.CornerRadius = UDim.new(0, 8)
 minimizeCorner.Parent = MinimizeButton
 
 MinimizeButton.MouseButton1Click:Connect(function()
@@ -216,79 +151,102 @@ MinimizeButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Табы
-TabButtons.Size = UDim2.new(0, 150, 1, -35)
-TabButtons.Position = UDim2.new(0, 0, 0, 35)
-TabButtons.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-TabButtons.BorderSizePixel = 0
-TabButtons.Parent = MainFrame
+-- Фрейм для вкладок с прокруткой
+TabButtonsFrame.Size = UDim2.new(0, TAB_WIDTH, 1, -42)
+TabButtonsFrame.Position = UDim2.new(0, 0, 0, 42)
+TabButtonsFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
+TabButtonsFrame.BorderSizePixel = 0
+TabButtonsFrame.Parent = MainFrame
 
 local tabCorner = Instance.new("UICorner")
-tabCorner.CornerRadius = UDim.new(0, 8)
-tabCorner.Parent = TabButtons
+tabCorner.CornerRadius = UDim.new(0, 12)
+tabCorner.Parent = TabButtonsFrame
+
+-- ScrollingFrame для вкладок (для мобильных)
+TabScrollingFrame.Size = UDim2.new(1, -4, 1, -8)
+TabScrollingFrame.Position = UDim2.new(0, 2, 0, 4)
+TabScrollingFrame.BackgroundTransparency = 1
+TabScrollingFrame.BorderSizePixel = 0
+TabScrollingFrame.ScrollBarThickness = 4
+TabScrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 100)
+TabScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+TabScrollingFrame.Parent = TabButtonsFrame
+
+TabButtonsLayout.Padding = UDim.new(0, 6)
+TabButtonsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+TabButtonsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    TabScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, TabButtonsLayout.AbsoluteContentSize.Y + 12)
+end)
+TabButtonsLayout.Parent = TabScrollingFrame
 
 -- Content Frame с прокруткой
-ContentFrame.Size = UDim2.new(1, -150, 1, -35)
-ContentFrame.Position = UDim2.new(0, 150, 0, 35)
-ContentFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+ContentFrame.Size = UDim2.new(1, -TAB_WIDTH, 1, -42)
+ContentFrame.Position = UDim2.new(0, TAB_WIDTH, 0, 42)
+ContentFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
 ContentFrame.BorderSizePixel = 0
 ContentFrame.Parent = MainFrame
 
 local contentCorner = Instance.new("UICorner")
-contentCorner.CornerRadius = UDim.new(0, 8)
+contentCorner.CornerRadius = UDim.new(0, 12)
 contentCorner.Parent = ContentFrame
 
--- Scrolling Frame для контента с улучшенной прокруткой для мобильных
+-- Scrolling Frame для контента
 ContentScrolling.Size = UDim2.new(1, -10, 1, -10)
 ContentScrolling.Position = UDim2.new(0, 5, 0, 5)
 ContentScrolling.BackgroundTransparency = 1
 ContentScrolling.BorderSizePixel = 0
-ContentScrolling.ScrollBarThickness = UIS.TouchEnabled and 10 or 6  -- Толще для мобильных
-ContentScrolling.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 100)
+ContentScrolling.ScrollBarThickness = 6
+ContentScrolling.ScrollBarImageColor3 = Color3.fromRGB(60, 120, 200)
+ContentScrolling.ScrollBarImageTransparency = 0.5
 ContentScrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
-ContentScrolling.ScrollingEnabled = true
-ContentScrolling.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
 ContentScrolling.Parent = ContentFrame
 
-ContentLayout.Padding = UDim.new(0, UIS.TouchEnabled and 10 or 8)  -- Больше отступы для мобильных
+ContentLayout.Padding = UDim.new(0, 10)
 ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     ContentScrolling.CanvasSize = UDim2.new(0, 0, 0, ContentLayout.AbsoluteContentSize.Y + 20)
 end)
 ContentLayout.Parent = ContentScrolling
 
--- Кнопка для мобильных устройств (Delta Mobile) - меньшего размера
+-- Кнопка для мобильных устройств (Delta Mobile)
 if UIS.TouchEnabled then
-    MobileOpenButton.Size = UDim2.new(0, 100, 0, 35)  -- Меньше размер
-    MobileOpenButton.Position = UDim2.new(0.5, -50, 0.2, 0)
-    MobileOpenButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    MobileOpenButton.Size = UDim2.new(0, 140, 0, 48)
+    MobileOpenButton.Position = UDim2.new(0.5, -70, 0.2, 0)
+    MobileOpenButton.BackgroundColor3 = Color3.fromRGB(40, 120, 220)
     MobileOpenButton.BorderSizePixel = 0
-    MobileOpenButton.Text = "OPEN"
-    MobileOpenButton.TextColor3 = Color3.fromRGB(220, 220, 255)
-    MobileOpenButton.TextSize = 14
+    MobileOpenButton.Text = "OPEN MENU"
+    MobileOpenButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MobileOpenButton.TextSize = 16
     MobileOpenButton.Font = Enum.Font.GothamBold
     MobileOpenButton.Parent = ScreenGui
     
     local mobileCorner = Instance.new("UICorner")
-    mobileCorner.CornerRadius = UDim.new(0, 8)
+    mobileCorner.CornerRadius = UDim.new(0, 12)
     mobileCorner.Parent = MobileOpenButton
     
     local mobileStroke = Instance.new("UIStroke")
-    mobileStroke.Color = Color3.fromRGB(60, 60, 80)
+    mobileStroke.Color = Color3.fromRGB(80, 160, 240)
     mobileStroke.Thickness = 2
     mobileStroke.Parent = MobileOpenButton
     
+    local mobileGradient = Instance.new("UIGradient")
+    mobileGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 120, 220)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 140, 240))
+    })
+    mobileGradient.Parent = MobileOpenButton
+    
     MobileOpenButton.MouseEnter:Connect(function()
         TweenService:Create(MobileOpenButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(45, 45, 60),
+            BackgroundColor3 = Color3.fromRGB(60, 140, 240),
             TextColor3 = Color3.fromRGB(255, 255, 255)
         }):Play()
     end)
     
     MobileOpenButton.MouseLeave:Connect(function()
         TweenService:Create(MobileOpenButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(35, 35, 45),
-            TextColor3 = Color3.fromRGB(220, 220, 255)
+            BackgroundColor3 = Color3.fromRGB(40, 120, 220),
+            TextColor3 = Color3.fromRGB(255, 255, 255)
         }):Play()
     end)
     
@@ -337,7 +295,7 @@ else
     MainFrame.Visible = true
 end
 
--- Функция для перемещения GUI с улучшенной поддержкой мобильных
+-- Функция для перемещения GUI
 local dragging = false
 local dragInput, dragStart, startPos
 
@@ -347,7 +305,7 @@ local function update(input)
 end
 
 TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true
         dragStart = input.Position
         startPos = MainFrame.Position
@@ -361,7 +319,7 @@ TitleBar.InputBegan:Connect(function(input)
 end)
 
 TitleBar.InputChanged:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
         dragInput = input
     end
 end)
@@ -372,115 +330,77 @@ UIS.InputChanged:Connect(function(input)
     end
 end)
 
--- Улучшенная прокрутка для мобильных устройств
-if UIS.TouchEnabled then
-    local scrolling = false
-    local scrollStart = nil
-    local scrollVelocity = 0
-    local lastScrollTime = 0
-    
-    ContentScrolling.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            scrolling = true
-            scrollStart = input.Position.Y
-            scrollVelocity = 0
-            lastScrollTime = tick()
-        end
-    end)
-    
-    ContentScrolling.InputChanged:Connect(function(input)
-        if scrolling and input.UserInputType == Enum.UserInputType.Touch then
-            local delta = input.Position.Y - scrollStart
-            ContentScrolling.CanvasPosition = Vector2.new(0, math.max(0, ContentScrolling.CanvasPosition.Y - delta))
-            scrollStart = input.Position.Y
-            
-            -- Вычисляем скорость прокрутки
-            local currentTime = tick()
-            local timeDelta = currentTime - lastScrollTime
-            if timeDelta > 0 then
-                scrollVelocity = delta / timeDelta
-            end
-            lastScrollTime = currentTime
-        end
-    end)
-    
-    ContentScrolling.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            scrolling = false
-            
-            -- Инерционная прокрутка
-            if math.abs(scrollVelocity) > 10 then
-                local inertia = scrollVelocity * 0.9
-                local startTime = tick()
-                
-                while math.abs(inertia) > 1 do
-                    local elapsed = tick() - startTime
-                    ContentScrolling.CanvasPosition = Vector2.new(0, 
-                        math.max(0, ContentScrolling.CanvasPosition.Y - inertia * elapsed))
-                    inertia = inertia * 0.95
-                    task.wait()
-                end
-            end
-        end
-    end)
-end
-
--- Функция для создания кнопок с увеличенным размером для мобильных
+-- Функция для создания кнопок
 local function CreateButton(text)
     local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, -10, 0, UIS.TouchEnabled and 40 or 32)  -- Больше для мобильных
-    button.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+    button.Size = UDim2.new(1, -10, 0, UIS.TouchEnabled and 42 or 38)
+    button.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
     button.BorderSizePixel = 0
     button.Text = text
     button.TextColor3 = Color3.fromRGB(240, 240, 255)
-    button.TextSize = UIS.TouchEnabled and 14 or 12  -- Больше текст для мобильных
-    button.Font = Enum.Font.Gotham
+    button.TextSize = UIS.TouchEnabled and 14 or 13
+    button.Font = Enum.Font.GothamMedium
     button.AutoButtonColor = false
     button.Parent = ContentScrolling
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
+    corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = button
     
     local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(80, 80, 100)
-    stroke.Thickness = 1.2
+    stroke.Color = Color3.fromRGB(60, 120, 200)
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.5
     stroke.Parent = button
+    
+    -- Градиент для кнопки
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 45)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 35, 55))
+    })
+    gradient.Parent = button
     
     -- Анимация при наведении
     button.MouseEnter:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(65, 65, 85),
+            BackgroundColor3 = Color3.fromRGB(40, 120, 220),
             TextColor3 = Color3.fromRGB(255, 255, 255)
+        }):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {
+            Transparency = 0
         }):Play()
     end)
     
     button.MouseLeave:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(50, 50, 65),
+            BackgroundColor3 = Color3.fromRGB(30, 30, 45),
             TextColor3 = Color3.fromRGB(240, 240, 255)
+        }):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {
+            Transparency = 0.5
         }):Play()
     end)
     
     button.MouseButton1Down:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.1), {
-            BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+            BackgroundColor3 = Color3.fromRGB(25, 25, 35)
         }):Play()
     end)
     
     button.MouseButton1Up:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.1), {
-            BackgroundColor3 = Color3.fromRGB(65, 65, 85)
+            BackgroundColor3 = Color3.fromRGB(40, 120, 220)
         }):Play()
     end)
     
     return button
 end
 
--- Функция для создания переключателей с увеличенным размером для мобильных
-local function CreateToggle(text, enabled, callback, gameCheckCallback)
+-- Функция для создания переключателей
+local function CreateToggle(text, enabled, callback)
     local toggleContainer = Instance.new("Frame")
-    toggleContainer.Size = UDim2.new(1, -10, 0, UIS.TouchEnabled and 40 or 32)  -- Больше для мобильных
+    toggleContainer.Size = UDim2.new(1, -10, 0, UIS.TouchEnabled and 42 or 38)
     toggleContainer.BackgroundTransparency = 1
     toggleContainer.Parent = ContentScrolling
     
@@ -491,42 +411,45 @@ local function CreateToggle(text, enabled, callback, gameCheckCallback)
     textLabel.BackgroundTransparency = 1
     textLabel.Text = text
     textLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
-    textLabel.TextSize = UIS.TouchEnabled and 14 or 12  -- Больше текст для мобильных
-    textLabel.Font = Enum.Font.Gotham
+    textLabel.TextSize = UIS.TouchEnabled and 14 or 13
+    textLabel.Font = Enum.Font.GothamMedium
     textLabel.TextXAlignment = Enum.TextXAlignment.Left
     textLabel.Parent = toggleContainer
     
-    -- Переключатель с увеличенным размером для мобильных
-    local toggleSize = UIS.TouchEnabled and 60 or 50
-    local toggleCircleSize = UIS.TouchEnabled and 26 or 22
+    -- Фон переключателя
+    local toggleFrame = Instance.new("Frame")
+    toggleFrame.Size = UDim2.new(0, UIS.TouchEnabled and 60 or 56, 0, UIS.TouchEnabled and 26 or 24)
+    toggleFrame.Position = UDim2.new(1, -(UIS.TouchEnabled and 62 or 58), 0.5, -(UIS.TouchEnabled and 13 or 12))
+    toggleFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    toggleFrame.BorderSizePixel = 0
+    toggleFrame.Parent = toggleContainer
     
-    local toggleBackground = Instance.new("Frame")
-    toggleBackground.Size = UDim2.new(0, toggleSize, 0, toggleCircleSize)
-    toggleBackground.Position = UDim2.new(1, -toggleSize-2, 0.5, -toggleCircleSize/2)
-    toggleBackground.BackgroundColor3 = enabled and Color3.fromRGB(0, 140, 255) or Color3.fromRGB(80, 80, 100)
-    toggleBackground.BorderSizePixel = 0
-    toggleBackground.Parent = toggleContainer
+    local frameCorner = Instance.new("UICorner")
+    frameCorner.CornerRadius = UDim.new(1, 0)
+    frameCorner.Parent = toggleFrame
     
+    local frameStroke = Instance.new("UIStroke")
+    frameStroke.Color = Color3.fromRGB(60, 120, 200)
+    frameStroke.Thickness = 1.5
+    frameStroke.Parent = toggleFrame
+    
+    -- Круг переключателя
     local toggleCircle = Instance.new("Frame")
-    toggleCircle.Size = UDim2.new(0, toggleCircleSize-4, 0, toggleCircleSize-4)
-    toggleCircle.Position = enabled and UDim2.new(1, -toggleCircleSize, 0.5, -(toggleCircleSize-4)/2) or UDim2.new(0, 2, 0.5, -(toggleCircleSize-4)/2)
-    toggleCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    toggleCircle.Size = UDim2.new(0, UIS.TouchEnabled and 22 or 20, 0, UIS.TouchEnabled and 22 or 20)
+    toggleCircle.Position = enabled and UDim2.new(1, -(UIS.TouchEnabled and 26 or 24), 0.5, -(UIS.TouchEnabled and 11 or 10)) or UDim2.new(0, 2, 0.5, -(UIS.TouchEnabled and 11 or 10))
+    toggleCircle.BackgroundColor3 = enabled and Color3.fromRGB(40, 200, 120) or Color3.fromRGB(220, 80, 80)
     toggleCircle.BorderSizePixel = 0
-    toggleCircle.Parent = toggleBackground
+    toggleCircle.Parent = toggleFrame
     
-    -- Закругления
-    local corner1 = Instance.new("UICorner")
-    corner1.CornerRadius = UDim.new(0, toggleCircleSize/2)
-    corner1.Parent = toggleBackground
+    local circleCorner = Instance.new("UICorner")
+    circleCorner.CornerRadius = UDim.new(1, 0)
+    circleCorner.Parent = toggleCircle
     
-    local corner2 = Instance.new("UICorner")
-    corner2.CornerRadius = UDim.new(0, (toggleCircleSize-4)/2)
-    corner2.Parent = toggleCircle
-    
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(120, 120, 140)
-    stroke.Thickness = 1
-    stroke.Parent = toggleBackground
+    local circleStroke = Instance.new("UIStroke")
+    circleStroke.Color = Color3.fromRGB(255, 255, 255)
+    circleStroke.Thickness = 1.2
+    circleStroke.Transparency = 0.3
+    circleStroke.Parent = toggleCircle
     
     -- Кнопка для переключения
     local toggleButton = Instance.new("TextButton")
@@ -537,18 +460,10 @@ local function CreateToggle(text, enabled, callback, gameCheckCallback)
     toggleButton.Parent = toggleContainer
     
     local function updateToggle(newState)
-        if gameCheckCallback and not gameCheckCallback() then
-            ShowAlert("Game not running!")
-            return
-        end
-        
         enabled = newState
-        TweenService:Create(toggleBackground, TweenInfo.new(0.2), {
-            BackgroundColor3 = newState and Color3.fromRGB(0, 140, 255) or Color3.fromRGB(80, 80, 100)
-        }):Play()
-        
-        TweenService:Create(toggleCircle, TweenInfo.new(0.2), {
-            Position = newState and UDim2.new(1, -toggleCircleSize, 0.5, -(toggleCircleSize-4)/2) or UDim2.new(0, 2, 0.5, -(toggleCircleSize-4)/2)
+        TweenService:Create(toggleCircle, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Position = newState and UDim2.new(1, -(UIS.TouchEnabled and 26 or 24), 0.5, -(UIS.TouchEnabled and 11 or 10)) or UDim2.new(0, 2, 0.5, -(UIS.TouchEnabled and 11 or 10)),
+            BackgroundColor3 = newState and Color3.fromRGB(40, 200, 120) or Color3.fromRGB(220, 80, 80)
         }):Play()
         
         if callback then
@@ -566,23 +481,23 @@ end
 -- Функция для создания слайдера скорости
 local function CreateSpeedSlider()
     local sliderContainer = Instance.new("Frame")
-    sliderContainer.Size = UDim2.new(1, -10, 0, UIS.TouchEnabled and 70 or 60)  -- Больше для мобильных
+    sliderContainer.Size = UDim2.new(1, -10, 0, UIS.TouchEnabled and 70 or 64)
     sliderContainer.BackgroundTransparency = 1
     sliderContainer.Parent = ContentScrolling
     
     local speedLabel = Instance.new("TextLabel")
-    speedLabel.Size = UDim2.new(1, 0, 0, 20)
+    speedLabel.Size = UDim2.new(1, 0, 0, UIS.TouchEnabled and 24 or 22)
     speedLabel.BackgroundTransparency = 1
     speedLabel.Text = "Speed: " .. MainModule.SpeedHack.CurrentSpeed
     speedLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
-    speedLabel.TextSize = UIS.TouchEnabled and 14 or 12  -- Больше текст для мобильных
-    speedLabel.Font = Enum.Font.GothamBold
+    speedLabel.TextSize = UIS.TouchEnabled and 14 or 13
+    speedLabel.Font = Enum.Font.GothamMedium
     speedLabel.Parent = sliderContainer
     
     local sliderBackground = Instance.new("Frame")
-    sliderBackground.Size = UDim2.new(1, 0, 0, 20)
-    sliderBackground.Position = UDim2.new(0, 0, 0, 25)
-    sliderBackground.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+    sliderBackground.Size = UDim2.new(1, 0, 0, UIS.TouchEnabled and 24 or 22)
+    sliderBackground.Position = UDim2.new(0, 0, 0, UIS.TouchEnabled and 30 or 28)
+    sliderBackground.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
     sliderBackground.BorderSizePixel = 0
     sliderBackground.Parent = sliderContainer
     
@@ -590,9 +505,15 @@ local function CreateSpeedSlider()
     corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = sliderBackground
     
+    local bgStroke = Instance.new("UIStroke")
+    bgStroke.Color = Color3.fromRGB(60, 120, 200)
+    bgStroke.Thickness = 1.5
+    bgStroke.Transparency = 0.3
+    bgStroke.Parent = sliderBackground
+    
     local sliderFill = Instance.new("Frame")
     sliderFill.Size = UDim2.new((MainModule.SpeedHack.CurrentSpeed - MainModule.SpeedHack.MinSpeed) / (MainModule.SpeedHack.MaxSpeed - MainModule.SpeedHack.MinSpeed), 0, 1, 0)
-    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+    sliderFill.BackgroundColor3 = Color3.fromRGB(40, 120, 220)
     sliderFill.BorderSizePixel = 0
     sliderFill.Parent = sliderBackground
     
@@ -600,17 +521,30 @@ local function CreateSpeedSlider()
     fillCorner.CornerRadius = UDim.new(0, 8)
     fillCorner.Parent = sliderFill
     
+    -- Градиент для заполнения
+    local fillGradient = Instance.new("UIGradient")
+    fillGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 120, 220)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 160, 240))
+    })
+    fillGradient.Parent = sliderFill
+    
     local sliderButton = Instance.new("TextButton")
-    sliderButton.Size = UDim2.new(0, UIS.TouchEnabled and 24 or 20, 0, UIS.TouchEnabled and 24 or 20)  -- Больше для мобильных
-    sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -UIS.TouchEnabled and 12 or 10, 0, UIS.TouchEnabled and -2 or 0)
+    sliderButton.Size = UDim2.new(0, UIS.TouchEnabled and 28 or 26, 0, UIS.TouchEnabled and 28 or 26)
+    sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -(UIS.TouchEnabled and 14 or 13), 0.5, -(UIS.TouchEnabled and 14 or 13))
     sliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     sliderButton.Text = ""
     sliderButton.BorderSizePixel = 0
     sliderButton.Parent = sliderBackground
     
     local buttonCorner = Instance.new("UICorner")
-    buttonCorner.CornerRadius = UDim.new(0, 8)
+    buttonCorner.CornerRadius = UDim.new(1, 0)
     buttonCorner.Parent = sliderButton
+    
+    local buttonStroke = Instance.new("UIStroke")
+    buttonStroke.Color = Color3.fromRGB(60, 120, 200)
+    buttonStroke.Thickness = 2
+    buttonStroke.Parent = sliderButton
     
     local dragging = false
     
@@ -618,11 +552,14 @@ local function CreateSpeedSlider()
         local newSpeed = MainModule.SetSpeed(value)
         speedLabel.Text = "Speed: " .. newSpeed
         sliderFill.Size = UDim2.new((newSpeed - MainModule.SpeedHack.MinSpeed) / (MainModule.SpeedHack.MaxSpeed - MainModule.SpeedHack.MinSpeed), 0, 1, 0)
-        sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -UIS.TouchEnabled and 12 or 10, 0, UIS.TouchEnabled and -2 or 0)
+        sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -(UIS.TouchEnabled and 14 or 13), 0.5, -(UIS.TouchEnabled and 14 or 13))
     end
     
     sliderButton.MouseButton1Down:Connect(function()
         dragging = true
+        TweenService:Create(sliderButton, TweenInfo.new(0.1), {
+            BackgroundColor3 = Color3.fromRGB(220, 220, 255)
+        }):Play()
     end)
     
     UIS.InputChanged:Connect(function(input)
@@ -635,8 +572,11 @@ local function CreateSpeedSlider()
     end)
     
     UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and dragging then
             dragging = false
+            TweenService:Create(sliderButton, TweenInfo.new(0.1), {
+                BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            }):Play()
         end
     end)
     
@@ -646,63 +586,71 @@ end
 -- Функция для создания кнопки изменения горячей клавиши
 local function CreateKeybindButton()
     local keybindContainer = Instance.new("Frame")
-    keybindContainer.Size = UDim2.new(1, -10, 0, UIS.TouchEnabled and 40 or 32)  -- Больше для мобильных
+    keybindContainer.Size = UDim2.new(1, -10, 0, UIS.TouchEnabled and 42 or 38)
     keybindContainer.BackgroundTransparency = 1
     keybindContainer.Parent = ContentScrolling
     
     local keybindFrame = Instance.new("Frame")
     keybindFrame.Size = UDim2.new(1, 0, 1, 0)
-    keybindFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+    keybindFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
     keybindFrame.BorderSizePixel = 0
     keybindFrame.Parent = keybindContainer
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
+    corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = keybindFrame
     
     local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(80, 80, 100)
-    stroke.Thickness = 1.2
+    stroke.Color = Color3.fromRGB(60, 120, 200)
+    stroke.Thickness = 1.5
     stroke.Parent = keybindFrame
     
     -- Текст
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.Size = UDim2.new(0.65, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Text = "Menu Hotkey: M"
     label.TextColor3 = Color3.fromRGB(240, 240, 255)
-    label.TextSize = UIS.TouchEnabled and 14 or 12  -- Больше текст для мобильных
-    label.Font = Enum.Font.Gotham
+    label.TextSize = UIS.TouchEnabled and 14 or 13
+    label.Font = Enum.Font.GothamMedium
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = keybindFrame
     
     -- Кнопка изменения
     local changeBtn = Instance.new("TextButton")
-    changeBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
-    changeBtn.Position = UDim2.new(0.72, 0, 0.15, 0)
-    changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+    changeBtn.Size = UDim2.new(0.32, 0, 0.7, 0)
+    changeBtn.Position = UDim2.new(0.66, 0, 0.15, 0)
+    changeBtn.BackgroundColor3 = Color3.fromRGB(40, 120, 220)
     changeBtn.BorderSizePixel = 0
     changeBtn.Text = "Change"
-    changeBtn.TextColor3 = Color3.fromRGB(240, 240, 255)
-    changeBtn.TextSize = UIS.TouchEnabled and 12 or 11  -- Больше текст для мобильных
-    changeBtn.Font = Enum.Font.Gotham
+    changeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    changeBtn.TextSize = UIS.TouchEnabled and 13 or 12
+    changeBtn.Font = Enum.Font.GothamMedium
     changeBtn.AutoButtonColor = false
     changeBtn.Parent = keybindFrame
     
     local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
+    btnCorner.CornerRadius = UDim.new(0, 6)
     btnCorner.Parent = changeBtn
     
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Color = Color3.fromRGB(80, 80, 100)
-    btnStroke.Thickness = 1
+    btnStroke.Color = Color3.fromRGB(80, 160, 240)
+    btnStroke.Thickness = 1.5
     btnStroke.Parent = changeBtn
+    
+    -- Градиент для кнопки
+    local btnGradient = Instance.new("UIGradient")
+    btnGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 120, 220)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 140, 240))
+    })
+    btnGradient.Parent = changeBtn
     
     -- Анимации для кнопки
     changeBtn.MouseEnter:Connect(function()
         if not isChoosingKey then
             TweenService:Create(changeBtn, TweenInfo.new(0.2), {
-                BackgroundColor3 = Color3.fromRGB(75, 75, 95),
+                BackgroundColor3 = Color3.fromRGB(60, 140, 240),
                 TextColor3 = Color3.fromRGB(255, 255, 255)
             }):Play()
         end
@@ -711,8 +659,8 @@ local function CreateKeybindButton()
     changeBtn.MouseLeave:Connect(function()
         if not isChoosingKey then
             TweenService:Create(changeBtn, TweenInfo.new(0.2), {
-                BackgroundColor3 = Color3.fromRGB(60, 60, 75),
-                TextColor3 = Color3.fromRGB(240, 240, 255)
+                BackgroundColor3 = Color3.fromRGB(40, 120, 220),
+                TextColor3 = Color3.fromRGB(255, 255, 255)
             }):Play()
         end
     end)
@@ -725,8 +673,8 @@ local function CreateKeybindButton()
     -- Функция изменения клавиши
     local function startKeyChange()
         isChoosingKey = true
-        changeBtn.Text = "Press any key..."
-        changeBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+        changeBtn.Text = "Press key..."
+        changeBtn.BackgroundColor3 = Color3.fromRGB(40, 200, 120)
         
         local connection
         connection = UIS.InputBegan:Connect(function(input)
@@ -738,18 +686,23 @@ local function CreateKeybindButton()
                 -- Останавливаем выбор
                 isChoosingKey = false
                 changeBtn.Text = "Change"
-                changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+                changeBtn.BackgroundColor3 = Color3.fromRGB(40, 120, 220)
                 
                 if connection then
                     connection:Disconnect()
                 end
+                
+                -- Обновляем слушатель горячей клавиши
+                if hotkeyConnection then
+                    hotkeyConnection:Disconnect()
+                    setupHotkeyListener()
+                end
             elseif input.UserInputType == Enum.UserInputType.MouseButton1 or 
                    input.UserInputType == Enum.UserInputType.MouseButton2 or
                    input.UserInputType == Enum.UserInputType.MouseButton3 then
-                -- Можно добавить поддержку мыши, если нужно
                 isChoosingKey = false
                 changeBtn.Text = "Change"
-                changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+                changeBtn.BackgroundColor3 = Color3.fromRGB(40, 120, 220)
                 
                 if connection then
                     connection:Disconnect()
@@ -762,7 +715,7 @@ local function CreateKeybindButton()
             if isChoosingKey then
                 isChoosingKey = false
                 changeBtn.Text = "Change"
-                changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+                changeBtn.BackgroundColor3 = Color3.fromRGB(40, 120, 220)
                 
                 if connection then
                     connection:Disconnect()
@@ -786,71 +739,78 @@ end
 -- Простая кнопка выбора Guard типа
 local function CreateGuardTypeSelector()
     local selectorContainer = Instance.new("Frame")
-    selectorContainer.Size = UDim2.new(1, -10, 0, UIS.TouchEnabled and 40 or 32)  -- Больше для мобильных
+    selectorContainer.Size = UDim2.new(1, -10, 0, UIS.TouchEnabled and 42 or 38)
     selectorContainer.BackgroundTransparency = 1
     selectorContainer.LayoutOrder = 1
     selectorContainer.Parent = ContentScrolling
     
     local selectorFrame = Instance.new("Frame")
     selectorFrame.Size = UDim2.new(1, 0, 1, 0)
-    selectorFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+    selectorFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
     selectorFrame.BorderSizePixel = 0
     selectorFrame.Parent = selectorContainer
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
+    corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = selectorFrame
     
     local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(80, 80, 100)
-    stroke.Thickness = 1.2
+    stroke.Color = Color3.fromRGB(60, 120, 200)
+    stroke.Thickness = 1.5
     stroke.Parent = selectorFrame
     
     -- Текст
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.Size = UDim2.new(0.65, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Text = "Guard Type: " .. MainModule.Guards.SelectedGuard
     label.TextColor3 = Color3.fromRGB(240, 240, 255)
-    label.TextSize = UIS.TouchEnabled and 14 or 12  -- Больше текст для мобильных
-    label.Font = Enum.Font.Gotham
+    label.TextSize = UIS.TouchEnabled and 14 or 13
+    label.Font = Enum.Font.GothamMedium
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = selectorFrame
     
     -- Кнопка смены типа
     local changeBtn = Instance.new("TextButton")
-    changeBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
-    changeBtn.Position = UDim2.new(0.72, 0, 0.15, 0)
-    changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+    changeBtn.Size = UDim2.new(0.32, 0, 0.7, 0)
+    changeBtn.Position = UDim2.new(0.66, 0, 0.15, 0)
+    changeBtn.BackgroundColor3 = Color3.fromRGB(40, 120, 220)
     changeBtn.BorderSizePixel = 0
     changeBtn.Text = "Change"
-    changeBtn.TextColor3 = Color3.fromRGB(240, 240, 255)
-    changeBtn.TextSize = UIS.TouchEnabled and 12 or 11  -- Больше текст для мобильных
-    changeBtn.Font = Enum.Font.Gotham
+    changeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    changeBtn.TextSize = UIS.TouchEnabled and 13 or 12
+    changeBtn.Font = Enum.Font.GothamMedium
     changeBtn.AutoButtonColor = false
     changeBtn.Parent = selectorFrame
     
     local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
+    btnCorner.CornerRadius = UDim.new(0, 6)
     btnCorner.Parent = changeBtn
     
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Color = Color3.fromRGB(80, 80, 100)
-    btnStroke.Thickness = 1
+    btnStroke.Color = Color3.fromRGB(80, 160, 240)
+    btnStroke.Thickness = 1.5
     btnStroke.Parent = changeBtn
+    
+    local btnGradient = Instance.new("UIGradient")
+    btnGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 120, 220)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 140, 240))
+    })
+    btnGradient.Parent = changeBtn
     
     -- Анимации для кнопки
     changeBtn.MouseEnter:Connect(function()
         TweenService:Create(changeBtn, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(75, 75, 95),
+            BackgroundColor3 = Color3.fromRGB(60, 140, 240),
             TextColor3 = Color3.fromRGB(255, 255, 255)
         }):Play()
     end)
     
     changeBtn.MouseLeave:Connect(function()
         TweenService:Create(changeBtn, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(60, 60, 75),
-            TextColor3 = Color3.fromRGB(240, 240, 255)
+            BackgroundColor3 = Color3.fromRGB(40, 120, 220),
+            TextColor3 = Color3.fromRGB(255, 255, 255)
         }):Play()
     end)
     
@@ -897,6 +857,7 @@ local function CreateMainContent()
     
     -- Speed Slider
     local speedLabel = CreateSpeedSlider()
+    speedLabel.LayoutOrder = 1
     
     -- Speed Toggle
     local speedToggle, updateSpeedToggle = CreateToggle("SpeedHack", MainModule.SpeedHack.Enabled, function(enabled)
@@ -906,7 +867,7 @@ local function CreateMainContent()
             MainModule.SpeedHack.Enabled = enabled
         end
     end)
-    speedToggle.LayoutOrder = 1
+    speedToggle.LayoutOrder = 2
     
     -- Noclip
     local noclipToggle, updateNoclipToggle = CreateToggle("Noclip", MainModule.Noclip.Enabled, function(enabled)
@@ -916,7 +877,7 @@ local function CreateMainContent()
             MainModule.Noclip.Enabled = enabled
         end
     end)
-    noclipToggle.LayoutOrder = 2
+    noclipToggle.LayoutOrder = 3
     
     -- Anti Stun QTE
     local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun QTE", MainModule.AutoQTE.AntiStunEnabled, function(enabled)
@@ -926,7 +887,7 @@ local function CreateMainContent()
             MainModule.AutoQTE.AntiStunEnabled = enabled
         end
     end)
-    antiStunToggle.LayoutOrder = 3
+    antiStunToggle.LayoutOrder = 4
     
     -- Anti Stun + Anti Ragdoll
     local bypassRagdollToggle, updateBypassRagdollToggle = CreateToggle("Anti Stun + Anti Ragdoll", MainModule.Misc.BypassRagdollEnabled, function(enabled)
@@ -936,7 +897,7 @@ local function CreateMainContent()
             MainModule.Misc.BypassRagdollEnabled = enabled
         end
     end)
-    bypassRagdollToggle.LayoutOrder = 4
+    bypassRagdollToggle.LayoutOrder = 5
     
     -- Instance Interact
     local instaInteractToggle, updateInstaInteractToggle = CreateToggle("Instance Interact", MainModule.Misc.InstaInteract, function(enabled)
@@ -946,7 +907,7 @@ local function CreateMainContent()
             MainModule.Misc.InstaInteract = enabled
         end
     end)
-    instaInteractToggle.LayoutOrder = 5
+    instaInteractToggle.LayoutOrder = 6
     
     -- No Cooldown Proximity
     local noCooldownToggle, updateNoCooldownToggle = CreateToggle("No Cooldown Proximity", MainModule.Misc.NoCooldownProximity, function(enabled)
@@ -956,11 +917,11 @@ local function CreateMainContent()
             MainModule.Misc.NoCooldownProximity = enabled
         end
     end)
-    noCooldownToggle.LayoutOrder = 6
+    noCooldownToggle.LayoutOrder = 7
     
     -- Teleport Buttons
     local tpUpBtn = CreateButton("TP 100 blocks up")
-    tpUpBtn.LayoutOrder = 7
+    tpUpBtn.LayoutOrder = 8
     tpUpBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportUp100 then
             MainModule.TeleportUp100()
@@ -968,7 +929,7 @@ local function CreateMainContent()
     end)
     
     local tpDownBtn = CreateButton("TP 40 blocks down")
-    tpDownBtn.LayoutOrder = 8
+    tpDownBtn.LayoutOrder = 9
     tpDownBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportDown40 then
             MainModule.TeleportDown40()
@@ -977,9 +938,9 @@ local function CreateMainContent()
     
     -- Position display
     local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
-    positionLabel.LayoutOrder = 9
-    positionLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-    positionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    positionLabel.LayoutOrder = 10
+    positionLabel.BackgroundColor3 = Color3.fromRGB(40, 50, 70)
+    positionLabel.TextColor3 = Color3.fromRGB(180, 220, 255)
     
     -- Update position
     game:GetService("RunService").Heartbeat:Connect(function()
@@ -994,13 +955,14 @@ local function CreateCombatContent()
     ClearContent()
     
     local comingSoon = Instance.new("TextLabel")
-    comingSoon.Size = UDim2.new(1, 0, 0, 40)
+    comingSoon.Size = UDim2.new(1, 0, 0, 50)
     comingSoon.BackgroundTransparency = 1
     comingSoon.Text = "Combat Features Coming Soon"
-    comingSoon.TextColor3 = Color3.fromRGB(200, 200, 200)
+    comingSoon.TextColor3 = Color3.fromRGB(160, 180, 220)
     comingSoon.TextSize = 16
-    comingSoon.Font = Enum.Font.Gotham
+    comingSoon.Font = Enum.Font.GothamMedium
     comingSoon.Parent = ContentScrolling
+    comingSoon.LayoutOrder = 1
 end
 
 -- MISC TAB
@@ -1078,9 +1040,9 @@ local function CreateRebelContent()
     ClearContent()
     
     local rebelTitle = CreateButton("REBEL")
-    rebelTitle.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-    rebelTitle.TextColor3 = Color3.fromRGB(255, 80, 80)
-    rebelTitle.TextSize = 14
+    rebelTitle.BackgroundColor3 = Color3.fromRGB(60, 30, 40)
+    rebelTitle.TextColor3 = Color3.fromRGB(255, 100, 100)
+    rebelTitle.TextSize = UIS.TouchEnabled and 16 or 15
     rebelTitle.LayoutOrder = 1
     
     local rebelToggle, updateRebelToggle = CreateToggle("Instant Rebel", MainModule.Rebel.Enabled, function(enabled)
@@ -1096,11 +1058,6 @@ end
 -- RLGL TAB
 local function CreateRLGLContent()
     ClearContent()
-    
-    -- Сначала проверяем состояние игры
-    local function checkRLGLGame()
-        return MainModule.CheckRLGLGameState()
-    end
     
     local tpEndBtn = CreateButton("TP TO END")
     tpEndBtn.LayoutOrder = 1
@@ -1124,7 +1081,7 @@ local function CreateRLGLContent()
         else
             MainModule.RLGL.GodMode = enabled
         end
-    end, checkRLGLGame)
+    end)
     godModeToggle.LayoutOrder = 3
 end
 
@@ -1134,6 +1091,7 @@ local function CreateGuardsContent()
     
     -- Guard Type Selector
     local guardSelector = CreateGuardTypeSelector()
+    guardSelector.LayoutOrder = 1
     
     -- Spawn as Guard кнопка
     local spawnBtn = CreateButton("Spawn as Guard")
@@ -1210,44 +1168,33 @@ end
 local function CreateHNSContent()
     ClearContent()
     
-    -- Сначала проверяем состояние игры
-    local function checkHNSGame()
-        return MainModule.CheckHNSGameState()
-    end
-    
-    -- Infinity Stamina (только для тех у кого есть DODGE!)
+    -- Infinity Stamina
     local staminaToggle, updateStaminaToggle = CreateToggle("Infinity Stamina", MainModule.HNS.InfinityStaminaEnabled, function(enabled)
         if MainModule.ToggleHNSInfinityStamina then
             MainModule.ToggleHNSInfinityStamina(enabled)
         else
             MainModule.HNS.InfinityStaminaEnabled = enabled
         end
-    end, function()
-        return MainModule.HNS.HasDodge
     end)
     staminaToggle.LayoutOrder = 1
     
-    -- Spikes Kill (только для Seekers с ножом)
+    -- Spikes Kill
     local spikesKillToggle, updateSpikesKillToggle = CreateToggle("Spikes Kill", MainModule.SpikesKill.Enabled, function(enabled)
         if MainModule.ToggleSpikesKill then
             MainModule.ToggleSpikesKill(enabled)
         else
             MainModule.SpikesKill.Enabled = enabled
         end
-    end, function()
-        return MainModule.HNS.HasKnife
     end)
     spikesKillToggle.LayoutOrder = 2
     
-    -- AutoDodge (только для тех у кого есть DODGE!)
+    -- AutoDodge
     local autoDodgeToggle, updateAutoDodgeToggle = CreateToggle("AutoDodge", MainModule.AutoDodge.Enabled, function(enabled)
         if MainModule.ToggleAutoDodge then
             MainModule.ToggleAutoDodge(enabled)
         else
             MainModule.AutoDodge.Enabled = enabled
         end
-    end, function()
-        return MainModule.HNS.HasDodge
     end)
     autoDodgeToggle.LayoutOrder = 3
     
@@ -1258,31 +1205,65 @@ local function CreateHNSContent()
         if MainModule.DisableSpikes then
             local success = MainModule.DisableSpikes(true)
             if success then
-                ShowAlert("Spikes Disabled!")
                 disableSpikesBtn.Text = "Spikes Disabled!"
-                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(40, 200, 120)
                 task.wait(1)
                 disableSpikesBtn.Text = "Disable Spikes"
-                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
             else
-                ShowAlert("Failed to Disable Spikes")
                 disableSpikesBtn.Text = "Failed to Disable"
-                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(220, 80, 80)
                 task.wait(1)
                 disableSpikesBtn.Text = "Disable Spikes"
-                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
             end
         end
     end)
     
-    -- Teleport to Hider (новая функция)
-    local teleportHiderBtn = CreateButton("Teleport to Hider")
-    teleportHiderBtn.LayoutOrder = 5
-    teleportHiderBtn.MouseButton1Click:Connect(function()
+    -- Teleport to Hider (кликабельная кнопка)
+    local tpToHiderBtn = CreateButton("Teleport to Hider")
+    tpToHiderBtn.LayoutOrder = 5
+    tpToHiderBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportToHider then
-            MainModule.TeleportToHider()
+            local success = MainModule.TeleportToHider()
+            if success then
+                tpToHiderBtn.Text = "Teleported!"
+                tpToHiderBtn.BackgroundColor3 = Color3.fromRGB(40, 200, 120)
+                task.wait(1)
+                tpToHiderBtn.Text = "Teleport to Hider"
+                tpToHiderBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+            else
+                tpToHiderBtn.Text = "No Hider Found"
+                tpToHiderBtn.BackgroundColor3 = Color3.fromRGB(220, 80, 80)
+                task.wait(1)
+                tpToHiderBtn.Text = "Teleport to Hider"
+                tpToHiderBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+            end
         end
     end)
+end
+
+-- LAST DINNER TAB
+local function CreateLastDinnerContent()
+    ClearContent()
+    
+    local dinnerTitle = CreateButton("LAST DINNER")
+    dinnerTitle.BackgroundColor3 = Color3.fromRGB(70, 40, 60)
+    dinnerTitle.TextColor3 = Color3.fromRGB(255, 180, 100)
+    dinnerTitle.TextSize = UIS.TouchEnabled and 16 or 15
+    dinnerTitle.LayoutOrder = 1
+    
+    -- Zone Kill Toggle
+    local zoneKillToggle, updateZoneKillToggle = CreateToggle("Zone Kill", MainModule.ZoneKill and MainModule.ZoneKill.Enabled or false, function(enabled)
+        if MainModule.ToggleZoneKill then
+            MainModule.ToggleZoneKill(enabled)
+        else
+            if MainModule.ZoneKill then
+                MainModule.ZoneKill.Enabled = enabled
+            end
+        end
+    end)
+    zoneKillToggle.LayoutOrder = 2
 end
 
 -- Функция для GLASS BRIDGE с автоматическим AntiFall при включении
@@ -1340,12 +1321,11 @@ local function CreateGlassBridgeContent()
     glassEspBtn.MouseButton1Click:Connect(function()
         if MainModule.RevealGlassBridge then
             MainModule.RevealGlassBridge()
-            ShowAlert("Glass Bridge tiles revealed!")
             glassEspBtn.Text = "Glass ESP (Revealed)"
-            glassEspBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+            glassEspBtn.BackgroundColor3 = Color3.fromRGB(40, 200, 120)
             task.wait(1)
             glassEspBtn.Text = "Glass ESP"
-            glassEspBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+            glassEspBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
         end
     end)
     
@@ -1401,19 +1381,17 @@ local function CreateJumpRopeContent()
         if MainModule.DeleteJumpRope then
             local success = MainModule.DeleteJumpRope()
             if success then
-                ShowAlert("Rope deleted successfully!")
                 deleteRopeBtn.Text = "Rope Deleted!"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(40, 200, 120)
                 task.wait(1)
                 deleteRopeBtn.Text = "Delete The Rope"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
             else
-                ShowAlert("Rope not found")
                 deleteRopeBtn.Text = "Rope Not Found"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(220, 80, 80)
                 task.wait(1)
                 deleteRopeBtn.Text = "Delete The Rope"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
             end
         end
     end)
@@ -1460,38 +1438,6 @@ local function CreateSkySquidContent()
     voidKillToggle.LayoutOrder = 2
 end
 
--- LAST DINNER TAB (новая вкладка)
-local function CreateLastDinnerContent()
-    ClearContent()
-    
-    -- Проверка состояния игры для Last Dinner
-    local function checkLastDinnerGame()
-        return MainModule.CheckZoneKillGameState()
-    end
-    
-    local title = CreateButton("LAST DINNER")
-    title.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-    title.TextColor3 = Color3.fromRGB(255, 150, 50)
-    title.TextSize = 14
-    title.LayoutOrder = 1
-    
-    -- Zone Kill функция
-    local zoneKillToggle, updateZoneKillToggle = CreateToggle("Zone Kill", MainModule.ZoneKill.Enabled, function(enabled)
-        if MainModule.ToggleZoneKill then
-            MainModule.ToggleZoneKill(enabled)
-        else
-            MainModule.ZoneKill.Enabled = enabled
-        end
-    end, checkLastDinnerGame)
-    zoneKillToggle.LayoutOrder = 2
-    
-    local infoLabel = CreateButton("Teleports to zone when kill animation plays")
-    infoLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-    infoLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
-    infoLabel.TextSize = 12
-    infoLabel.LayoutOrder = 3
-end
-
 -- SETTINGS TAB
 local function CreateSettingsContent()
     ClearContent()
@@ -1500,7 +1446,7 @@ local function CreateSettingsContent()
     creatorLabel.TextXAlignment = Enum.TextXAlignment.Left
     creatorLabel.LayoutOrder = 1
     
-    local versionLabel = CreateButton("Version: 2.5")
+    local versionLabel = CreateButton("Version: 2.6")
     versionLabel.TextXAlignment = Enum.TextXAlignment.Left
     versionLabel.LayoutOrder = 2
     
@@ -1527,8 +1473,6 @@ local function CreateSettingsContent()
             MainModule.Cleanup()
         end
         ScreenGui:Destroy()
-        AlertGui:Destroy()
-        ShowAlert("Script cleaned up!", 2)
     end)
     
     -- Обновление позиции
@@ -1539,61 +1483,117 @@ local function CreateSettingsContent()
     end)
 end
 
--- Создание вкладок с добавлением Last Dinner
-local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Sky Squid", "Last Dinner", "Settings"}
+-- Создание вкладок
+local tabs = {
+    "Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", 
+    "Dalgona", "HNS", "Last Dinner", "Glass Bridge", 
+    "Tug of War", "Jump Rope", "Sky Squid", "Settings"
+}
 local tabButtons = {}
 
-for i, name in pairs(tabs) do
+local function CreateTabButton(name)
     local buttonContainer = Instance.new("Frame")
-    buttonContainer.Size = UDim2.new(0.9, 0, 0, UIS.TouchEnabled and 40 or 36)  -- Больше для мобильных
-    buttonContainer.Position = UDim2.new(0.05, 0, 0, (i-1)*(UIS.TouchEnabled and 42 or 38) + 10)
+    buttonContainer.Size = UDim2.new(0.92, 0, 0, UIS.TouchEnabled and 44 or 40)
     buttonContainer.BackgroundTransparency = 1
-    buttonContainer.Parent = TabButtons
+    buttonContainer.Parent = TabScrollingFrame
     
     local button = Instance.new("TextButton")
     button.Size = UDim2.new(1, 0, 1, 0)
-    button.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+    button.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
     button.BorderSizePixel = 0
     button.Text = name
-    button.TextColor3 = Color3.fromRGB(240, 240, 255)
-    button.TextSize = UIS.TouchEnabled and 13 or 12  -- Больше текст для мобильных
-    button.Font = Enum.Font.Gotham
+    button.TextColor3 = Color3.fromRGB(180, 200, 255)
+    button.TextSize = UIS.TouchEnabled and 13 or 12
+    button.Font = Enum.Font.GothamMedium
     button.AutoButtonColor = false
     button.Parent = buttonContainer
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
+    corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = button
     
     local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(80, 80, 100)
-    stroke.Thickness = 1.2
+    stroke.Color = Color3.fromRGB(60, 120, 200)
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.5
     stroke.Parent = button
+    
+    -- Градиент для кнопки
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 45)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 35, 60))
+    })
+    gradient.Parent = button
     
     -- Анимация для кнопки вкладки
     button.MouseEnter:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(65, 65, 85),
+            BackgroundColor3 = Color3.fromRGB(40, 120, 220),
             TextColor3 = Color3.fromRGB(255, 255, 255)
+        }):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {
+            Transparency = 0
         }):Play()
     end)
     
     button.MouseLeave:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(50, 50, 65),
-            TextColor3 = Color3.fromRGB(240, 240, 255)
+        local isActive = tabButtons[name] and tabButtons[name].BackgroundColor3 == Color3.fromRGB(40, 200, 120)
+        if not isActive then
+            TweenService:Create(button, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(30, 30, 45),
+                TextColor3 = Color3.fromRGB(180, 200, 255)
+            }):Play()
+            TweenService:Create(stroke, TweenInfo.new(0.2), {
+                Transparency = 0.5
+            }):Play()
+        end
+    end)
+    
+    button.MouseButton1Down:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.1), {
+            BackgroundColor3 = Color3.fromRGB(25, 25, 35)
         }):Play()
     end)
+    
+    button.MouseButton1Up:Connect(function()
+        local isActive = tabButtons[name] and tabButtons[name].BackgroundColor3 == Color3.fromRGB(40, 200, 120)
+        TweenService:Create(button, TweenInfo.new(0.1), {
+            BackgroundColor3 = isActive and Color3.fromRGB(40, 200, 120) or Color3.fromRGB(40, 120, 220)
+        }):Play()
+    end)
+    
+    return buttonContainer, button
+end
+
+for i, name in pairs(tabs) do
+    local container, button = CreateTabButton(name)
+    container.LayoutOrder = i
     
     tabButtons[name] = button
     
     local function ActivateTab()
         for tabName, btn in pairs(tabButtons) do
-            btn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-            btn.TextColor3 = Color3.fromRGB(240, 240, 255)
+            if btn then
+                btn.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+                btn.TextColor3 = Color3.fromRGB(180, 200, 255)
+                if btn:FindFirstChild("UIStroke") then
+                    TweenService:Create(btn.UIStroke, TweenInfo.new(0.2), {
+                        Transparency = 0.5
+                    }):Play()
+                end
+            end
         end
-        button.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
-        button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        
+        if button then
+            button.BackgroundColor3 = Color3.fromRGB(40, 200, 120)
+            button.TextColor3 = Color3.fromRGB(255, 255, 255)
+            if button:FindFirstChild("UIStroke") then
+                TweenService:Create(button.UIStroke, TweenInfo.new(0.2), {
+                    Transparency = 0
+                }):Play()
+            end
+        end
         
         if name == "Main" then
             CreateMainContent()
@@ -1611,6 +1611,8 @@ for i, name in pairs(tabs) do
             CreateDalgonaContent()
         elseif name == "HNS" then
             CreateHNSContent()
+        elseif name == "Last Dinner" then
+            CreateLastDinnerContent()
         elseif name == "Glass Bridge" then
             CreateGlassBridgeContent()
         elseif name == "Tug of War" then
@@ -1619,8 +1621,6 @@ for i, name in pairs(tabs) do
             CreateJumpRopeContent()
         elseif name == "Sky Squid" then
             CreateSkySquidContent()
-        elseif name == "Last Dinner" then
-            CreateLastDinnerContent()
         elseif name == "Settings" then
             CreateSettingsContent()
         end
@@ -1667,38 +1667,13 @@ UIS.InputBegan:Connect(function(input)
     end
 end)
 
--- Автоматическое выключение функций при неактивной игре
-local gameCheckConnection
-local function setupGameCheck()
-    if gameCheckConnection then
-        gameCheckConnection:Disconnect()
-        gameCheckConnection = nil
-    end
-    
-    gameCheckConnection = RunService.Heartbeat:Connect(function()
-        -- Проверяем RLGL каждые 5 секунд
-        if MainModule.RLGL.GodMode then
-            MainModule.CheckRLGLGameState()
-        end
-        
-        -- Проверяем HNS каждые 5 секунд
-        if MainModule.HNS.InfinityStaminaEnabled or MainModule.SpikesKill.Enabled or MainModule.AutoDodge.Enabled then
-            MainModule.CheckHNSGameState()
-        end
-        
-        -- Проверяем Last Dinner каждые 5 секунд
-        if MainModule.ZoneKill.Enabled then
-            MainModule.CheckZoneKillGameState()
-        end
-    end)
-end
-
-setupGameCheck()
-
 -- Автоматически открываем Main вкладку
 if tabButtons["Main"] then
-    tabButtons["Main"].BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+    tabButtons["Main"].BackgroundColor3 = Color3.fromRGB(40, 200, 120)
     tabButtons["Main"].TextColor3 = Color3.fromRGB(255, 255, 255)
+    if tabButtons["Main"]:FindFirstChild("UIStroke") then
+        tabButtons["Main"].UIStroke.Transparency = 0
+    end
 end
 CreateMainContent()
 
@@ -1710,9 +1685,6 @@ ScreenGui.AncestryChanged:Connect(function()
         end
         if hotkeyConnection then
             hotkeyConnection:Disconnect()
-        end
-        if gameCheckConnection then
-            gameCheckConnection:Disconnect()
         end
     end
 end)
@@ -1728,14 +1700,10 @@ if keyChangeButton then
 end
 
 -- Отображение сообщения о загрузке
-print("Creon X v2.5 loaded successfully")
+print("════════════════════════════════════")
+print("   CREON X v2.6 LOADED SUCCESSFULLY")
+print("════════════════════════════════════")
 print("Menu Hotkey: " .. menuHotkey.Name)
-if not isSupported then
-    ShowAlert("Warning: Executor " .. executorName .. " is not officially supported", 5)
-else
-    print("Executor " .. executorName .. " is supported")
-end
-
-ShowAlert("Creon X v2.5 loaded! Hotkey: " .. menuHotkey.Name, 3)
-
-
+print("Executor: " .. executorName)
+print("Supported: " .. (isSupported and "YES" or "NO"))
+print("════════════════════════════════════")
