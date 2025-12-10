@@ -40,8 +40,8 @@ MainModule.AutoDodge = {
     Connections = {},
     LastDodgeTime = 0,
     DodgeCooldown = 0.6,
-    Range = 6,
-    RangeSquared = 6 * 6,
+    Range = 8,
+    RangeSquared = 8 * 8,
     AnimationIdsSet = {},
     PlayersInRange = {},
     LastRangeUpdate = 0,
@@ -2174,12 +2174,10 @@ function MainModule.ToggleNoclip(enabled)
     end
 end
 
--- Добавляем все 6 анимаций в набор для быстрой проверки
 for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
 end
 
--- ФУНКЦИЯ МОМЕНТАЛЬНОГО ДОДЖА
 local function executeInstantDodge()
     if not MainModule.AutoDodge.Enabled then return false end
     
@@ -2226,15 +2224,10 @@ local function executeInstantDodge()
     return false
 end
 
--- ОБРАБОТЧИК АНИМАЦИЙ: проверяет ВСЕ 6 анимаций
 local function createFastAnimationHandler(player)
     return function(track)
         if not MainModule.AutoDodge.Enabled then return end
         if player == LocalPlayer then return end
-        
-        if tick() - MainModule.AutoDodge.LastDodgeTime < 0.05 then
-            return
-        end
         
         local animId
         if track and track.Animation then
@@ -2243,12 +2236,10 @@ local function createFastAnimationHandler(player)
         
         if not animId then return end
         
-        -- ПРОВЕРКА: Есть ли эта анимация в нашем списке из 6 анимаций
         if not MainModule.AutoDodge.AnimationIdsSet[animId] then
             return
         end
         
-        -- Проверка расстояния
         if not LocalPlayer or not LocalPlayer.Character then return end
         if not player or not player.Character then return end
         
@@ -2266,7 +2257,6 @@ local function createFastAnimationHandler(player)
     end
 end
 
--- Обновление игроков в радиусе
 local function fastUpdatePlayersInRange()
     if not LocalPlayer or not LocalPlayer.Character then 
         MainModule.AutoDodge.PlayersInRange = {}
@@ -2301,7 +2291,6 @@ local function fastUpdatePlayersInRange()
     return playersInRange
 end
 
--- НАСТРОЙКА ОТСЛЕЖИВАНИЯ ИГРОКА
 local function setupFastPlayerTracking(player)
     if player == LocalPlayer then return end
     
@@ -2333,7 +2322,6 @@ local function setupFastPlayerTracking(player)
     table.insert(MainModule.AutoDodge.Connections, charConn)
 end
 
--- ФУНКЦИЯ УПРАВЛЕНИЯ
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.AutoDodge.Enabled = false
     
@@ -2377,7 +2365,6 @@ function MainModule.ToggleAutoDodge(enabled)
     end
 end
 
--- Автоматическая очистка
 Players.PlayerRemoving:Connect(function(player)
     if player == LocalPlayer then
         MainModule.ToggleAutoDodge(false)
@@ -2612,6 +2599,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
