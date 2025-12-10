@@ -70,11 +70,15 @@ ScreenGui.ResetOnSpawn = false
 -- Размеры GUI
 local GUI_WIDTH = 860
 local GUI_HEIGHT = 595
+local BUTTON_HEIGHT = 32
+local TAB_WIDTH = 150
 
--- Для мобильных устройств уменьшаем размер
+-- Для мобильных устройств уменьшаем размер на 25%
 if UIS.TouchEnabled then
-    GUI_WIDTH = 700
-    GUI_HEIGHT = 500
+    GUI_WIDTH = 650
+    GUI_HEIGHT = 450
+    BUTTON_HEIGHT = 28
+    TAB_WIDTH = 120
 end
 
 -- Основной фрейм
@@ -94,7 +98,7 @@ mainStroke.Thickness = 2
 mainStroke.Parent = MainFrame
 
 -- TitleBar для перемещения
-TitleBar.Size = UDim2.new(1, 0, 0, 35)
+TitleBar.Size = UDim2.new(1, 0, 0, UIS.TouchEnabled and 40 or 35)
 TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 TitleBar.BorderSizePixel = 0
 TitleBar.Parent = MainFrame
@@ -108,18 +112,18 @@ TitleLabel.Position = UDim2.new(0.1, 0, 0, 0)
 TitleLabel.BackgroundTransparency = 1
 TitleLabel.Text = "Creon X v2.5"
 TitleLabel.TextColor3 = Color3.fromRGB(220, 220, 255)
-TitleLabel.TextSize = 14
+TitleLabel.TextSize = UIS.TouchEnabled and 16 or 14
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.Parent = TitleBar
 
 -- Кнопка сворачивания
-MinimizeButton.Size = UDim2.new(0, 25, 0, 25)
-MinimizeButton.Position = UDim2.new(1, -30, 0.5, -12.5)
+MinimizeButton.Size = UDim2.new(0, UIS.TouchEnabled and 35 or 25, 0, UIS.TouchEnabled and 35 or 25)
+MinimizeButton.Position = UDim2.new(1, -40, 0.5, -17.5)
 MinimizeButton.BackgroundColor3 = Color3.fromRGB(100, 100, 120)
 MinimizeButton.BorderSizePixel = 0
 MinimizeButton.Text = "_"
 MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinimizeButton.TextSize = 18
+MinimizeButton.TextSize = UIS.TouchEnabled and 22 or 18
 MinimizeButton.Font = Enum.Font.GothamBold
 MinimizeButton.Parent = TitleBar
 
@@ -135,8 +139,8 @@ MinimizeButton.MouseButton1Click:Connect(function()
 end)
 
 -- Табы
-TabButtons.Size = UDim2.new(0, 150, 1, -35)
-TabButtons.Position = UDim2.new(0, 0, 0, 35)
+TabButtons.Size = UDim2.new(0, TAB_WIDTH, 1, -TitleBar.Size.Y.Offset)
+TabButtons.Position = UDim2.new(0, 0, 0, TitleBar.Size.Y.Offset)
 TabButtons.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
 TabButtons.BorderSizePixel = 0
 TabButtons.Parent = MainFrame
@@ -146,8 +150,8 @@ tabCorner.CornerRadius = UDim.new(0, 8)
 tabCorner.Parent = TabButtons
 
 -- Content Frame с прокруткой
-ContentFrame.Size = UDim2.new(1, -150, 1, -35)
-ContentFrame.Position = UDim2.new(0, 150, 0, 35)
+ContentFrame.Size = UDim2.new(1, -TAB_WIDTH, 1, -TitleBar.Size.Y.Offset)
+ContentFrame.Position = UDim2.new(0, TAB_WIDTH, 0, TitleBar.Size.Y.Offset)
 ContentFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 ContentFrame.BorderSizePixel = 0
 ContentFrame.Parent = MainFrame
@@ -161,12 +165,14 @@ ContentScrolling.Size = UDim2.new(1, -10, 1, -10)
 ContentScrolling.Position = UDim2.new(0, 5, 0, 5)
 ContentScrolling.BackgroundTransparency = 1
 ContentScrolling.BorderSizePixel = 0
-ContentScrolling.ScrollBarThickness = 6
+ContentScrolling.ScrollBarThickness = UIS.TouchEnabled and 10 or 6
 ContentScrolling.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 100)
 ContentScrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
+ContentScrolling.ScrollingDirection = Enum.ScrollingDirection.Y
+ContentScrolling.VerticalScrollBarInset = Enum.ScrollBarInset.Always
 ContentScrolling.Parent = ContentFrame
 
-ContentLayout.Padding = UDim.new(0, 8)
+ContentLayout.Padding = UDim.new(0, UIS.TouchEnabled and 6 or 8)
 ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     ContentScrolling.CanvasSize = UDim2.new(0, 0, 0, ContentLayout.AbsoluteContentSize.Y + 20)
@@ -175,13 +181,13 @@ ContentLayout.Parent = ContentScrolling
 
 -- Кнопка для мобильных устройств (Delta Mobile)
 if UIS.TouchEnabled then
-    MobileOpenButton.Size = UDim2.new(0, 120, 0, 40)
-    MobileOpenButton.Position = UDim2.new(0.5, -60, 0.2, 0)
+    MobileOpenButton.Size = UDim2.new(0, 140, 0, 50)
+    MobileOpenButton.Position = UDim2.new(0.5, -70, 0.2, 0)
     MobileOpenButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
     MobileOpenButton.BorderSizePixel = 0
-    MobileOpenButton.Text = "OPEN"
+    MobileOpenButton.Text = "OPEN MENU"
     MobileOpenButton.TextColor3 = Color3.fromRGB(220, 220, 255)
-    MobileOpenButton.TextSize = 14
+    MobileOpenButton.TextSize = 16
     MobileOpenButton.Font = Enum.Font.GothamBold
     MobileOpenButton.Parent = ScreenGui
     
@@ -291,12 +297,12 @@ end)
 -- Функция для создания кнопок
 local function CreateButton(text)
     local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, -10, 0, 32)
+    button.Size = UDim2.new(1, -10, 0, BUTTON_HEIGHT)
     button.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
     button.BorderSizePixel = 0
     button.Text = text
     button.TextColor3 = Color3.fromRGB(240, 240, 255)
-    button.TextSize = 12
+    button.TextSize = UIS.TouchEnabled and 13 or 12
     button.Font = Enum.Font.Gotham
     button.AutoButtonColor = false
     button.Parent = ContentScrolling
@@ -343,7 +349,7 @@ end
 -- Функция для создания переключателей
 local function CreateToggle(text, enabled, callback)
     local toggleContainer = Instance.new("Frame")
-    toggleContainer.Size = UDim2.new(1, -10, 0, 32)
+    toggleContainer.Size = UDim2.new(1, -10, 0, BUTTON_HEIGHT)
     toggleContainer.BackgroundTransparency = 1
     toggleContainer.Parent = ContentScrolling
     
@@ -354,33 +360,33 @@ local function CreateToggle(text, enabled, callback)
     textLabel.BackgroundTransparency = 1
     textLabel.Text = text
     textLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
-    textLabel.TextSize = 12
+    textLabel.TextSize = UIS.TouchEnabled and 13 or 12
     textLabel.Font = Enum.Font.Gotham
     textLabel.TextXAlignment = Enum.TextXAlignment.Left
     textLabel.Parent = toggleContainer
     
     -- Переключатель
     local toggleBackground = Instance.new("Frame")
-    toggleBackground.Size = UDim2.new(0, 50, 0, 22)
-    toggleBackground.Position = UDim2.new(1, -52, 0.5, -11)
+    toggleBackground.Size = UDim2.new(0, UIS.TouchEnabled and 60 or 50, 0, UIS.TouchEnabled and 26 or 22)
+    toggleBackground.Position = UDim2.new(1, UIS.TouchEnabled and -62 or -52, 0.5, UIS.TouchEnabled and -13 or -11)
     toggleBackground.BackgroundColor3 = enabled and Color3.fromRGB(0, 140, 255) or Color3.fromRGB(80, 80, 100)
     toggleBackground.BorderSizePixel = 0
     toggleBackground.Parent = toggleContainer
     
     local toggleCircle = Instance.new("Frame")
-    toggleCircle.Size = UDim2.new(0, 18, 0, 18)
-    toggleCircle.Position = enabled and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
+    toggleCircle.Size = UDim2.new(0, UIS.TouchEnabled and 22 or 18, 0, UIS.TouchEnabled and 22 or 18)
+    toggleCircle.Position = enabled and UDim2.new(1, UIS.TouchEnabled and -24 or -20, 0.5, UIS.TouchEnabled and -11 or -9) or UDim2.new(0, 2, 0.5, UIS.TouchEnabled and -11 or -9)
     toggleCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     toggleCircle.BorderSizePixel = 0
     toggleCircle.Parent = toggleBackground
     
     -- Закругления
     local corner1 = Instance.new("UICorner")
-    corner1.CornerRadius = UDim.new(0, 11)
+    corner1.CornerRadius = UDim.new(0, UIS.TouchEnabled and 13 or 11)
     corner1.Parent = toggleBackground
     
     local corner2 = Instance.new("UICorner")
-    corner2.CornerRadius = UDim.new(0, 9)
+    corner2.CornerRadius = UDim.new(0, UIS.TouchEnabled and 11 or 9)
     corner2.Parent = toggleCircle
     
     local stroke = Instance.new("UIStroke")
@@ -403,7 +409,7 @@ local function CreateToggle(text, enabled, callback)
         }):Play()
         
         TweenService:Create(toggleCircle, TweenInfo.new(0.2), {
-            Position = newState and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
+            Position = newState and UDim2.new(1, UIS.TouchEnabled and -24 or -20, 0.5, UIS.TouchEnabled and -11 or -9) or UDim2.new(0, 2, 0.5, UIS.TouchEnabled and -11 or -9)
         }):Play()
         
         if callback then
@@ -421,7 +427,7 @@ end
 -- Функция для создания слайдера скорости
 local function CreateSpeedSlider()
     local sliderContainer = Instance.new("Frame")
-    sliderContainer.Size = UDim2.new(1, -10, 0, 60)
+    sliderContainer.Size = UDim2.new(1, -10, 0, UIS.TouchEnabled and 70 or 60)
     sliderContainer.BackgroundTransparency = 1
     sliderContainer.Parent = ContentScrolling
     
@@ -430,12 +436,12 @@ local function CreateSpeedSlider()
     speedLabel.BackgroundTransparency = 1
     speedLabel.Text = "Speed: " .. MainModule.SpeedHack.CurrentSpeed
     speedLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
-    speedLabel.TextSize = 12
+    speedLabel.TextSize = UIS.TouchEnabled and 14 or 12
     speedLabel.Font = Enum.Font.GothamBold
     speedLabel.Parent = sliderContainer
     
     local sliderBackground = Instance.new("Frame")
-    sliderBackground.Size = UDim2.new(1, 0, 0, 20)
+    sliderBackground.Size = UDim2.new(1, 0, 0, UIS.TouchEnabled and 24 or 20)
     sliderBackground.Position = UDim2.new(0, 0, 0, 25)
     sliderBackground.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
     sliderBackground.BorderSizePixel = 0
@@ -456,8 +462,8 @@ local function CreateSpeedSlider()
     fillCorner.Parent = sliderFill
     
     local sliderButton = Instance.new("TextButton")
-    sliderButton.Size = UDim2.new(0, 20, 0, 20)
-    sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -10, 0, 0)
+    sliderButton.Size = UDim2.new(0, UIS.TouchEnabled and 24 or 20, 0, UIS.TouchEnabled and 24 or 20)
+    sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, UIS.TouchEnabled and -12 or -10, 0, 0)
     sliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     sliderButton.Text = ""
     sliderButton.BorderSizePixel = 0
@@ -473,7 +479,7 @@ local function CreateSpeedSlider()
         local newSpeed = MainModule.SetSpeed(value)
         speedLabel.Text = "Speed: " .. newSpeed
         sliderFill.Size = UDim2.new((newSpeed - MainModule.SpeedHack.MinSpeed) / (MainModule.SpeedHack.MaxSpeed - MainModule.SpeedHack.MinSpeed), 0, 1, 0)
-        sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -10, 0, 0)
+        sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, UIS.TouchEnabled and -12 or -10, 0, 0)
     end
     
     sliderButton.MouseButton1Down:Connect(function()
@@ -501,7 +507,7 @@ end
 -- Функция для создания кнопки изменения горячей клавиши
 local function CreateKeybindButton()
     local keybindContainer = Instance.new("Frame")
-    keybindContainer.Size = UDim2.new(1, -10, 0, 32)
+    keybindContainer.Size = UDim2.new(1, -10, 0, BUTTON_HEIGHT)
     keybindContainer.BackgroundTransparency = 1
     keybindContainer.Parent = ContentScrolling
     
@@ -526,7 +532,7 @@ local function CreateKeybindButton()
     label.BackgroundTransparency = 1
     label.Text = "Menu Hotkey: M"
     label.TextColor3 = Color3.fromRGB(240, 240, 255)
-    label.TextSize = 12
+    label.TextSize = UIS.TouchEnabled and 13 or 12
     label.Font = Enum.Font.Gotham
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = keybindFrame
@@ -539,7 +545,7 @@ local function CreateKeybindButton()
     changeBtn.BorderSizePixel = 0
     changeBtn.Text = "Change"
     changeBtn.TextColor3 = Color3.fromRGB(240, 240, 255)
-    changeBtn.TextSize = 11
+    changeBtn.TextSize = UIS.TouchEnabled and 12 or 11
     changeBtn.Font = Enum.Font.Gotham
     changeBtn.AutoButtonColor = false
     changeBtn.Parent = keybindFrame
@@ -641,7 +647,7 @@ end
 -- Простая кнопка выбора Guard типа
 local function CreateGuardTypeSelector()
     local selectorContainer = Instance.new("Frame")
-    selectorContainer.Size = UDim2.new(1, -10, 0, 32)
+    selectorContainer.Size = UDim2.new(1, -10, 0, BUTTON_HEIGHT)
     selectorContainer.BackgroundTransparency = 1
     selectorContainer.LayoutOrder = 1
     selectorContainer.Parent = ContentScrolling
@@ -667,7 +673,7 @@ local function CreateGuardTypeSelector()
     label.BackgroundTransparency = 1
     label.Text = "Guard Type: " .. MainModule.Guards.SelectedGuard
     label.TextColor3 = Color3.fromRGB(240, 240, 255)
-    label.TextSize = 12
+    label.TextSize = UIS.TouchEnabled and 13 or 12
     label.Font = Enum.Font.Gotham
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = selectorFrame
@@ -680,7 +686,7 @@ local function CreateGuardTypeSelector()
     changeBtn.BorderSizePixel = 0
     changeBtn.Text = "Change"
     changeBtn.TextColor3 = Color3.fromRGB(240, 240, 255)
-    changeBtn.TextSize = 11
+    changeBtn.TextSize = UIS.TouchEnabled and 12 or 11
     changeBtn.Font = Enum.Font.Gotham
     changeBtn.AutoButtonColor = false
     changeBtn.Parent = selectorFrame
@@ -1090,9 +1096,18 @@ local function CreateHNSContent()
     end)
     autoDodgeToggle.LayoutOrder = 3
     
+    -- Teleport to Hider
+    local teleportToHiderBtn = CreateButton("Teleport to Hider")
+    teleportToHiderBtn.LayoutOrder = 4
+    teleportToHiderBtn.MouseButton1Click:Connect(function()
+        if MainModule.TeleportToHider then
+            MainModule.TeleportToHider()
+        end
+    end)
+    
     -- Disable Spikes (кликабельная кнопка)
     local disableSpikesBtn = CreateButton("Disable Spikes")
-    disableSpikesBtn.LayoutOrder = 4
+    disableSpikesBtn.LayoutOrder = 5
     disableSpikesBtn.MouseButton1Click:Connect(function()
         if MainModule.DisableSpikes then
             local success = MainModule.DisableSpikes(true)
@@ -1285,6 +1300,36 @@ local function CreateSkySquidContent()
     voidKillToggle.LayoutOrder = 2
 end
 
+-- LAST DINNER TAB
+local function CreateLastDinnerContent()
+    ClearContent()
+    
+    local lastDinnerTitle = CreateButton("LAST DINNER")
+    lastDinnerTitle.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    lastDinnerTitle.TextColor3 = Color3.fromRGB(255, 100, 100)
+    lastDinnerTitle.TextSize = 14
+    lastDinnerTitle.LayoutOrder = 1
+    
+    -- Zone Kill
+    local zoneKillToggle, updateZoneKillToggle = CreateToggle("Zone Kill", MainModule.ZoneKill.Enabled, function(enabled)
+        if MainModule.ToggleZoneKill then
+            local success = MainModule.ToggleZoneKill(enabled)
+            if not success then
+                updateZoneKillToggle(false)
+            end
+        else
+            MainModule.ZoneKill.Enabled = enabled
+        end
+    end)
+    zoneKillToggle.LayoutOrder = 2
+    
+    local zoneInfo = CreateButton("Zone Kill: Teleports to safe zone")
+    zoneInfo.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+    zoneInfo.TextColor3 = Color3.fromRGB(200, 200, 220)
+    zoneInfo.TextSize = UIS.TouchEnabled and 12 or 11
+    zoneInfo.LayoutOrder = 3
+end
+
 -- SETTINGS TAB
 local function CreateSettingsContent()
     ClearContent()
@@ -1331,13 +1376,13 @@ local function CreateSettingsContent()
 end
 
 -- Создание вкладок
-local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Sky Squid", "Settings"}
+local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Sky Squid", "Last Dinner", "Settings"}
 local tabButtons = {}
 
-for i, name in pairs(tabs) do
+local function CreateTabButton(name, index)
     local buttonContainer = Instance.new("Frame")
-    buttonContainer.Size = UDim2.new(0.9, 0, 0, 36)
-    buttonContainer.Position = UDim2.new(0.05, 0, 0, (i-1)*38 + 10)
+    buttonContainer.Size = UDim2.new(0.9, 0, 0, UIS.TouchEnabled and 38 or 36)
+    buttonContainer.Position = UDim2.new(0.05, 0, 0, (index-1)*(UIS.TouchEnabled and 40 or 38) + 10)
     buttonContainer.BackgroundTransparency = 1
     buttonContainer.Parent = TabButtons
     
@@ -1347,7 +1392,7 @@ for i, name in pairs(tabs) do
     button.BorderSizePixel = 0
     button.Text = name
     button.TextColor3 = Color3.fromRGB(240, 240, 255)
-    button.TextSize = 12
+    button.TextSize = UIS.TouchEnabled and 13 or 12
     button.Font = Enum.Font.Gotham
     button.AutoButtonColor = false
     button.Parent = buttonContainer
@@ -1376,6 +1421,11 @@ for i, name in pairs(tabs) do
         }):Play()
     end)
     
+    return button
+end
+
+for i, name in pairs(tabs) do
+    local button = CreateTabButton(name, i)
     tabButtons[name] = button
     
     local function ActivateTab()
@@ -1410,12 +1460,83 @@ for i, name in pairs(tabs) do
             CreateJumpRopeContent()
         elseif name == "Sky Squid" then
             CreateSkySquidContent()
+        elseif name == "Last Dinner" then
+            CreateLastDinnerContent()
         elseif name == "Settings" then
             CreateSettingsContent()
         end
     end
     
     button.MouseButton1Click:Connect(ActivateTab)
+end
+
+-- Для мобильных устройств добавляем возможность листать табы
+if UIS.TouchEnabled then
+    local tabScrolling = Instance.new("ScrollingFrame")
+    tabScrolling.Size = UDim2.new(1, 0, 1, 0)
+    tabScrolling.Position = UDim2.new(0, 0, 0, 0)
+    tabScrolling.BackgroundTransparency = 1
+    tabScrolling.BorderSizePixel = 0
+    tabScrolling.ScrollBarThickness = 8
+    tabScrolling.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 100)
+    tabScrolling.CanvasSize = UDim2.new(0, 0, 0, #tabs * 40 + 20)
+    tabScrolling.ScrollingDirection = Enum.ScrollingDirection.Y
+    tabScrolling.Parent = TabButtons
+    
+    -- Перемещаем все кнопки в scrolling frame
+    for _, child in pairs(TabButtons:GetChildren()) do
+        if child:IsA("Frame") then
+            child.Parent = tabScrolling
+        end
+    end
+    
+    -- Для кнопок внутри scrolling frame
+    for _, buttonContainer in pairs(tabScrolling:GetChildren()) do
+        if buttonContainer:IsA("Frame") then
+            local button = buttonContainer:FindFirstChildWhichIsA("TextButton")
+            if button then
+                button.MouseButton1Click:Connect(function()
+                    for tabName, btn in pairs(tabButtons) do
+                        btn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+                        btn.TextColor3 = Color3.fromRGB(240, 240, 255)
+                    end
+                    button.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+                    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    
+                    local name = button.Text
+                    if name == "Main" then
+                        CreateMainContent()
+                    elseif name == "Combat" then
+                        CreateCombatContent()
+                    elseif name == "Misc" then
+                        CreateMiscContent()
+                    elseif name == "Rebel" then
+                        CreateRebelContent()
+                    elseif name == "RLGL" then
+                        CreateRLGLContent()
+                    elseif name == "Guards" then
+                        CreateGuardsContent()
+                    elseif name == "Dalgona" then
+                        CreateDalgonaContent()
+                    elseif name == "HNS" then
+                        CreateHNSContent()
+                    elseif name == "Glass Bridge" then
+                        CreateGlassBridgeContent()
+                    elseif name == "Tug of War" then
+                        CreateTugOfWarContent()
+                    elseif name == "Jump Rope" then
+                        CreateJumpRopeContent()
+                    elseif name == "Sky Squid" then
+                        CreateSkySquidContent()
+                    elseif name == "Last Dinner" then
+                        CreateLastDinnerContent()
+                    elseif name == "Settings" then
+                        CreateSettingsContent()
+                    end
+                end)
+            end
+        end
+    end
 end
 
 -- Обновленная функция управления горячими клавишами
