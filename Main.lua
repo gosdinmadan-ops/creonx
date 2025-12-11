@@ -2160,40 +2160,45 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
 end
 
 function MainModule.RevealGlassBridge()
-    local Effects = ReplicatedStorage:FindFirstChild("Modules") and 
-                   ReplicatedStorage.Modules:FindFirstChild("Effects")
-    local glassHolder = workspace:FindFirstChild("GlassBridge") and workspace.GlassBridge:FindFirstChild("GlassHolder")
-    if not glassHolder then
-        return
-    end
-    for _, tilePair in pairs(glassHolder:GetChildren()) do
+    local GlassHolder = Workspace:WaitForChild("GlassBridge"):WaitForChild("GlassHolder")
+    
+    for _, tilePair in pairs(GlassHolder:GetChildren()) do
         for _, tileModel in pairs(tilePair:GetChildren()) do
             if tileModel:IsA("Model") and tileModel.PrimaryPart then
                 local primaryPart = tileModel.PrimaryPart
+                
+                -- Удаляем существующие Highlight
                 for _, child in ipairs(tileModel:GetChildren()) do
                     if child:IsA("Highlight") then
                         child:Destroy()
                     end
                 end
-                local isBreakable = primaryPart:GetAttribute("exploitingisevil") == true
-                local targetColor = isBreakable and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
-                local transparency = 0.5
+                
+                -- Определяем цвет на основе атрибута
+                local Color = primaryPart:GetAttribute("exploitingisevil") 
+                    and Color3.fromRGB(248, 87, 87)  -- Красный для ломающихся плиток
+                    or Color3.fromRGB(28, 235, 87)   -- Зеленый для безопасных плиток
+                
+                -- Применяем изменения к PrimaryPart
+                primaryPart.Color = Color
+                primaryPart.Transparency = 0
+                primaryPart.Material = Enum.Material.Neon
+                
+                -- Применяем изменения ко всем BasePart в модели
                 for _, part in pairs(tileModel:GetDescendants()) do
                     if part:IsA("BasePart") then
-                        TweenService:Create(part, TweenInfo.new(0.5, Enum.EasingStyle.Linear), {
-                            Transparency = transparency,
-                            Color = targetColor
-                        }):Play()
+                        part.Color = Color
+                        part.Transparency = 0
+                        part.Material = Enum.Material.Neon
                     end
                 end
-                local highlight = Instance.new("Highlight")
-                highlight.FillColor = targetColor
-                highlight.FillTransparency = 0.7
-                highlight.OutlineTransparency = 0.5
-                highlight.Parent = tileModel
             end
         end
     end
+    
+    -- Оставляем оповещение (опционально)
+    local Effects = ReplicatedStorage:FindFirstChild("Modules") and 
+                   ReplicatedStorage.Modules:FindFirstChild("Effects")
     if Effects then
         local success, result = pcall(function()
             return require(Effects)
@@ -2203,7 +2208,7 @@ function MainModule.RevealGlassBridge()
                 AnnouncementOneLine = true,
                 FasterTween = true,
                 DisplayTime = 10,
-                AnnouncementDisplayText = "[CreonHub]: Safe tiles are green, breakable tiles are red!"
+                AnnouncementDisplayText = "[CreonHub]: Glass ESP Activated! Red = Breakable, Green = Safe"
             })
         end
     end
@@ -2836,6 +2841,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
