@@ -41,7 +41,7 @@ MainModule.AutoDodge = {
     Connections = {},
     LastDodgeTime = 0,
     DodgeCooldown = 0.4,
-    Range = 5,
+    Range = 4,
     RangeSquared = 7 * 7,
     AnimationIdsSet = {},
     PlayersInRange = {},
@@ -2339,29 +2339,9 @@ function MainModule.ToggleNoclip(enabled)
     end
 end
 
+
 for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
-end
-
--- Кэш для игроков в радиусе (быстрый доступ)
-MainModule.AutoDodge.PlayersInRangeCache = {}
-MainModule.AutoDodge.PlayerRangeCheckers = {}
-
--- Функция мгновенной проверки расстояния
-local function isPlayerInRange(player)
-    if not MainModule.AutoDodge.Enabled then return false end
-    if not LocalPlayer or not LocalPlayer.Character then return false end
-    if not player or not player.Character or player == LocalPlayer then return false end
-    
-    local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
-    
-    if not (localRoot and targetRoot) then return false end
-    
-    local diff = targetRoot.Position - localRoot.Position
-    local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
-    
-    return distanceSquared <= MainModule.AutoDodge.RangeSquared
 end
 
 local function executeInstantDodge()
@@ -2433,14 +2413,10 @@ local function executeInstantDodge()
     return false
 end
 
--- Быстрый обработчик анимации с мгновенной проверкой расстояния
 local function createFastAnimationHandler(player)
     return function(track)
         if not MainModule.AutoDodge.Enabled then return end
         if player == LocalPlayer then return end
-        
-        -- Мгновенная проверка расстояния перед проверкой анимации
-        if not isPlayerInRange(player) then return end
         
         local animId
         if track and track.Animation then
@@ -2453,68 +2429,59 @@ local function createFastAnimationHandler(player)
             return
         end
         
-        -- Вторую проверку можно пропустить, так как уже проверили в начале
-        executeInstantDodge()
+        if not LocalPlayer or not LocalPlayer.Character then return end
+        if not player or not player.Character then return end
+        
+        local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+        
+        if not (localRoot and targetRoot) then return end
+        
+        local diff = targetRoot.Position - localRoot.Position
+        local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
+        
+        if distanceSquared <= MainModule.AutoDodge.RangeSquared then
+            executeInstantDodge()
+        end
     end
 end
 
--- Функция для постоянного отслеживания позиции игроков
-local function startInstantRangeChecker(player)
-    if player == LocalPlayer then return end
+local function fastUpdatePlayersInRange()
+    if not LocalPlayer or not LocalPlayer.Character then 
+        MainModule.AutoDodge.PlayersInRange = {}
+        return 
+    end
     
-    -- Создаем Runner для постоянной проверки расстояния
-    local connection
-    local function checkDistance()
-        if not MainModule.AutoDodge.Enabled or not connection then return end
-        if not player or not player.Parent then 
-            if connection then connection:Disconnect() end
-            return 
-        end
-        
-        -- Мгновенная проверка
-        local inRange = isPlayerInRange(player)
-        
-        -- Обновляем кэш
-        MainModule.AutoDodge.PlayersInRangeCache[player.Name] = inRange
-        
-        -- Если игрок в радиусе, добавляем в список
-        local found = false
-        for i, name in ipairs(MainModule.AutoDodge.PlayersInRange) do
-            if name == player.Name then
-                found = true
-                if not inRange then
-                    table.remove(MainModule.AutoDodge.PlayersInRange, i)
+    local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not localRoot then 
+        MainModule.AutoDodge.PlayersInRange = {}
+        return 
+    end
+    
+    local playersInRange = {}
+    local rangeSquared = MainModule.AutoDodge.RangeSquared
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+            if playerRoot then
+                local diff = playerRoot.Position - localRoot.Position
+                local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
+                
+                if distanceSquared <= rangeSquared then
+                    table.insert(playersInRange, player.Name)
                 end
-                break
             end
-        end
-        
-        if inRange and not found then
-            table.insert(MainModule.AutoDodge.PlayersInRange, player.Name)
         end
     end
     
-    -- Запускаем постоянную проверку в RenderStepped для максимальной скорости
-    connection = RunService.RenderStepped:Connect(checkDistance)
-    MainModule.AutoDodge.PlayerRangeCheckers[player.Name] = connection
+    MainModule.AutoDodge.PlayersInRange = playersInRange
     
-    -- Также отслеживаем удаление игрока
-    local removalConnection
-    removalConnection = Players.PlayerRemoving:Connect(function(removedPlayer)
-        if removedPlayer == player then
-            if connection then connection:Disconnect() end
-            if removalConnection then removalConnection:Disconnect() end
-            MainModule.AutoDodge.PlayersInRangeCache[player.Name] = nil
-            MainModule.AutoDodge.PlayerRangeCheckers[player.Name] = nil
-        end
-    end)
+    return playersInRange
 end
 
 local function setupFastPlayerTracking(player)
     if player == LocalPlayer then return end
-    
-    -- Запускаем мгновенную проверку расстояния
-    task.spawn(startInstantRangeChecker, player)
     
     local function setupCharacter(character)
         if not character or not MainModule.AutoDodge.Enabled then return end
@@ -2547,15 +2514,6 @@ end
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.AutoDodge.Enabled = false
     
-    -- Останавливаем все проверки расстояния
-    for name, conn in pairs(MainModule.AutoDodge.PlayerRangeCheckers) do
-        if conn then
-            pcall(function() conn:Disconnect() end)
-        end
-    end
-    MainModule.AutoDodge.PlayerRangeCheckers = {}
-    
-    -- Отключаем все соединения
     for _, conn in pairs(MainModule.AutoDodge.Connections) do
         if conn then
             pcall(function() conn:Disconnect() end)
@@ -2563,20 +2521,17 @@ function MainModule.ToggleAutoDodge(enabled)
     end
     MainModule.AutoDodge.Connections = {}
     
-    -- Очищаем кэши
     MainModule.AutoDodge.PlayersInRange = {}
-    MainModule.AutoDodge.PlayersInRangeCache = {}
     MainModule.AutoDodge.LastDodgeTime = 0
+    MainModule.AutoDodge.LastRangeUpdate = 0
     
     if enabled then
         MainModule.AutoDodge.Enabled = true
         
-        -- Запускаем мгновенное отслеживание для всех игроков
         for _, player in pairs(Players:GetPlayers()) do
             task.spawn(setupFastPlayerTracking, player)
         end
         
-        -- Отслеживаем новых игроков
         local playerAddedConn = Players.PlayerAdded:Connect(function(player)
             if MainModule.AutoDodge.Enabled then
                 task.spawn(setupFastPlayerTracking, player)
@@ -2584,32 +2539,24 @@ function MainModule.ToggleAutoDodge(enabled)
         end)
         table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
         
-        -- Дополнительная периодическая проверка на всякий случай
         local heartbeatConn = RunService.Heartbeat:Connect(function()
             if not MainModule.AutoDodge.Enabled then return end
             
-            -- Быстро проверяем всех игроков
-            for _, player in pairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Character then
-                    local inRange = isPlayerInRange(player)
-                    MainModule.AutoDodge.PlayersInRangeCache[player.Name] = inRange
-                end
+            local currentTime = tick()
+            if currentTime - MainModule.AutoDodge.LastRangeUpdate > MainModule.AutoDodge.RangeUpdateInterval then
+                fastUpdatePlayersInRange()
+                MainModule.AutoDodge.LastRangeUpdate = currentTime
             end
         end)
         table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
+        
+        task.spawn(fastUpdatePlayersInRange)
     end
 end
 
 Players.PlayerRemoving:Connect(function(player)
     if player == LocalPlayer then
         MainModule.ToggleAutoDodge(false)
-    else
-        -- Очищаем кэш при выходе игрока
-        MainModule.AutoDodge.PlayersInRangeCache[player.Name] = nil
-        if MainModule.AutoDodge.PlayerRangeCheckers[player.Name] then
-            MainModule.AutoDodge.PlayerRangeCheckers[player.Name]:Disconnect()
-            MainModule.AutoDodge.PlayerRangeCheckers[player.Name] = nil
-        end
     end
 end)
 
@@ -2894,6 +2841,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
