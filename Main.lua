@@ -42,13 +42,20 @@ MainModule.AutoDodge = {
     LastDodgeTime = 0,
     DodgeCooldown = 0.4,
     Range = 4.8,
-    RangeSquared = 4.8 * 4.8, -- Исправлено на правильное значение
+    RangeSquared = 4.8 * 4.8,
+    RangeFake = 7, -- Увеличенный радиус для предупреждения
+    RangeFakeSquared = 7 * 7,
     AnimationIdsSet = {},
     PlayersInRange = {},
+    PlayersInFakeRange = {},
+    ActiveAnimations = {}, -- Трекер активных анимаций
     LastRangeUpdate = 0,
-    RangeUpdateInterval = 0.05, -- Уменьшено для мгновенного обновления
+    RangeUpdateInterval = 0.02, -- Очень частое обновление
     CheckAngle = true,
-    MaxAngle = 60
+    MaxAngle = 60,
+    AnimationDuration = 0.8, -- Средняя длительность анимации
+    PredictiveDodge = true, -- Предсказание ударов
+    PredictionTime = 0.5 -- Время для предсказания
 }
 
 MainModule.AutoQTE = {
@@ -2355,26 +2362,189 @@ for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
 end
 
--- Функция для мгновенной проверки игроков в радиусе
+-- Таблица для отслеживания всех активных анимаций
+MainModule.ActiveAttackers = {}
+
+-- Мгновенный трекер анимаций
+local function trackAnimationInstant(player, animId)
+    if not MainModule.AutoDodge.Enabled then return end
+    if player == LocalPlayer then return end
+    
+    local autoDodge = MainModule.AutoDodge
+    
+    -- Сохраняем информацию об анимации
+    MainModule.ActiveAttackers[player] = {
+        StartTime = tick(),
+        AnimationId = animId,
+        Player = player,
+        Position = player.Character and player.Character:FindFirstChild("HumanoidRootPart") and 
+                  player.Character:FindFirstChild("HumanoidRootPart").Position or nil
+    }
+    
+    -- Немедленная проверка на додж
+    if player.Character and LocalPlayer.Character then
+        local attackerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+        local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        
+        if attackerRoot and localRoot then
+            local diff = attackerRoot.Position - localRoot.Position
+            local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
+            
+            -- Проверяем в реальном радиусе
+            if distanceSquared <= autoDodge.RangeSquared then
+                -- Проверяем направление взгляда
+                local lookVector = attackerRoot.CFrame.LookVector
+                local toTarget = (localRoot.Position - attackerRoot.Position).Unit
+                local dot = lookVector:Dot(toTarget)
+                local angle = math.deg(math.acos(math.clamp(dot, -1, 1)))
+                
+                if not autoDodge.CheckAngle or angle <= autoDodge.MaxAngle then
+                    executeInstantDodge()
+                end
+            end
+        end
+    end
+end
+
+-- Проверка движения к нам
+local function isMovingTowardUs(attacker, duration)
+    if not attacker or not attacker.Character then return false end
+    
+    local attackerRoot = attacker.Character:FindFirstChild("HumanoidRootPart")
+    local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    
+    if not attackerRoot or not localRoot then return false end
+    
+    -- Получаем текущие позиции
+    local currentPos = attackerRoot.Position
+    local ourPos = localRoot.Position
+    
+    -- Получаем направление движения
+    local humanoid = attacker.Character:FindFirstChild("Humanoid")
+    if not humanoid then return false end
+    
+    local moveDirection = humanoid.MoveDirection
+    if moveDirection.Magnitude < 0.1 then return false end -- Не двигается
+    
+    -- Проверяем, движется ли в нашу сторону
+    local toUs = (ourPos - currentPos).Unit
+    local movementDot = moveDirection.Unit:Dot(toUs)
+    
+    return movementDot > 0.7 -- Двигается в нашу сторону
+end
+
+-- Предсказательная проверка
+local function predictiveCheck(attacker, animData)
+    if not MainModule.AutoDodge.PredictiveDodge then return false end
+    
+    local currentTime = tick()
+    local timeSinceStart = currentTime - animData.StartTime
+    
+    -- Если анимация уже длится слишком долго, не предсказываем
+    if timeSinceStart > MainModule.AutoDodge.PredictionTime then
+        return false
+    end
+    
+    -- Проверяем расстояние
+    if not attacker.Character or not LocalPlayer.Character then return false end
+    
+    local attackerRoot = attacker.Character:FindFirstChild("HumanoidRootPart")
+    local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    
+    if not attackerRoot or not localRoot then return false end
+    
+    local diff = attackerRoot.Position - localRoot.Position
+    local distance = diff.Magnitude
+    
+    -- Если враг в фейк-радиусе и движется к нам
+    if distance <= MainModule.AutoDodge.RangeFake then
+        -- Проверяем скорость движения
+        local humanoid = attacker.Character:FindFirstChild("Humanoid")
+        if humanoid then
+            local speed = humanoid.WalkSpeed
+            local timeToReach = distance / speed
+            
+            -- Если он может достичь нас до конца анимации
+            if timeToReach < (MainModule.AutoDodge.AnimationDuration - timeSinceStart) then
+                -- И движется прямо на нас
+                if isMovingTowardUs(attacker, timeSinceStart) then
+                    return true
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+-- Функция для мгновенной проверки всех активных анимаций
+local function checkAllActiveAnimations()
+    if not MainModule.AutoDodge.Enabled then return end
+    if not LocalPlayer or not LocalPlayer.Character then return end
+    
+    local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not localRoot then return end
+    
+    local currentTime = tick()
+    local autoDodge = MainModule.AutoDodge
+    
+    -- Проверяем все активные анимации
+    for player, animData in pairs(MainModule.ActiveAttackers) do
+        if player and player.Character then
+            local attackerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+            if attackerRoot then
+                local diff = attackerRoot.Position - localRoot.Position
+                local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
+                
+                -- Проверяем в реальном радиусе
+                if distanceSquared <= autoDodge.RangeSquared then
+                    -- Проверяем направление взгляда
+                    local lookVector = attackerRoot.CFrame.LookVector
+                    local toTarget = (localRoot.Position - attackerRoot.Position).Unit
+                    local dot = lookVector:Dot(toTarget)
+                    local angle = math.deg(math.acos(math.clamp(dot, -1, 1)))
+                    
+                    local shouldDodge = false
+                    
+                    if not autoDodge.CheckAngle or angle <= autoDodge.MaxAngle then
+                        shouldDodge = true
+                    elseif predictiveCheck(player, animData) then
+                        shouldDodge = true
+                    end
+                    
+                    if shouldDodge then
+                        executeInstantDodge()
+                        break -- Доджим один раз
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Улучшенная мгновенная проверка
 local function instantRangeCheck()
     if not MainModule.AutoDodge.Enabled then 
         MainModule.AutoDodge.PlayersInRange = {}
+        MainModule.AutoDodge.PlayersInFakeRange = {}
         return {}
     end
     
     if not LocalPlayer or not LocalPlayer.Character then 
         MainModule.AutoDodge.PlayersInRange = {}
+        MainModule.AutoDodge.PlayersInFakeRange = {}
         return {}
     end
     
     local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not localRoot then 
         MainModule.AutoDodge.PlayersInRange = {}
+        MainModule.AutoDodge.PlayersInFakeRange = {}
         return {}
     end
     
     local playersInRange = {}
-    local rangeSquared = MainModule.AutoDodge.RangeSquared
+    local playersInFakeRange = {}
     
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
@@ -2383,11 +2553,19 @@ local function instantRangeCheck()
                 local diff = playerRoot.Position - localRoot.Position
                 local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
                 
-                if distanceSquared <= rangeSquared then
+                if distanceSquared <= MainModule.AutoDodge.RangeSquared then
                     table.insert(playersInRange, {
                         Player = player,
-                        DistanceSquared = distanceSquared,
+                        Distance = math.sqrt(distanceSquared),
                         InRange = true
+                    })
+                end
+                
+                if distanceSquared <= MainModule.AutoDodge.RangeFakeSquared then
+                    table.insert(playersInFakeRange, {
+                        Player = player,
+                        Distance = math.sqrt(distanceSquared),
+                        InFakeRange = true
                     })
                 end
             end
@@ -2395,7 +2573,76 @@ local function instantRangeCheck()
     end
     
     MainModule.AutoDodge.PlayersInRange = playersInRange
+    MainModule.AutoDodge.PlayersInFakeRange = playersInFakeRange
+    
+    -- Немедленно проверяем активные анимации
+    checkAllActiveAnimations()
+    
     return playersInRange
+end
+
+local function executeInstantDodge()
+    if not MainModule.AutoDodge.Enabled then return false end
+    
+    local currentTime = tick()
+    local autoDodge = MainModule.AutoDodge
+    
+    if currentTime - autoDodge.LastDodgeTime < autoDodge.DodgeCooldown then
+        return false
+    end
+    
+    -- Получение игрока
+    local player = LocalPlayer
+    if not player then return false end
+    
+    -- Поиск RemoteEvent
+    local remote = nil
+    local remoteContainer = game:GetService("ReplicatedStorage")
+    
+    if remoteContainer:FindFirstChild("Remotes") then
+        local remotesFolder = remoteContainer:FindFirstChild("Remotes")
+        if remotesFolder:FindFirstChild("UsedTool") then
+            remote = remotesFolder:FindFirstChild("UsedTool")
+        end
+    end
+    
+    if not remote then 
+        return false
+    end
+    
+    -- Поиск инструмента DODGE!
+    local tool = nil
+    
+    -- Проверяем в порядке: Character -> Backpack
+    if player.Character then
+        tool = player.Character:FindFirstChild("DODGE!")
+    end
+    
+    if not tool and player:FindFirstChild("Backpack") then
+        tool = player:FindFirstChild("Backpack"):FindFirstChild("DODGE!")
+    end
+    
+    if not tool then 
+        return false 
+    end
+    
+    -- Вызов удаленного события
+    local success = pcall(function() 
+        remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true}) 
+    end)
+    
+    if success then
+        autoDodge.LastDodgeTime = currentTime
+        
+        -- Очищаем трекер после успешного доджа
+        for attackerPlayer, _ in pairs(MainModule.ActiveAttackers) do
+            MainModule.ActiveAttackers[attackerPlayer] = nil
+        end
+        
+        return true
+    end
+    
+    return false
 end
 
 -- Функция для проверки направления взгляда
@@ -2420,130 +2667,54 @@ local function isLookingAtTarget(attacker, target)
     local dot = lookVector:Dot(toTarget)
     local angle = math.deg(math.acos(math.clamp(dot, -1, 1)))
     
-    -- Если угол меньше максимального, значит смотрит на нас
     return angle <= MainModule.AutoDodge.MaxAngle
 end
 
-local function executeInstantDodge()
-    if not MainModule.AutoDodge.Enabled then return false end
-    
-    local currentTime = tick()
-    local autoDodge = MainModule.AutoDodge
-    
-    if currentTime - autoDodge.LastDodgeTime < autoDodge.DodgeCooldown then
-        return false
-    end
-    
-    -- Получение игрока
-    local player = nil
-    if game:GetService("Players").LocalPlayer then
-        player = game:GetService("Players").LocalPlayer
-    elseif game.Players and game.Players.LocalPlayer then
-        player = game.Players.LocalPlayer
-    else
-        return false
-    end
-    
-    -- Поиск RemoteEvent
-    local remote = nil
-    local remoteContainer = game:GetService("ReplicatedStorage")
-    
-    if remoteContainer:FindFirstChild("Remotes") then
-        local remotesFolder = remoteContainer:FindFirstChild("Remotes")
-        if remotesFolder:FindFirstChild("UsedTool") then
-            remote = remotesFolder:FindFirstChild("UsedTool")
-        end
-    end
-    
-    if not remote then 
-        return false
-    end
-    
-    -- Поиск инструмента DODGE!
-    local tool = nil
-    
-    -- Сначала проверяем Character
-    if player.Character then
-        tool = player.Character:FindFirstChild("DODGE!")
-        if tool then
-            -- Инструмент найден в Character
-        end
-    end
-    
-    -- Если не нашли, проверяем Backpack
-    if not tool and player:FindFirstChild("Backpack") then
-        local backpack = player:FindFirstChild("Backpack")
-        tool = backpack:FindFirstChild("DODGE!")
-    end
-    
-    if not tool then 
-        return false 
-    end
-    
-    -- Вызов удаленного события
-    local success = pcall(function() 
-        remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true}) 
-    end)
-    
-    if success then
-        autoDodge.LastDodgeTime = currentTime
-        return true
-    end
-    
-    return false
-end
-
--- Обработчик анимации с мгновенной проверкой
-local function createInstantAnimationHandler(attackerPlayer)
+-- Улучшенный обработчик анимаций
+local function createAnimationHandler(attackerPlayer)
     return function(track)
         if not MainModule.AutoDodge.Enabled then return end
         if attackerPlayer == LocalPlayer then return end
         
-        local animId
-        if track and track.Animation then
-            animId = track.Animation.AnimationId
-        end
-        
-        if not animId then return end
-        
-        -- Проверяем, является ли это атакой
-        if not MainModule.AutoDodge.AnimationIdsSet[animId] then
-            return
-        end
-        
-        -- МГНОВЕННАЯ проверка дистанции
-        if not LocalPlayer or not LocalPlayer.Character then return end
-        if not attackerPlayer or not attackerPlayer.Character then return end
-        
-        local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        local attackerRoot = attackerPlayer.Character:FindFirstChild("HumanoidRootPart")
-        
-        if not (localRoot and attackerRoot) then return end
-        
-        -- Быстрая проверка дистанции
-        local diff = attackerRoot.Position - localRoot.Position
-        local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
-        
-        if distanceSquared <= MainModule.AutoDodge.RangeSquared then
-            -- Проверяем, смотрит ли атакующий на нас
-            if isLookingAtTarget(attackerPlayer, LocalPlayer) then
-                executeInstantDodge()
+        -- МГНОВЕННАЯ реакция на старт анимации
+        if track.IsPlaying then
+            local animId = track.Animation and track.Animation.AnimationId
+            if animId and MainModule.AutoDodge.AnimationIdsSet[animId] then
+                -- Немедленно трекаем анимацию
+                trackAnimationInstant(attackerPlayer, animId)
+                
+                -- Дополнительная проверка через короткое время
+                task.delay(0.05, function()
+                    if MainModule.AutoDodge.Enabled then
+                        checkAllActiveAnimations()
+                    end
+                end)
             end
         end
     end
 end
 
--- Улучшенная функция отслеживания игроков
+-- Трекер остановки анимаций
+local function createAnimationStopHandler(attackerPlayer)
+    return function(track)
+        -- Удаляем из активных анимаций при остановке
+        if MainModule.ActiveAttackers[attackerPlayer] then
+            MainModule.ActiveAttackers[attackerPlayer] = nil
+        end
+    end
+end
+
+-- Установка мгновенного отслеживания игрока
 local function setupInstantPlayerTracking(player)
     if player == LocalPlayer then return end
     
     local function setupCharacter(character)
         if not character or not MainModule.AutoDodge.Enabled then return end
         
-        -- Быстрое ожидание появления хуманода
-        for i = 1, 3 do
+        -- Очень быстрое ожидание
+        for i = 1, 2 do
             if character:FindFirstChild("Humanoid") then break end
-            task.wait(0.05) -- Уменьшено время ожидания
+            task.wait(0.02) -- Очень короткое ожидание
         end
         
         local humanoid = character:FindFirstChild("Humanoid")
@@ -2551,13 +2722,19 @@ local function setupInstantPlayerTracking(player)
             -- Мгновенная проверка при подключении
             instantRangeCheck()
             
-            local handler = createInstantAnimationHandler(player)
-            local conn = humanoid.AnimationPlayed:Connect(handler)
-            table.insert(MainModule.AutoDodge.Connections, conn)
+            -- Обработчик старта анимации
+            local startHandler = createAnimationHandler(player)
+            local startConn = humanoid.AnimationPlayed:Connect(startHandler)
+            table.insert(MainModule.AutoDodge.Connections, startConn)
+            
+            -- Обработчик остановки анимации
+            local stopHandler = createAnimationStopHandler(player)
+            local stopConn = humanoid.AnimationStopped:Connect(stopHandler)
+            table.insert(MainModule.AutoDodge.Connections, stopConn)
         end
     end
     
-    -- Немедленная установка для существующего персонажа
+    -- Немедленная установка
     if player.Character then
         task.spawn(setupCharacter, player.Character)
     end
@@ -2566,8 +2743,7 @@ local function setupInstantPlayerTracking(player)
     local charConn = player.CharacterAdded:Connect(function(character)
         if MainModule.AutoDodge.Enabled then
             task.spawn(setupCharacter, character)
-            -- Мгновенная проверка после появления персонажа
-            task.wait(0.1)
+            task.wait(0.05)
             instantRangeCheck()
         end
     end)
@@ -2577,22 +2753,22 @@ end
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.AutoDodge.Enabled = false
     
-    -- Отключаем все соединения
+    -- Очищаем все
     for _, conn in pairs(MainModule.AutoDodge.Connections) do
-        if conn then
-            pcall(function() conn:Disconnect() end)
-        end
+        pcall(function() conn:Disconnect() end)
     end
     MainModule.AutoDodge.Connections = {}
+    MainModule.ActiveAttackers = {}
     
     MainModule.AutoDodge.PlayersInRange = {}
+    MainModule.AutoDodge.PlayersInFakeRange = {}
     MainModule.AutoDodge.LastDodgeTime = 0
     MainModule.AutoDodge.LastRangeUpdate = 0
     
     if enabled then
         MainModule.AutoDodge.Enabled = true
         
-        -- Мгновенная установка отслеживания для всех игроков
+        -- Мгновенная установка для всех игроков
         for _, player in pairs(Players:GetPlayers()) do
             task.spawn(setupInstantPlayerTracking, player)
         end
@@ -2601,14 +2777,13 @@ function MainModule.ToggleAutoDodge(enabled)
         local playerAddedConn = Players.PlayerAdded:Connect(function(player)
             if MainModule.AutoDodge.Enabled then
                 task.spawn(setupInstantPlayerTracking, player)
-                -- Мгновенная проверка радиуса
-                task.wait(0.1)
+                task.wait(0.05)
                 instantRangeCheck()
             end
         end)
         table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
         
-        -- Улучшенный Heartbeat для мгновенного обновления
+        -- Супер-быстрый Heartbeat
         local heartbeatConn = RunService.Heartbeat:Connect(function()
             if not MainModule.AutoDodge.Enabled then return end
             
@@ -2617,36 +2792,68 @@ function MainModule.ToggleAutoDodge(enabled)
                 instantRangeCheck()
                 MainModule.AutoDodge.LastRangeUpdate = currentTime
             end
+            
+            -- Дополнительная проверка активных анимаций
+            checkAllActiveAnimations()
         end)
         table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
         
-        -- Начальная мгновенная проверка
-        task.spawn(instantRangeCheck)
-        
-        -- Дополнительная проверка через короткое время
-        task.delay(0.2, function()
-            if MainModule.AutoDodge.Enabled then
-                instantRangeCheck()
+        -- Также используем RenderStepped для максимальной скорости
+        local renderConn = RunService.RenderStepped:Connect(function()
+            if not MainModule.AutoDodge.Enabled then return end
+            
+            -- Быстрая проверка активных анимаций каждый кадр
+            for player, animData in pairs(MainModule.ActiveAttackers) do
+                local currentTime = tick()
+                local timeSinceStart = currentTime - animData.StartTime
+                
+                -- Удаляем старые анимации
+                if timeSinceStart > MainModule.AutoDodge.AnimationDuration then
+                    MainModule.ActiveAttackers[player] = nil
+                end
             end
         end)
+        table.insert(MainModule.AutoDodge.Connections, renderConn)
+        
+        -- Начальная проверка
+        task.spawn(instantRangeCheck)
+        
+        -- Множественные дополнительные проверки
+        for i = 1, 3 do
+            task.delay(i * 0.1, function()
+                if MainModule.AutoDodge.Enabled then
+                    instantRangeCheck()
+                end
+            end)
+        end
     end
 end
 
--- Улучшенный обработчик выхода игрока
+-- Очистка при выходе
 Players.PlayerRemoving:Connect(function(player)
     if player == LocalPlayer then
         MainModule.ToggleAutoDodge(false)
     else
-        -- Мгновенное обновление списка игроков при выходе кого-то
+        -- Удаляем из активных атакующих
+        MainModule.ActiveAttackers[player] = nil
+        
+        -- Мгновенное обновление
         if MainModule.AutoDodge.Enabled then
             instantRangeCheck()
         end
     end
 end)
 
--- Экспорт новой функции для мгновенной проверки
-function MainModule.InstantCheckPlayersInRange()
-    return instantRangeCheck()
+-- Экспорт функции для проверки
+function MainModule.GetActiveAttackers()
+    return MainModule.ActiveAttackers
+end
+
+function MainModule.ForceCheck()
+    if MainModule.AutoDodge.Enabled then
+        instantRangeCheck()
+        checkAllActiveAnimations()
+    end
 end
 
 function MainModule.GetHider()
@@ -2930,6 +3137,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
