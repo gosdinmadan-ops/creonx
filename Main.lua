@@ -2299,35 +2299,39 @@ function MainModule.GetPlayerPosition()
 end
 
 function MainModule.ToggleNoclip(enabled)
-    -- Сохраняем состояние в глобальной переменной
     getgenv().NoclipEnabled = enabled
     
-    -- Если уже есть соединение, отключаем его
     if getgenv().NoclipConnection then
         getgenv().NoclipConnection:Disconnect()
         getgenv().NoclipConnection = nil
         getgenv().NoclipEnabled = false
+        
+        -- Восстанавливаем при выключении
+        local character = GetCharacter()
+        if character and character:FindFirstChildOfClass("Humanoid") then
+            character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Running)
+        end
     end
     
-    -- Устанавливаем соединение если включаем
     if enabled then
         getgenv().NoclipEnabled = true
         getgenv().NoclipConnection = RunService.Heartbeat:Connect(function()
             if not getgenv().NoclipEnabled then return end
             
             local character = GetCharacter()
-            if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+            if not character or not character:FindFirstChildOfClass("Humanoid") then return end
             
-            local hrp = character.HumanoidRootPart
-            for _, part in pairs(character:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    local distance = (part.Position - hrp.Position).Magnitude
-                    if distance <= 100 then
-                        part.CanCollide = false
-                    else
-                        part.CanCollide = true
-                    end
-                end
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            
+            -- Используем State вместо изменения CanCollide
+            if humanoid:GetState() ~= Enum.HumanoidStateType.Freefall then
+                humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+            end
+            
+            -- Небольшой толчок вперед для плавного движения
+            local hrp = character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.Velocity = hrp.CFrame.LookVector * 1.01 -- Минимальное ускорение
             end
         end)
     end
@@ -2834,6 +2838,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
