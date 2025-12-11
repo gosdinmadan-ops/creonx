@@ -2344,84 +2344,64 @@ for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
 end
 
 local function executeInstantDodge()
-    if not MainModule.AutoDodge.Enabled then return false end
+    -- Быстрая проверка флага
+    if not MainModule.AutoDodge.Enabled then 
+        return false 
+    end
     
-    local currentTime = tick()
     local autoDodge = MainModule.AutoDodge
+    local currentTime = tick()
     
+    -- Проверка кулдауна (самая быстрая проверка)
     if currentTime - autoDodge.LastDodgeTime < autoDodge.DodgeCooldown then
         return false
     end
     
+    -- Получение игрока (одним способом)
     local player = game.Players.LocalPlayer
-    if not player then return false end
-    
-    local remote = game.ReplicatedStorage:FindFirstChild("Remotes")
-    if remote then
-        remote = remote:FindFirstChild("UsedTool")
+    if not player then
+        return false
     end
     
-    if not remote then return false end
+    -- Поиск RemoteEvent (кешировать если часто вызывается)
+    local remote
+    local remotesFolder = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+    if remotesFolder then
+        remote = remotesFolder:FindFirstChild("UsedTool")
+    end
     
-    local tool = nil
-    local char = player.Character
-    if char then
-        tool = char:FindFirstChild("DODGE!")
-        if not tool then
-            local backpack = player:FindFirstChild("Backpack")
-            if backpack then
-                tool = backpack:FindFirstChild("DODGE!")
-            end
+    if not remote then 
+        return false
+    end
+    
+    -- Поиск инструмента (минимальные проверки)
+    local tool
+    
+    -- Проверяем Character
+    local character = player.Character
+    if character then
+        tool = character:FindFirstChild("DODGE!")
+    end
+    
+    -- Если нет в Character, проверяем Backpack
+    if not tool then
+        local backpack = player:FindFirstChild("Backpack")
+        if backpack then
+            tool = backpack:FindFirstChild("DODGE!")
         end
     end
     
-    if not tool then return false end
-    
-    -- ТОЛЬКО RemoteEvent вызовы для DODGE! с ПРИОРИТЕТОМ на 3-й вариант
-    local testCases = {
-        {
-            name = "UsingMoveCustom с именем DODGE! (ПРИОРИТЕТ)",
-            call = function() 
-                remote:FireServer("UsingMoveCustom", tool, "DODGE!", {Clicked = true}) 
-            end
-        },
-        {
-            name = "UsingMoveCustom формат",
-            call = function() 
-                remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true}) 
-            end
-        },
-        {
-            name = "Только имя инструмента",
-            call = function() 
-                remote:FireServer("DODGE!", tool) 
-            end
-        },
-        {
-            name = "С параметром Clicked",
-            call = function() 
-                remote:FireServer("DODGE!", tool, {Clicked = true}) 
-            end
-        },
-        {
-            name = "Просто инструмент",
-            call = function() 
-                remote:FireServer(tool) 
-            end
-        }
-    }
-    
-    -- Выполняем все тесты ТОЛЬКО ДЛЯ RemoteEvent
-    local anySuccess = false
-    for _, testCase in ipairs(testCases) do
-        local success = pcall(testCase.call)
-        if success then
-            anySuccess = true
-            break -- Останавливаемся при первом успешном вызове
-        end
+    if not tool then 
+        return false 
     end
     
-    if anySuccess then
+    -- НЕМЕДЛЕННЫЙ вызов remote (без задержек)
+    local success = pcall(function() 
+        remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true}) 
+    end)
+    
+    -- Обновление времени ТОЛЬКО после успешного вызова
+    if success then
         autoDodge.LastDodgeTime = currentTime
         return true
     end
@@ -2857,6 +2837,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
