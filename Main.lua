@@ -2299,46 +2299,39 @@ function MainModule.GetPlayerPosition()
 end
 
 function MainModule.ToggleNoclip(enabled)
-    MainModule.Noclip.Enabled = enabled
+    -- Сохраняем состояние в глобальной переменной
+    getgenv().NoclipEnabled = enabled
     
-    if MainModule.Noclip.Connection then
-        MainModule.Noclip.Connection:Disconnect()
-        MainModule.Noclip.Connection = nil
+    -- Если уже есть соединение, отключаем его
+    if getgenv().NoclipConnection then
+        getgenv().NoclipConnection:Disconnect()
+        getgenv().NoclipConnection = nil
+        getgenv().NoclipEnabled = false
     end
     
-    local function NoclipLoop()
-        if not MainModule.Noclip.Enabled then return end
-        
-        local character = GetCharacter()
-        if not character then return end
-        
-        for _, child in pairs(character:GetDescendants()) do
-            if child:IsA("BasePart") and child.CanCollide == true then
-                child.CanCollide = false
-                MainModule.Noclip.NoclipParts[child] = true
-            end
-        end
-    end
-    
+    -- Устанавливаем соединение если включаем
     if enabled then
-        MainModule.Noclip.Connection = RunService.Heartbeat:Connect(function()
-            if MainModule.Noclip.Enabled then
-                NoclipLoop()
-            end
-        end)
-    else
-        local character = GetCharacter()
-        if character and MainModule.Noclip.NoclipParts then
-            for part, _ in pairs(MainModule.Noclip.NoclipParts) do
-                if part and part:IsA("BasePart") then
-                    part.CanCollide = true
+        getgenv().NoclipEnabled = true
+        getgenv().NoclipConnection = RunService.Heartbeat:Connect(function()
+            if not getgenv().NoclipEnabled then return end
+            
+            local character = GetCharacter()
+            if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+            
+            local hrp = character.HumanoidRootPart
+            for _, part in pairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    local distance = (part.Position - hrp.Position).Magnitude
+                    if distance <= 100 then
+                        part.CanCollide = false
+                    else
+                        part.CanCollide = true
+                    end
                 end
             end
-            MainModule.Noclip.NoclipParts = {}
-        end
+        end)
     end
 end
-
 
 for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
@@ -2841,6 +2834,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
