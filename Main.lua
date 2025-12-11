@@ -2344,63 +2344,66 @@ for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
 end
 
 local function executeInstantDodge()
-    -- Быстрая проверка флага
-    if not MainModule.AutoDodge.Enabled then 
-        return false 
-    end
+    if not MainModule.AutoDodge.Enabled then return false end
     
-    local autoDodge = MainModule.AutoDodge
     local currentTime = tick()
+    local autoDodge = MainModule.AutoDodge
     
-    -- Проверка кулдауна (самая быстрая проверка)
     if currentTime - autoDodge.LastDodgeTime < autoDodge.DodgeCooldown then
         return false
     end
     
-    -- Получение игрока (одним способом)
-    local player = game.Players.LocalPlayer
-    if not player then
+    -- Получение игрока
+    local player = nil
+    if game:GetService("Players").LocalPlayer then
+        player = game:GetService("Players").LocalPlayer
+    elseif game.Players and game.Players.LocalPlayer then
+        player = game.Players.LocalPlayer
+    else
         return false
     end
     
-    -- Поиск RemoteEvent (кешировать если часто вызывается)
-    local remote
-    local remotesFolder = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
-    if remotesFolder then
-        remote = remotesFolder:FindFirstChild("UsedTool")
+    -- Поиск RemoteEvent
+    local remote = nil
+    local remoteContainer = game:GetService("ReplicatedStorage")
+    
+    if remoteContainer:FindFirstChild("Remotes") then
+        local remotesFolder = remoteContainer:FindFirstChild("Remotes")
+        if remotesFolder:FindFirstChild("UsedTool") then
+            remote = remotesFolder:FindFirstChild("UsedTool")
+        end
     end
     
     if not remote then 
         return false
     end
     
-    -- Поиск инструмента (минимальные проверки)
-    local tool
+    -- Поиск инструмента DODGE!
+    local tool = nil
     
-    -- Проверяем Character
-    local character = player.Character
-    if character then
-        tool = character:FindFirstChild("DODGE!")
+    -- Сначала проверяем Character
+    if player.Character then
+        tool = player.Character:FindFirstChild("DODGE!")
+        if tool then
+            -- Инструмент найден в Character
+        end
     end
     
-    -- Если нет в Character, проверяем Backpack
-    if not tool then
+    -- Если не нашли, проверяем Backpack
+    if not tool and player:FindFirstChild("Backpack") then
         local backpack = player:FindFirstChild("Backpack")
-        if backpack then
-            tool = backpack:FindFirstChild("DODGE!")
-        end
+        tool = backpack:FindFirstChild("DODGE!")
     end
     
     if not tool then 
         return false 
     end
     
-    -- НЕМЕДЛЕННЫЙ вызов remote (без задержек)
+    -- ТОЛЬКО 2-й способ вызова: UsingMoveCustom без имени (как в примере с Push)
     local success = pcall(function() 
         remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true}) 
     end)
     
-    -- Обновление времени ТОЛЬКО после успешного вызова
     if success then
         autoDodge.LastDodgeTime = currentTime
         return true
@@ -2837,6 +2840,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
