@@ -2301,41 +2301,54 @@ function MainModule.GetPlayerPosition()
 end
 
 function MainModule.ToggleNoclip(enabled)
-    if enabled then
-        -- Создаем невидимый луч, который временно отключает коллизию
-        getgenv().NoclipEnabled = true
-        
-        -- Используем Stepped вместо Heartbeat (менее заметно)
-        getgenv().NoclipConnection = RunService.Stepped:Connect(function()
-            if not getgenv().NoclipEnabled then return end
-            
-            local character = GetCharacter()
-            if not character then return end
-            
-            -- Метод через CanTouch (менее заметен для античитов)
-            for _, part in pairs(character:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    -- Временное изменение вместо постоянного
-                    part.CanCollide = false
-                    
-                    -- Добавляем задержку перед восстановлением
-                    task.spawn(function()
-                        task.wait(0.05) -- Короткая задержка
-                        if part and part.Parent then
-                            part.CanCollide = true
-                        end
-                    end)
-                end
-            end
-        end)
-    else
-        -- Отключаем
-        if getgenv().NoclipConnection then
-            getgenv().NoclipConnection:Disconnect()
-            getgenv().NoclipConnection = nil
-        end
+    if getgenv().NoclipLoop then
         getgenv().NoclipEnabled = false
+        task.wait(0.1)
+        getgenv().NoclipLoop:Disconnect()
+        getgenv().NoclipLoop = nil
+        return
     end
+    
+    if not enabled then return end
+    
+    getgenv().NoclipEnabled = true
+    
+    -- Метод "тени" - изменяем только при столкновении
+    getgenv().NoclipLoop = RunService.Stepped:Connect(function(_, deltaTime)
+        if not getgenv().NoclipEnabled then return end
+        
+        local character = GetCharacter()
+        if not character or not character:FindFirstChild("HumanoidRootPart") then 
+            return 
+        end
+        
+        local hrp = character.HumanoidRootPart
+        
+        -- Проверяем скорость - если игрок движется
+        if hrp.Velocity.Magnitude > 0.5 then
+            pcall(function()
+                local ray = Ray.new(hrp.Position, hrp.CFrame.LookVector * 4)
+                local hit = workspace:FindPartOnRayWithIgnoreList(ray, {character})
+                
+                -- Если впереди препятствие - временно отключаем коллизию
+                if hit then
+                    for _, part in pairs(character:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            local original = part.CanCollide
+                            part.CanCollide = false
+                            
+                            -- Автоматическое восстановление
+                            task.delay(0.15, function()
+                                if part and part.Parent then
+                                    part.CanCollide = original
+                                end
+                            end)
+                        end
+                    end
+                end
+            end)
+        end
+    end)
 end
 
 for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
@@ -2917,6 +2930,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
