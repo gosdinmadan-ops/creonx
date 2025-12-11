@@ -2299,51 +2299,40 @@ function MainModule.GetPlayerPosition()
 end
 
 function MainModule.ToggleNoclip(enabled)
-    getgenv().NoclipEnabled = enabled
-    
-    if getgenv().NoclipConnection then
-        getgenv().NoclipConnection:Disconnect()
-        getgenv().NoclipConnection = nil
-        getgenv().NoclipEnabled = false
-        
-        -- Восстанавливаем физические свойства
-        local character = GetCharacter()
-        if character then
-            for _, part in pairs(character:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CustomPhysicalProperties = nil -- Восстанавливаем стандартные
-                end
-            end
-        end
-    end
-    
     if enabled then
+        -- Создаем невидимый луч, который временно отключает коллизию
         getgenv().NoclipEnabled = true
         
-        -- Создаем физические свойства с почти нулевой массой
-        local noclipPhysics = PhysicalProperties.new(0.01, 0, 0, 0, 0)
-        
-        getgenv().NoclipConnection = RunService.Heartbeat:Connect(function()
+        -- Используем Stepped вместо Heartbeat (менее заметно)
+        getgenv().NoclipConnection = RunService.Stepped:Connect(function()
             if not getgenv().NoclipEnabled then return end
             
             local character = GetCharacter()
-            if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+            if not character then return end
             
-            local hrp = character.HumanoidRootPart
-            
+            -- Метод через CanTouch (менее заметен для античитов)
             for _, part in pairs(character:GetDescendants()) do
-                if part:IsA("BasePart") and part ~= hrp then
-                    local distance = (part.Position - hrp.Position).Magnitude
+                if part:IsA("BasePart") then
+                    -- Временное изменение вместо постоянного
+                    part.CanCollide = false
                     
-                    if distance <= 100 then
-                        -- Меняем физические свойства вместо CanCollide
-                        part.CustomPhysicalProperties = noclipPhysics
-                    else
-                        part.CustomPhysicalProperties = nil
-                    end
+                    -- Добавляем задержку перед восстановлением
+                    task.spawn(function()
+                        task.wait(0.05) -- Короткая задержка
+                        if part and part.Parent then
+                            part.CanCollide = true
+                        end
+                    end)
                 end
             end
         end)
+    else
+        -- Отключаем
+        if getgenv().NoclipConnection then
+            getgenv().NoclipConnection:Disconnect()
+            getgenv().NoclipConnection = nil
+        end
+        getgenv().NoclipEnabled = false
     end
 end
 
@@ -2848,6 +2837,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
