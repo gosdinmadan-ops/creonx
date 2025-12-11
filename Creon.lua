@@ -1081,7 +1081,7 @@ local function CreateDalgonaContent()
     end)
 end
 
--- HNS TAB
+-- HNS TAB (ИСПРАВЛЕННЫЙ: удалена кнопка Disable Spikes)
 local function CreateHNSContent()
     ClearContent()
     
@@ -1115,31 +1115,9 @@ local function CreateHNSContent()
     end)
     autoDodgeToggle.LayoutOrder = 3
     
-    -- Disable Spikes (кликабельная кнопка)
-    local disableSpikesBtn = CreateButton("Disable Spikes")
-    disableSpikesBtn.LayoutOrder = 4
-    disableSpikesBtn.MouseButton1Click:Connect(function()
-        if MainModule.DisableSpikes then
-            local success = MainModule.DisableSpikes(true)
-            if success then
-                disableSpikesBtn.Text = "Spikes Disabled!"
-                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-                task.wait(1)
-                disableSpikesBtn.Text = "Disable Spikes"
-                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-            else
-                disableSpikesBtn.Text = "Failed to Disable"
-                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
-                task.wait(1)
-                disableSpikesBtn.Text = "Disable Spikes"
-                disableSpikesBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-            end
-        end
-    end)
-    
     -- НОВАЯ ФУНКЦИЯ: Teleport to Hider
     local teleportToHiderBtn = CreateButton("Teleport to Hider")
-    teleportToHiderBtn.LayoutOrder = 5
+    teleportToHiderBtn.LayoutOrder = 4
     teleportToHiderBtn.MouseButton1Click:Connect(function()
         -- Функция телепортации к Hider
         local function teleportToRandomHider()
@@ -1213,7 +1191,7 @@ local function GlassBridgeToggleCallback(enabled)
     end
 end
 
--- GLASS BRIDGE TAB
+-- GLASS BRIDGE TAB (ИСПРАВЛЕННЫЙ: удален ручной AntiFall переключатель)
 local function CreateGlassBridgeContent()
     ClearContent()
     
@@ -1221,26 +1199,9 @@ local function CreateGlassBridgeContent()
     local antiBreakToggle, updateAntiBreakToggle = CreateToggle("AntiBreak", MainModule.GlassBridge.AntiBreakEnabled, GlassBridgeToggleCallback)
     antiBreakToggle.LayoutOrder = 1
     
-    -- Manual AntiFall Toggle (ON/OFF) с обновлением текста
-    local antiFallToggle, updateAntiFallToggle, antiFallTextLabel = CreateToggle("AntiFall [" .. (GlassBridgeAntiFallEnabled and "ON" or "OFF") .. "]", GlassBridgeAntiFallEnabled, function(enabled)
-        GlassBridgeAntiFallEnabled = enabled
-        if enabled then
-            if MainModule.CreateGlassBridgeAntiFall then
-                MainModule.CreateGlassBridgeAntiFall()
-                antiFallTextLabel.Text = "AntiFall [ON]"
-            end
-        else
-            if MainModule.RemoveGlassBridgeAntiFall then
-                MainModule.RemoveGlassBridgeAntiFall()
-                antiFallTextLabel.Text = "AntiFall [OFF]"
-            end
-        end
-    end)
-    antiFallToggle.LayoutOrder = 2
-    
     -- Glass ESP (кликабельная кнопка)
     local glassEspBtn = CreateButton("Glass ESP")
-    glassEspBtn.LayoutOrder = 3
+    glassEspBtn.LayoutOrder = 2
     glassEspBtn.MouseButton1Click:Connect(function()
         if MainModule.RevealGlassBridge then
             MainModule.RevealGlassBridge()
@@ -1254,7 +1215,7 @@ local function CreateGlassBridgeContent()
     
     -- Teleport to End (кликабельная кнопка)
     local tpEndBtn = CreateButton("Teleport to End")
-    tpEndBtn.LayoutOrder = 4
+    tpEndBtn.LayoutOrder = 3
     tpEndBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportToGlassBridgeEnd then
             MainModule.TeleportToGlassBridgeEnd()
