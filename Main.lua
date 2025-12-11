@@ -1383,6 +1383,8 @@ end
 
 function MainModule.ToggleZoneKill(enabled)
     MainModule.ZoneKill.Enabled = enabled
+    
+    -- Очистка всех соединений
     if MainModule.ZoneKill.AnimationConnection then
         MainModule.ZoneKill.AnimationConnection:Disconnect()
         MainModule.ZoneKill.AnimationConnection = nil
@@ -1403,78 +1405,71 @@ function MainModule.ToggleZoneKill(enabled)
     MainModule.ZoneKill.ActiveAnimation = false
     MainModule.ZoneKill.AnimationStartTime = 0
     MainModule.ZoneKill.TrackedAnimations = {}
+    
     if not enabled then
         return
     end
-    local function checkAnimations()
-        local character = GetCharacter()
-        if not character then return end
-        local humanoid = GetHumanoid(character)
+    
+    local function setupCharacter(char)
+        local humanoid = char:WaitForChild("Humanoid", 5)
         if not humanoid then return end
-        local activeTracks = humanoid:GetPlayingAnimationTracks()
-        for _, track in pairs(activeTracks) do
+        
+        MainModule.ZoneKill.AnimationConnection = humanoid.AnimationPlayed:Connect(function(track)
             if track.Animation and track.Animation.AnimationId == MainModule.ZoneKill.AnimationId then
+                -- Проверяем, что это новая анимация, которую мы еще не отслеживаем
                 if not MainModule.ZoneKill.TrackedAnimations[track] then
                     MainModule.ZoneKill.TrackedAnimations[track] = true
+                    
+                    -- Если сейчас нет активной анимации
                     if not MainModule.ZoneKill.ActiveAnimation then
                         MainModule.ZoneKill.ActiveAnimation = true
                         MainModule.ZoneKill.AnimationStartTime = tick()
-                        MainModule.ZoneKill.SavedCFrame = character:GetPrimaryPartCFrame()
-                        SafeTeleport(MainModule.ZoneKill.ZonePosition)
+                        
+                        -- СОХРАНЯЕМ исходную позицию ПЕРЕД телепортацией
+                        MainModule.ZoneKill.SavedCFrame = char:GetPrimaryPartCFrame()
+                        
+                        -- Телепортируем на указанные координаты
+                        local hrp = char:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            hrp.CFrame = CFrame.new(MainModule.ZoneKill.ZonePosition)
+                        end
+                        
+                        -- Создаем соединение для отслеживания окончания анимации
                         local stoppedConn = track.Stopped:Connect(function()
-                            task.wait(1)
-                            if MainModule.ZoneKill.ActiveAnimation and MainModule.ZoneKill.SavedCFrame then
-                                character:SetPrimaryPartCFrame(MainModule.ZoneKill.SavedCFrame)
+                            task.wait(MainModule.ZoneKill.ReturnDelay) -- Ждем 1 секунду
+                            
+                            -- Проверяем, что у нас есть сохраненная позиция
+                            if MainModule.ZoneKill.SavedCFrame and char and char.Parent then
+                                local hrp = char:FindFirstChild("HumanoidRootPart")
+                                if hrp then
+                                    -- ВОЗВРАЩАЕМСЯ на сохраненную позицию
+                                    hrp.CFrame = MainModule.ZoneKill.SavedCFrame
+                                end
+                                
+                                -- Сбрасываем состояние
                                 MainModule.ZoneKill.SavedCFrame = nil
                                 MainModule.ZoneKill.ActiveAnimation = false
-                                for trackKey, _ in pairs(MainModule.ZoneKill.TrackedAnimations) do
-                                    MainModule.ZoneKill.TrackedAnimations[trackKey] = nil
-                                end
+                                MainModule.ZoneKill.TrackedAnimations = {}
                             end
                         end)
+                        
                         table.insert(MainModule.ZoneKill.AnimationStoppedConnections, stoppedConn)
                     end
                 end
             end
-        end
-    end
-    local function setupCharacter(char)
-        local humanoid = char:WaitForChild("Humanoid")
-        MainModule.ZoneKill.AnimationConnection = humanoid.AnimationPlayed:Connect(function(track)
-            if track.Animation and track.Animation.AnimationId == MainModule.ZoneKill.AnimationId then
-                MainModule.ZoneKill.TrackedAnimations[track] = true
-                if not MainModule.ZoneKill.ActiveAnimation then
-                    MainModule.ZoneKill.ActiveAnimation = true
-                    MainModule.ZoneKill.AnimationStartTime = tick()
-                    MainModule.ZoneKill.SavedCFrame = char:GetPrimaryPartCFrame()
-                    SafeTeleport(MainModule.ZoneKill.ZonePosition)
-                    local stoppedConn = track.Stopped:Connect(function()
-                        task.wait(1)
-                        if MainModule.ZoneKill.ActiveAnimation and MainModule.ZoneKill.SavedCFrame then
-                            char:SetPrimaryPartCFrame(MainModule.ZoneKill.SavedCFrame)
-                            MainModule.ZoneKill.SavedCFrame = nil
-                            MainModule.ZoneKill.ActiveAnimation = false
-                            for trackKey, _ in pairs(MainModule.ZoneKill.TrackedAnimations) do
-                                MainModule.ZoneKill.TrackedAnimations[trackKey] = nil
-                            end
-                        end
-                    end)
-                    table.insert(MainModule.ZoneKill.AnimationStoppedConnections, stoppedConn)
-                end
-            end
         end)
     end
+    
+    -- Настройка для текущего персонажа
     local char = LocalPlayer.Character
     if char then
         setupCharacter(char)
     end
-    MainModule.ZoneKill.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(char)
-        task.wait(1)
-        setupCharacter(char)
-    end)
-    MainModule.ZoneKill.AnimationCheckConnection = RunService.Heartbeat:Connect(function()
-        if not MainModule.ZoneKill.Enabled then return end
-        checkAnimations()
+    
+    -- Настройка для нового персонажа (при смерти/возрождении)
+    MainModule.ZoneKill.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
+        task.wait(1) -- Ждем загрузки персонажа
+        setupCharacter(newChar)
     end)
 end
 
@@ -2841,6 +2836,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
