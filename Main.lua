@@ -56,7 +56,7 @@ MainModule.AutoDodge = {
 -- В начало модуля добавьте этот раздел после остальных конфигураций:
 MainModule.Fly = {
     Enabled = false,
-    Speed = 65,
+    Speed = 45,
     Connection = nil,
     BodyVelocity = nil,
     HumanoidDiedConnection = nil,
@@ -3367,6 +3367,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
