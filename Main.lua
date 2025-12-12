@@ -56,15 +56,12 @@ MainModule.AutoDodge = {
 -- В начало модуля добавьте этот раздел после остальных конфигураций:
 MainModule.Fly = {
     Enabled = false,
-    Speed = 35,
-    TiltAngle = 15,
-    OriginalPlatformStand = false,
-    FlyGyro = nil,
-    FlyVelocity = nil,
-    FlyConnection = nil,
+    Speed = 65,
+    Connection = nil,
+    BodyVelocity = nil,
+    HumanoidDiedConnection = nil,
     CharacterAddedConnection = nil,
-    LastLookVector = Vector3.new(),
-    CurrentVelocity = Vector3.new()
+    SpeedChangeConnection = nil
 }
 
 MainModule.AutoQTE = {
@@ -2885,115 +2882,30 @@ function MainModule.TeleportToHider()
     return true
 end
 
-function MainModule.GetFlightDirection()
-    local direction = Vector3.new()
-    local camera = workspace.CurrentCamera
-    
-    -- Обработка клавиатуры (PC)
-    if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-        direction = direction + Vector3.new(0, 0, -1)
-    end
-    if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-        direction = direction + Vector3.new(0, 0, 1)
-    end
-    if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-        direction = direction + Vector3.new(-1, 0, 0)
-    end
-    if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-        direction = direction + Vector3.new(1, 0, 0)
-    end
-    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-        direction = direction + Vector3.new(0, 1, 0)
-    end
-    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-        direction = direction + Vector3.new(0, -1, 0)
-    end
-    
-    -- Для мобильных устройств или если нет ввода с клавиатуры
-    if direction.Magnitude == 0 then
-        -- Летим в направлении взгляда камеры
-        direction = camera.CFrame.LookVector
-    else
-        -- Преобразуем локальное направление в мировое
-        direction = camera.CFrame:VectorToWorldSpace(direction)
-    end
-    
-    return direction.Unit
-end
-
-function MainModule.FlyLoop()
-    if not MainModule.Fly.Enabled then return end
-    
-    local character = GetCharacter()
-    if not character then return end
-    
-    local rootPart = GetRootPart(character)
-    if not rootPart then return end
-    
-    local flyGyro = rootPart:FindFirstChild("FlyGyro")
-    local flyVelocityObj = rootPart:FindFirstChild("FlyVelocity")
-    
-    if not flyGyro or not flyVelocityObj then
-        return
-    end
-    
-    -- Получаем направление полета
-    local flightDirection = MainModule.GetFlightDirection()
-    local camera = workspace.CurrentCamera
-    local currentLookVector = camera.CFrame.LookVector
-    
-    -- Плавное обновление вектора взгляда
-    MainModule.Fly.LastLookVector = MainModule.Fly.LastLookVector:Lerp(currentLookVector, 0.3)
-    
-    -- Устанавливаем ориентацию
-    flyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + MainModule.Fly.LastLookVector)
-    
-    -- Рассчитываем скорость
-    local speedMultiplier = 1
-    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-        speedMultiplier = 2  -- Ускорение
-    end
-    
-    local targetVelocity = flightDirection * MainModule.Fly.Speed * speedMultiplier
-    
-    -- Плавное изменение скорости
-    MainModule.Fly.CurrentVelocity = MainModule.Fly.CurrentVelocity:Lerp(targetVelocity, 0.2)
-    flyVelocityObj.Velocity = MainModule.Fly.CurrentVelocity
-    
-    -- Эффект наклона при движении вбок
-    local torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
-    if torso then
-        local tilt = 0
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-            tilt = MainModule.Fly.TiltAngle
-        elseif UserInputService:IsKeyDown(Enum.KeyCode.D) then
-            tilt = -MainModule.Fly.TiltAngle
-        end
-        
-        torso.CFrame = torso.CFrame * CFrame.Angles(0, 0, math.rad(tilt))
-    end
-end
-
 function MainModule.ToggleFly(enabled)
-    MainModule.Fly.Enabled = enabled
+    if enabled then
+        MainModule.EnableFlight()
+    else
+        MainModule.DisableFlight()
+    end
+end
+
+function MainModule.EnableFlight()
+    if MainModule.Fly.Enabled then return end
+    
+    MainModule.Fly.Enabled = true
     
     -- Очистка старых соединений
-    if MainModule.Fly.FlyConnection then
-        MainModule.Fly.FlyConnection:Disconnect()
-        MainModule.Fly.FlyConnection = nil
+    if MainModule.Fly.Connection then
+        MainModule.Fly.Connection:Disconnect()
+        MainModule.Fly.Connection = nil
     end
     
-    if MainModule.Fly.CharacterAddedConnection then
-        MainModule.Fly.CharacterAddedConnection:Disconnect()
-        MainModule.Fly.CharacterAddedConnection = nil
+    if MainModule.Fly.SpeedChangeConnection then
+        MainModule.Fly.SpeedChangeConnection:Disconnect()
+        MainModule.Fly.SpeedChangeConnection = nil
     end
     
-    if not enabled then
-        MainModule.DisableFly()
-        return
-    end
-    
-    -- Включение полета
     local character = GetCharacter()
     if not character then return end
     
@@ -3001,85 +2913,168 @@ function MainModule.ToggleFly(enabled)
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
     
-    -- Сохраняем оригинальное состояние
-    MainModule.Fly.OriginalPlatformStand = humanoid.PlatformStand
+    -- Удаляем старый BodyVelocity
+    local oldBV = rootPart:FindFirstChild("FlightBV")
+    if oldBV then oldBV:Destroy() end
     
-    -- Удаляем старые контроллеры
-    local oldGyro = rootPart:FindFirstChild("FlyGyro")
-    local oldVelocity = rootPart:FindFirstChild("FlyVelocity")
-    
-    if oldGyro then oldGyro:Destroy() end
-    if oldVelocity then oldVelocity:Destroy() end
-    
-    -- Создаем новые контроллеры
-    local bg = Instance.new("BodyGyro")
-    local bv = Instance.new("BodyVelocity")
-    
-    bg.Name = "FlyGyro"
-    bg.Parent = rootPart
-    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-    bg.P = 10000
-    
-    bv.Name = "FlyVelocity"
-    bv.Parent = rootPart
-    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    bv.Velocity = Vector3.new()
-    
-    -- Настройка персонажа для полета
-    humanoid.PlatformStand = true
-    
-    -- Сохраняем контроллеры
-    MainModule.Fly.FlyGyro = bg
-    MainModule.Fly.FlyVelocity = bv
-    
-    -- Запускаем цикл полета
-    MainModule.Fly.FlyConnection = RunService.Heartbeat:Connect(function(deltaTime)
-        MainModule.FlyLoop()
+    -- Запускаем цикл обновления
+    MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Fly.Enabled or not character or not character.Parent then 
+            if MainModule.Fly.Connection then
+                MainModule.Fly.Connection:Disconnect()
+                MainModule.Fly.Connection = nil
+            end
+            return 
+        end
+        
+        rootPart = GetRootPart(character)
+        if not rootPart then return end
+        
+        local Camera = workspace.CurrentCamera
+        if not Camera then return end
+        
+        local lookVector = Camera.CFrame.LookVector
+        local moveDirection = Vector3.new(0, 0, 0)
+        local isMoving = false
+        
+        -- ПК управление
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+            moveDirection = moveDirection + lookVector
+            isMoving = true
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+            moveDirection = moveDirection - lookVector
+            isMoving = true
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+            moveDirection = moveDirection - Camera.CFrame.RightVector
+            isMoving = true
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+            moveDirection = moveDirection + Camera.CFrame.RightVector
+            isMoving = true
+        end
+        
+        -- Создаем или получаем BodyVelocity
+        local bv = rootPart:FindFirstChild("FlightBV")
+        if not bv then
+            bv = Instance.new("BodyVelocity")
+            bv.Name = "FlightBV"
+            bv.MaxForce = Vector3.new(4000, 4000, 4000)
+            bv.P = 1250
+            bv.Parent = rootPart
+            MainModule.Fly.BodyVelocity = bv
+        end
+        
+        if isMoving then
+            moveDirection = moveDirection.Unit
+            bv.Velocity = moveDirection * MainModule.Fly.Speed
+        else
+            -- Удерживаем позицию, включая высоту
+            bv.Velocity = Vector3.new(0, 0, 0)
+            
+            -- Компенсируем гравитацию и другие силы
+            local currentVelocity = rootPart.Velocity
+            if currentVelocity.Y ~= 0 then
+                bv.Velocity = Vector3.new(0, -currentVelocity.Y, 0)
+            end
+        end
     end)
     
-    -- Обработчик смерти/смены персонажа
-    MainModule.Fly.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
+    -- Обработчик смерти персонажа
+    if MainModule.Fly.HumanoidDiedConnection then
+        MainModule.Fly.HumanoidDiedConnection:Disconnect()
+    end
+    MainModule.Fly.HumanoidDiedConnection = humanoid.Died:Connect(function()
+        MainModule.DisableFlight()
+    end)
+    
+    -- Переподключение при возрождении
+    if MainModule.Fly.CharacterAddedConnection then
+        MainModule.Fly.CharacterAddedConnection:Disconnect()
+    end
+    MainModule.Fly.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+        task.wait(1) -- Ждем загрузки персонажа
+        
         if MainModule.Fly.Enabled then
-            task.wait(1) -- Ждем загрузки персонажа
-            MainModule.ToggleFly(false) -- Отключаем полет
-            MainModule.ToggleFly(true)  -- Включаем снова
+            -- Если полет был активен до смерти, восстанавливаем его
+            task.wait(0.5)
+            MainModule.DisableFlight()
+            task.wait(0.1)
+            MainModule.EnableFlight()
+        end
+    end)
+    
+    -- Периодическая смена скорости для избежания паттернов
+    MainModule.Fly.SpeedChangeConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Fly.Enabled then return end
+        
+        -- Меняем скорость каждые 10-30 секунд
+        local currentTime = tick()
+        if not MainModule.Fly.LastSpeedChangeTime then
+            MainModule.Fly.LastSpeedChangeTime = currentTime
+            MainModule.Fly.NextSpeedChangeTime = currentTime + math.random(10, 30)
+        end
+        
+        if currentTime >= MainModule.Fly.NextSpeedChangeTime then
+            MainModule.Fly.Speed = math.random(75, 85)  -- Скорость вокруг 80
+            MainModule.Fly.LastSpeedChangeTime = currentTime
+            MainModule.Fly.NextSpeedChangeTime = currentTime + math.random(10, 30)
         end
     end)
 end
 
-function MainModule.DisableFly()
+function MainModule.DisableFlight()
+    if not MainModule.Fly.Enabled then return end
+    
+    MainModule.Fly.Enabled = false
+    
+    if MainModule.Fly.Connection then
+        MainModule.Fly.Connection:Disconnect()
+        MainModule.Fly.Connection = nil
+    end
+    
+    if MainModule.Fly.SpeedChangeConnection then
+        MainModule.Fly.SpeedChangeConnection:Disconnect()
+        MainModule.Fly.SpeedChangeConnection = nil
+    end
+    
+    if MainModule.Fly.HumanoidDiedConnection then
+        MainModule.Fly.HumanoidDiedConnection:Disconnect()
+        MainModule.Fly.HumanoidDiedConnection = nil
+    end
+    
+    if MainModule.Fly.CharacterAddedConnection then
+        MainModule.Fly.CharacterAddedConnection:Disconnect()
+        MainModule.Fly.CharacterAddedConnection = nil
+    end
+    
+    -- Удаляем BodyVelocity
     local character = GetCharacter()
     if character then
-        local humanoid = GetHumanoid(character)
         local rootPart = GetRootPart(character)
-        
-        if humanoid then
-            humanoid.PlatformStand = MainModule.Fly.OriginalPlatformStand
+        if rootPart then
+            local bv = rootPart:FindFirstChild("FlightBV")
+            if bv then
+                bv:Destroy()
+                MainModule.Fly.BodyVelocity = nil
+            end
         end
         
-        if rootPart then
-            local flyGyro = rootPart:FindFirstChild("FlyGyro")
-            local flyVelocity = rootPart:FindFirstChild("FlyVelocity")
-            
-            if flyGyro then flyGyro:Destroy() end
-            if flyVelocity then flyVelocity:Destroy() end
+        -- Возвращаем нормальное состояние Humanoid
+        local humanoid = GetHumanoid(character)
+        if humanoid then
+            humanoid.PlatformStand = false
         end
     end
     
-    MainModule.Fly.FlyGyro = nil
-    MainModule.Fly.FlyVelocity = nil
-    MainModule.Fly.LastLookVector = Vector3.new()
-    MainModule.Fly.CurrentVelocity = Vector3.new()
+    MainModule.Fly.LastSpeedChangeTime = nil
+    MainModule.Fly.NextSpeedChangeTime = nil
 end
 
 function MainModule.SetFlySpeed(speed)
     MainModule.Fly.Speed = speed
     return speed
-end
-
-function MainModule.SetFlyTiltAngle(angle)
-    MainModule.Fly.TiltAngle = angle
-    return angle
 end
 
 function MainModule.Cleanup()
@@ -3232,26 +3227,17 @@ function MainModule.Cleanup()
         MainModule.AutoDodge.Connection = nil
     end
 
-    if MainModule.Fly.FlyConnection then
-        MainModule.Fly.FlyConnection:Disconnect()
-        MainModule.Fly.FlyConnection = nil
-    end
-    
-    if MainModule.Fly.CharacterAddedConnection then
-        MainModule.Fly.CharacterAddedConnection:Disconnect()
-        MainModule.Fly.CharacterAddedConnection = nil
-    end
-    
-    MainModule.DisableFly()
+    MainModule.DisableFlight()
     
     MainModule.Fly.Enabled = false
-    MainModule.Fly.Speed = 35
-    MainModule.Fly.TiltAngle = 15
-    MainModule.Fly.OriginalPlatformStand = false
-    MainModule.Fly.FlyGyro = nil
-    MainModule.Fly.FlyVelocity = nil
-    MainModule.Fly.LastLookVector = Vector3.new()
-    MainModule.Fly.CurrentVelocity = Vector3.new()
+    MainModule.Fly.Speed = 65
+    MainModule.Fly.Connection = nil
+    MainModule.Fly.BodyVelocity = nil
+    MainModule.Fly.HumanoidDiedConnection = nil
+    MainModule.Fly.CharacterAddedConnection = nil
+    MainModule.Fly.SpeedChangeConnection = nil
+    MainModule.Fly.LastSpeedChangeTime = nil
+    MainModule.Fly.NextSpeedChangeTime = nil
     
     if MainModule.Noclip.Connection then
         MainModule.Noclip.Connection:Disconnect()
@@ -3381,6 +3367,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
