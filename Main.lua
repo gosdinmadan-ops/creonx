@@ -2471,7 +2471,7 @@ function MainModule.GetPlayerPosition()
     return "Не доступно"
 end
 
--- Новый Noclip
+-- Еще более агрессивная оптимизация
 function MainModule.ToggleNoclip(enabled)
     MainModule.Noclip.Enabled = enabled
     
@@ -2480,22 +2480,18 @@ function MainModule.ToggleNoclip(enabled)
         MainModule.Noclip.Connection = nil
     end
     
-    -- Восстанавливаем прозрачность всем частям
-    for part, properties in pairs(MainModule.Noclip.OriginalTransparency) do
+    -- Быстрое восстановление
+    for part in pairs(MainModule.Noclip.AffectedParts) do
         if part and part.Parent then
-            pcall(function()
-                part.Transparency = properties.Transparency
-                part.CanCollide = properties.CanCollide
-            end)
+            part.CanCollide = true
         end
     end
-    MainModule.Noclip.OriginalTransparency = {}
-    MainModule.Noclip.OriginalCanCollide = {}
     MainModule.Noclip.AffectedParts = {}
     
-    if not enabled then
-        return
-    end
+    if not enabled then return end
+    
+    -- Ограничиваем радиус при лагах
+    local actualRadius = math.min(MainModule.Noclip.CheckDistance, 10) -- Макс 10 вместо 20
     
     MainModule.Noclip.Connection = RunService.Heartbeat:Connect(function()
         if not MainModule.Noclip.Enabled then return end
@@ -2506,57 +2502,26 @@ function MainModule.ToggleNoclip(enabled)
         local rootPart = GetRootPart(character)
         if not rootPart then return end
         
-        local characterParts = {}
-        for _, part in pairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                characterParts[part] = true
-            end
-        end
+        local pos = rootPart.Position
         
-        -- Проверяем все части в радиусе 20
-        for _, part in pairs(workspace:GetDescendants()) do
-            if not part:IsA("BasePart") then continue end
-            if characterParts[part] then continue end
+        -- Только части в небольшом радиусе вокруг игрока
+        local region = Region3.new(
+            pos - Vector3.new(actualRadius, 3, actualRadius),
+            pos + Vector3.new(actualRadius, 5, actualRadius)
+        )
+        
+        local parts = workspace:FindPartsInRegion3(region, character, 100)
+        
+        -- Быстрая обработка
+        for i = 1, #parts do
+            local part = parts[i]
             
-            local distance = (part.Position - rootPart.Position).Magnitude
-            
-            if distance <= MainModule.Noclip.CheckDistance then
-                -- Проверяем, что это не пол (Y-координата ниже игрока)
-                if part.Position.Y < rootPart.Position.Y - 2 then
-                    continue
-                end
-                
-                -- Сохраняем оригинальные свойства
-                if not MainModule.Noclip.OriginalTransparency[part] then
-                    MainModule.Noclip.OriginalTransparency[part] = {
-                        Transparency = part.Transparency,
-                        CanCollide = part.CanCollide
-                    }
+            -- Пропускаем части ниже игрока (пол)
+            if part.Position.Y > pos.Y - 2 then
+                if not MainModule.Noclip.AffectedParts[part] then
                     MainModule.Noclip.AffectedParts[part] = true
+                    part.CanCollide = false
                 end
-                
-                -- Делаем часть невидимой и неколлизионной
-                part.Transparency = 1
-                part.CanCollide = false
-            else
-                -- Восстанавливаем свойства для частей вне радиуса
-                if MainModule.Noclip.AffectedParts[part] then
-                    local properties = MainModule.Noclip.OriginalTransparency[part]
-                    if properties then
-                        part.Transparency = properties.Transparency
-                        part.CanCollide = properties.CanCollide
-                    end
-                    MainModule.Noclip.AffectedParts[part] = nil
-                    MainModule.Noclip.OriginalTransparency[part] = nil
-                end
-            end
-        end
-        
-        -- Очищаем удаленные части
-        for part, _ in pairs(MainModule.Noclip.AffectedParts) do
-            if not part or not part.Parent then
-                MainModule.Noclip.AffectedParts[part] = nil
-                MainModule.Noclip.OriginalTransparency[part] = nil
             end
         end
     end)
@@ -3184,5 +3149,6 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
