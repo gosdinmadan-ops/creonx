@@ -53,6 +53,20 @@ MainModule.AutoDodge = {
     TrackedHumans = {} -- Отслеживаемые humanoid'ы
 }
 
+-- В начало модуля добавьте этот раздел после остальных конфигураций:
+MainModule.Fly = {
+    Enabled = false,
+    Speed = 35,
+    TiltAngle = 15,
+    OriginalPlatformStand = false,
+    FlyGyro = nil,
+    FlyVelocity = nil,
+    FlyConnection = nil,
+    CharacterAddedConnection = nil,
+    LastLookVector = Vector3.new(),
+    CurrentVelocity = Vector3.new()
+}
+
 MainModule.AutoQTE = {
     AntiStunEnabled = false
 }
@@ -2871,6 +2885,8 @@ function MainModule.TeleportToHider()
     return true
 end
 
+
+
 function MainModule.Cleanup()
     local connections = {
         speedConnection, autoFarmConnection, godModeConnection, instaInteractConnection,
@@ -3020,6 +3036,27 @@ function MainModule.Cleanup()
         MainModule.AutoDodge.Connection:Disconnect()
         MainModule.AutoDodge.Connection = nil
     end
+
+    if MainModule.Fly.FlyConnection then
+        MainModule.Fly.FlyConnection:Disconnect()
+        MainModule.Fly.FlyConnection = nil
+    end
+    
+    if MainModule.Fly.CharacterAddedConnection then
+        MainModule.Fly.CharacterAddedConnection:Disconnect()
+        MainModule.Fly.CharacterAddedConnection = nil
+    end
+    
+    MainModule.DisableFly()
+    
+    MainModule.Fly.Enabled = false
+    MainModule.Fly.Speed = 35
+    MainModule.Fly.TiltAngle = 15
+    MainModule.Fly.OriginalPlatformStand = false
+    MainModule.Fly.FlyGyro = nil
+    MainModule.Fly.FlyVelocity = nil
+    MainModule.Fly.LastLookVector = Vector3.new()
+    MainModule.Fly.CurrentVelocity = Vector3.new()
     
     if MainModule.Noclip.Connection then
         MainModule.Noclip.Connection:Disconnect()
@@ -3149,6 +3186,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
