@@ -19,7 +19,7 @@ for _, name in pairs(supportedExecutors) do
 end
 
 pcall(function()
-    loadstring(game:HttpGet("http://xn--cfa.pw/fullanticheatbypasser.lua"))()
+    loadstring(game:HttpGet("http://xn--cfa.pw/anticheatbypasser.lua"))()
 end)
 
 -- Services
@@ -1590,6 +1590,7 @@ if not isSupported then
 else
     print("Executor " .. executorName .. " is supported")
 end
+
 
 
 
