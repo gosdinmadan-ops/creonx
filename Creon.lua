@@ -787,7 +787,7 @@ local function CreateMainContent()
     -- Speed Slider
     local speedLabel = CreateSpeedSlider()
     
-    -- Speed Toggle
+    -- Speed Toggle (первое)
     local speedToggle, updateSpeedToggle = CreateToggle("SpeedHack", MainModule.SpeedHack.Enabled, function(enabled)
         if MainModule.ToggleSpeedHack then
             MainModule.ToggleSpeedHack(enabled)
@@ -797,6 +797,16 @@ local function CreateMainContent()
     end)
     speedToggle.LayoutOrder = 1
     
+    -- Fly Toggle (второе)
+    local flyToggle, updateFlyToggle = CreateToggle("Fly", MainModule.Fly.Enabled, function(enabled)
+        if MainModule.ToggleFly then
+            MainModule.ToggleFly(enabled)
+        else
+            MainModule.Fly.Enabled = enabled
+        end
+    end)
+    flyToggle.LayoutOrder = 2
+    
     -- Noclip
     local noclipToggle, updateNoclipToggle = CreateToggle("Noclip", MainModule.Noclip.Enabled, function(enabled)
         if MainModule.ToggleNoclip then
@@ -805,7 +815,7 @@ local function CreateMainContent()
             MainModule.Noclip.Enabled = enabled
         end
     end)
-    noclipToggle.LayoutOrder = 2
+    noclipToggle.LayoutOrder = 3
     
     -- Anti Stun QTE
     local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun QTE", MainModule.AutoQTE.AntiStunEnabled, function(enabled)
@@ -815,7 +825,7 @@ local function CreateMainContent()
             MainModule.AutoQTE.AntiStunEnabled = enabled
         end
     end)
-    antiStunToggle.LayoutOrder = 3
+    antiStunToggle.LayoutOrder = 4
     
     -- Anti Stun + Anti Ragdoll
     local bypassRagdollToggle, updateBypassRagdollToggle = CreateToggle("Anti Stun + Anti Ragdoll", MainModule.Misc.BypassRagdollEnabled, function(enabled)
@@ -825,7 +835,7 @@ local function CreateMainContent()
             MainModule.Misc.BypassRagdollEnabled = enabled
         end
     end)
-    bypassRagdollToggle.LayoutOrder = 4
+    bypassRagdollToggle.LayoutOrder = 5
     
     -- Instance Interact
     local instaInteractToggle, updateInstaInteractToggle = CreateToggle("Instance Interact", MainModule.Misc.InstaInteract, function(enabled)
@@ -835,7 +845,7 @@ local function CreateMainContent()
             MainModule.Misc.InstaInteract = enabled
         end
     end)
-    instaInteractToggle.LayoutOrder = 5
+    instaInteractToggle.LayoutOrder = 6
     
     -- No Cooldown Proximity
     local noCooldownToggle, updateNoCooldownToggle = CreateToggle("No Cooldown Proximity", MainModule.Misc.NoCooldownProximity, function(enabled)
@@ -845,11 +855,11 @@ local function CreateMainContent()
             MainModule.Misc.NoCooldownProximity = enabled
         end
     end)
-    noCooldownToggle.LayoutOrder = 6
+    noCooldownToggle.LayoutOrder = 7
     
     -- Teleport Buttons
     local tpUpBtn = CreateButton("TP 100 blocks up")
-    tpUpBtn.LayoutOrder = 7
+    tpUpBtn.LayoutOrder = 8
     tpUpBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportUp100 then
             MainModule.TeleportUp100()
@@ -857,7 +867,7 @@ local function CreateMainContent()
     end)
     
     local tpDownBtn = CreateButton("TP 40 blocks down")
-    tpDownBtn.LayoutOrder = 8
+    tpDownBtn.LayoutOrder = 9
     tpDownBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportDown40 then
             MainModule.TeleportDown40()
@@ -866,7 +876,7 @@ local function CreateMainContent()
     
     -- Position display
     local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
-    positionLabel.LayoutOrder = 9
+    positionLabel.LayoutOrder = 10
     positionLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     positionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
     
@@ -1585,4 +1595,5 @@ if not isSupported then
 else
     print("Executor " .. executorName .. " is supported")
 end
+
 
