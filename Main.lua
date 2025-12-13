@@ -180,11 +180,14 @@ MainModule.SpikesKillFeature = {
 
 MainModule.VoidKillFeature = {
     Enabled = false,
-    AnimationId = "rbxassetid://107989020363293", -- Анимация для Void Kill
-    ZonePosition = Vector3.new(-63.4, 964.6, -16.4), -- Координаты для телепорта
-    PlatformYOffset = -5, -- Смещение платформы вниз на 4 единицы
-    PlatformSize = Vector3.new(10, 1, 10), -- Средняя платформа
-    ReturnDelay = 1, -- Задержка перед возвратом
+    AnimationIds = {
+        "rbxassetid://105341857343164",
+        "rbxassetid://71619354165195"
+    },
+    ZonePosition = Vector3.new(-95.1, 964.6, 67.6),
+    PlatformYOffset = -4,
+    PlatformSize = Vector3.new(10, 1, 10),
+    ReturnDelay = 1,
     SavedCFrame = nil,
     ActiveAnimation = false,
     AnimationStartTime = 0,
@@ -194,7 +197,8 @@ MainModule.VoidKillFeature = {
     AnimationCheckConnection = nil,
     TrackedAnimations = {},
     AntiFallEnabled = false,
-    AntiFallPlatform = nil
+    AntiFallPlatform = nil,
+    AnimationIdsSet = {}
 }
 
 MainModule.ZoneKillFeature = {
@@ -1480,11 +1484,14 @@ function MainModule.DisableSpikes(remove)
     end)
 end
 
--- Исправленная функция Void Kill
+-- Инициализируем set
+for _, id in ipairs(MainModule.VoidKillFeature.AnimationIds) do
+    MainModule.VoidKillFeature.AnimationIdsSet[id] = true
+end
+
 function MainModule.ToggleVoidKill(enabled)
     MainModule.VoidKillFeature.Enabled = enabled
     
-    -- Отключаем существующие соединения
     if MainModule.VoidKillFeature.AnimationConnection then
         MainModule.VoidKillFeature.AnimationConnection:Disconnect()
         MainModule.VoidKillFeature.AnimationConnection = nil
@@ -1498,19 +1505,16 @@ function MainModule.ToggleVoidKill(enabled)
         MainModule.VoidKillFeature.AnimationCheckConnection = nil
     end
     
-    -- Очищаем список соединений анимаций
     for _, conn in ipairs(MainModule.VoidKillFeature.AnimationStoppedConnections) do
         pcall(function() conn:Disconnect() end)
     end
     MainModule.VoidKillFeature.AnimationStoppedConnections = {}
     
-    -- Сбрасываем состояние
     MainModule.VoidKillFeature.SavedCFrame = nil
     MainModule.VoidKillFeature.ActiveAnimation = false
     MainModule.VoidKillFeature.AnimationStartTime = 0
     MainModule.VoidKillFeature.TrackedAnimations = {}
     
-    -- Если функция отключается, удаляем платформу
     if not enabled then
         if MainModule.VoidKillFeature.AntiFallPlatform then
             MainModule.VoidKillFeature.AntiFallPlatform:Destroy()
@@ -1520,7 +1524,6 @@ function MainModule.ToggleVoidKill(enabled)
         return
     end
     
-    -- Функция для проверки анимаций
     local function checkAnimations()
         if not MainModule.VoidKillFeature.Enabled then return end
         
@@ -1529,155 +1532,137 @@ function MainModule.ToggleVoidKill(enabled)
         local humanoid = GetHumanoid(character)
         if not humanoid then return end
         
-        -- Проверяем текущие анимации
         local activeTracks = humanoid:GetPlayingAnimationTracks()
         for _, track in pairs(activeTracks) do
-            if track.Animation and track.Animation.AnimationId == MainModule.VoidKillFeature.AnimationId then
-                -- Проверяем, не отслеживаем ли мы уже эту анимацию
-                if not MainModule.VoidKillFeature.TrackedAnimations[track] then
-                    MainModule.VoidKillFeature.TrackedAnimations[track] = true
-                    
-                    -- Если анимация активна, но мы еще не начали обработку
-                    if not MainModule.VoidKillFeature.ActiveAnimation then
-                        MainModule.VoidKillFeature.ActiveAnimation = true
-                        MainModule.VoidKillFeature.AnimationStartTime = tick()
+            if track and track.Animation then
+                local animId = track.Animation.AnimationId
+                
+                if MainModule.VoidKillFeature.AnimationIdsSet[animId] then
+                    local trackKey = animId .. "_" .. tostring(track)
+                    if not MainModule.VoidKillFeature.TrackedAnimations[trackKey] then
+                        MainModule.VoidKillFeature.TrackedAnimations[trackKey] = true
                         
-                        -- Сохраняем текущую позицию для возврата
-                        MainModule.VoidKillFeature.SavedCFrame = character:GetPrimaryPartCFrame()
-                        
-                        -- Создаем невидимую платформу под целевыми координатами
-                        local platformPosition = MainModule.VoidKillFeature.ZonePosition + 
-                                                Vector3.new(0, MainModule.VoidKillFeature.PlatformYOffset, 0)
-                        
-                        -- Создаем платформу
-                        MainModule.VoidKillFeature.AntiFallPlatform = Instance.new("Part")
-                        MainModule.VoidKillFeature.AntiFallPlatform.Name = "VoidKillAntiFall"
-                        MainModule.VoidKillFeature.AntiFallPlatform.Size = MainModule.VoidKillFeature.PlatformSize
-                        MainModule.VoidKillFeature.AntiFallPlatform.Anchored = true
-                        MainModule.VoidKillFeature.AntiFallPlatform.CanCollide = true
-                        MainModule.VoidKillFeature.AntiFallPlatform.Transparency = 1 -- Полностью невидимая
-                        MainModule.VoidKillFeature.AntiFallPlatform.Material = Enum.Material.Plastic
-                        MainModule.VoidKillFeature.AntiFallPlatform.CastShadow = false
-                        MainModule.VoidKillFeature.AntiFallPlatform.CanQuery = false
-                        MainModule.VoidKillFeature.AntiFallPlatform.Position = platformPosition
-                        MainModule.VoidKillFeature.AntiFallPlatform.Parent = workspace
-                        
-                        -- Телепортируем на указанные координаты
-                        character:SetPrimaryPartCFrame(CFrame.new(MainModule.VoidKillFeature.ZonePosition))
-                        
-                        -- Отслеживаем окончание анимации
-                        local stoppedConn = track.Stopped:Connect(function()
-                            task.wait(MainModule.VoidKillFeature.ReturnDelay)
+                        if not MainModule.VoidKillFeature.ActiveAnimation then
+                            MainModule.VoidKillFeature.ActiveAnimation = true
+                            MainModule.VoidKillFeature.AnimationStartTime = tick()
                             
-                            -- Возвращаем на сохраненную позицию
-                            if MainModule.VoidKillFeature.SavedCFrame then
-                                character:SetPrimaryPartCFrame(MainModule.VoidKillFeature.SavedCFrame)
-                                MainModule.VoidKillFeature.SavedCFrame = nil
-                            end
+                            MainModule.VoidKillFeature.SavedCFrame = character:GetPrimaryPartCFrame()
                             
-                            -- Очищаем состояние
-                            MainModule.VoidKillFeature.ActiveAnimation = false
-                            MainModule.VoidKillFeature.TrackedAnimations = {}
+                            local platformPosition = MainModule.VoidKillFeature.ZonePosition + 
+                                                    Vector3.new(0, MainModule.VoidKillFeature.PlatformYOffset, 0)
                             
-                            -- Удаляем платформу
-                            if MainModule.VoidKillFeature.AntiFallPlatform then
-                                MainModule.VoidKillFeature.AntiFallPlatform:Destroy()
-                                MainModule.VoidKillFeature.AntiFallPlatform = nil
-                            end
-                        end)
-                        
-                        -- Добавляем соединение в список
-                        table.insert(MainModule.VoidKillFeature.AnimationStoppedConnections, stoppedConn)
+                            MainModule.VoidKillFeature.AntiFallPlatform = Instance.new("Part")
+                            MainModule.VoidKillFeature.AntiFallPlatform.Name = "VoidKillAntiFall"
+                            MainModule.VoidKillFeature.AntiFallPlatform.Size = MainModule.VoidKillFeature.PlatformSize
+                            MainModule.VoidKillFeature.AntiFallPlatform.Anchored = true
+                            MainModule.VoidKillFeature.AntiFallPlatform.CanCollide = true
+                            MainModule.VoidKillFeature.AntiFallPlatform.Transparency = 1
+                            MainModule.VoidKillFeature.AntiFallPlatform.Material = Enum.Material.Plastic
+                            MainModule.VoidKillFeature.AntiFallPlatform.CastShadow = false
+                            MainModule.VoidKillFeature.AntiFallPlatform.CanQuery = false
+                            MainModule.VoidKillFeature.AntiFallPlatform.Position = platformPosition
+                            MainModule.VoidKillFeature.AntiFallPlatform.Parent = workspace
+                            
+                            character:SetPrimaryPartCFrame(CFrame.new(MainModule.VoidKillFeature.ZonePosition))
+                            
+                            local stoppedConn = track.Stopped:Connect(function()
+                                task.wait(MainModule.VoidKillFeature.ReturnDelay)
+                                
+                                if MainModule.VoidKillFeature.SavedCFrame then
+                                    character:SetPrimaryPartCFrame(MainModule.VoidKillFeature.SavedCFrame)
+                                    MainModule.VoidKillFeature.SavedCFrame = nil
+                                end
+                                
+                                MainModule.VoidKillFeature.ActiveAnimation = false
+                                MainModule.VoidKillFeature.TrackedAnimations = {}
+                                
+                                if MainModule.VoidKillFeature.AntiFallPlatform then
+                                    MainModule.VoidKillFeature.AntiFallPlatform:Destroy()
+                                    MainModule.VoidKillFeature.AntiFallPlatform = nil
+                                end
+                            end)
+                            
+                            table.insert(MainModule.VoidKillFeature.AnimationStoppedConnections, stoppedConn)
+                        end
                     end
                 end
             end
         end
     end
     
-    -- Функция для настройки обработки анимаций персонажа
     local function setupCharacter(char)
         local humanoid = char:WaitForChild("Humanoid", 5)
         if not humanoid then return end
         
-        -- Подключаемся к событию проигрывания анимации
         MainModule.VoidKillFeature.AnimationConnection = humanoid.AnimationPlayed:Connect(function(track)
             if not MainModule.VoidKillFeature.Enabled then return end
             
-            if track.Animation and track.Animation.AnimationId == MainModule.VoidKillFeature.AnimationId then
-                -- Отмечаем анимацию как отслеживаемую
-                MainModule.VoidKillFeature.TrackedAnimations[track] = true
+            if track and track.Animation then
+                local animId = track.Animation.AnimationId
                 
-                -- Если анимация активна, но мы еще не начали обработку
-                if not MainModule.VoidKillFeature.ActiveAnimation then
-                    MainModule.VoidKillFeature.ActiveAnimation = true
-                    MainModule.VoidKillFeature.AnimationStartTime = tick()
+                if MainModule.VoidKillFeature.AnimationIdsSet[animId] then
+                    local trackKey = animId .. "_" .. tostring(track)
+                    MainModule.VoidKillFeature.TrackedAnimations[trackKey] = true
                     
-                    -- Сохраняем текущую позицию для возврата
-                    MainModule.VoidKillFeature.SavedCFrame = char:GetPrimaryPartCFrame()
-                    
-                    -- Создаем невидимую платформу под целевыми координатами
-                    local platformPosition = MainModule.VoidKillFeature.ZonePosition + 
-                                            Vector3.new(0, MainModule.VoidKillFeature.PlatformYOffset, 0)
-                    
-                    -- Создаем платформу
-                    MainModule.VoidKillFeature.AntiFallPlatform = Instance.new("Part")
-                    MainModule.VoidKillFeature.AntiFallPlatform.Name = "VoidKillAntiFall"
-                    MainModule.VoidKillFeature.AntiFallPlatform.Size = MainModule.VoidKillFeature.PlatformSize
-                    MainModule.VoidKillFeature.AntiFallPlatform.Anchored = true
-                    MainModule.VoidKillFeature.AntiFallPlatform.CanCollide = true
-                    MainModule.VoidKillFeature.AntiFallPlatform.Transparency = 1 -- Полностью невидимая
-                    MainModule.VoidKillFeature.AntiFallPlatform.Material = Enum.Material.Plastic
-                    MainModule.VoidKillFeature.AntiFallPlatform.CastShadow = false
-                    MainModule.VoidKillFeature.AntiFallPlatform.CanQuery = false
-                    MainModule.VoidKillFeature.AntiFallPlatform.Position = platformPosition
-                    MainModule.VoidKillFeature.AntiFallPlatform.Parent = workspace
-                    
-                    -- Телепортируем на указанные координаты
-                    char:SetPrimaryPartCFrame(CFrame.new(MainModule.VoidKillFeature.ZonePosition))
-                    
-                    -- Отслеживаем окончание анимации
-                    local stoppedConn = track.Stopped:Connect(function()
-                        task.wait(MainModule.VoidKillFeature.ReturnDelay)
+                    if not MainModule.VoidKillFeature.ActiveAnimation then
+                        MainModule.VoidKillFeature.ActiveAnimation = true
+                        MainModule.VoidKillFeature.AnimationStartTime = tick()
                         
-                        -- Возвращаем на сохраненную позицию
-                        if MainModule.VoidKillFeature.SavedCFrame then
-                            char:SetPrimaryPartCFrame(MainModule.VoidKillFeature.SavedCFrame)
-                            MainModule.VoidKillFeature.SavedCFrame = nil
-                        end
+                        MainModule.VoidKillFeature.SavedCFrame = char:GetPrimaryPartCFrame()
                         
-                        -- Очищаем состояние
-                        MainModule.VoidKillFeature.ActiveAnimation = false
-                        MainModule.VoidKillFeature.TrackedAnimations = {}
+                        local platformPosition = MainModule.VoidKillFeature.ZonePosition + 
+                                                Vector3.new(0, MainModule.VoidKillFeature.PlatformYOffset, 0)
                         
-                        -- Удаляем платформу
-                        if MainModule.VoidKillFeature.AntiFallPlatform then
-                            MainModule.VoidKillFeature.AntiFallPlatform:Destroy()
-                            MainModule.VoidKillFeature.AntiFallPlatform = nil
-                        end
-                    end)
-                    
-                    -- Добавляем соединение в список
-                    table.insert(MainModule.VoidKillFeature.AnimationStoppedConnections, stoppedConn)
+                        MainModule.VoidKillFeature.AntiFallPlatform = Instance.new("Part")
+                        MainModule.VoidKillFeature.AntiFallPlatform.Name = "VoidKillAntiFall"
+                        MainModule.VoidKillFeature.AntiFallPlatform.Size = MainModule.VoidKillFeature.PlatformSize
+                        MainModule.VoidKillFeature.AntiFallPlatform.Anchored = true
+                        MainModule.VoidKillFeature.AntiFallPlatform.CanCollide = true
+                        MainModule.VoidKillFeature.AntiFallPlatform.Transparency = 1
+                        MainModule.VoidKillFeature.AntiFallPlatform.Material = Enum.Material.Plastic
+                        MainModule.VoidKillFeature.AntiFallPlatform.CastShadow = false
+                        MainModule.VoidKillFeature.AntiFallPlatform.CanQuery = false
+                        MainModule.VoidKillFeature.AntiFallPlatform.Position = platformPosition
+                        MainModule.VoidKillFeature.AntiFallPlatform.Parent = workspace
+                        
+                        char:SetPrimaryPartCFrame(CFrame.new(MainModule.VoidKillFeature.ZonePosition))
+                        
+                        local stoppedConn = track.Stopped:Connect(function()
+                            task.wait(MainModule.VoidKillFeature.ReturnDelay)
+                            
+                            if MainModule.VoidKillFeature.SavedCFrame then
+                                char:SetPrimaryPartCFrame(MainModule.VoidKillFeature.SavedCFrame)
+                                MainModule.VoidKillFeature.SavedCFrame = nil
+                            end
+                            
+                            MainModule.VoidKillFeature.ActiveAnimation = false
+                            MainModule.VoidKillFeature.TrackedAnimations = {}
+                            
+                            if MainModule.VoidKillFeature.AntiFallPlatform then
+                                MainModule.VoidKillFeature.AntiFallPlatform:Destroy()
+                                MainModule.VoidKillFeature.AntiFallPlatform = nil
+                            end
+                        end)
+                        
+                        table.insert(MainModule.VoidKillFeature.AnimationStoppedConnections, stoppedConn)
+                    end
                 end
             end
         end)
     end
     
-    -- Настраиваем текущий персонаж
     local char = LocalPlayer.Character
     if char then
         task.spawn(setupCharacter, char)
     end
     
-    -- Настраиваем обработку для нового персонажа
     MainModule.VoidKillFeature.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
-        task.wait(1) -- Даем время на загрузку персонажа
+        task.wait(1)
         if MainModule.VoidKillFeature.Enabled then
             task.spawn(setupCharacter, newChar)
         end
     end)
     
-    -- Запускаем проверку анимаций
     MainModule.VoidKillFeature.AnimationCheckConnection = RunService.Heartbeat:Connect(function()
         if not MainModule.VoidKillFeature.Enabled then return end
         checkAnimations()
@@ -3590,6 +3575,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
