@@ -51,27 +51,24 @@ MainModule.AutoDodge = {
     PlayersInRange = {}
 }
 
--- FLY SYSTEM FIXED VERSION
 MainModule.Fly = {
     Enabled = false,
-    Speed = 50, -- Устанавливаем нормальную скорость 50
+    Speed = 50, -- Фиксированная скорость 50
     Connection = nil,
-    BodyPosition = nil, -- Используем BodyPosition вместо BodyVelocity для более плавного полета
-    BodyGyro = nil, -- Для контроля ориентации
+    BodyVelocity = nil,
     HumanoidDiedConnection = nil,
     CharacterAddedConnection = nil,
     SpeedChangeConnection = nil,
     WasRagdollEnabled = false,
-    AntiCheatBypass = {
-        Enabled = true,
-        SimulateGravity = true, -- Симулируем гравитацию для античита
-        GroundCheckInterval = 0.1,
-        LastGroundCheck = 0,
-        IsOnGround = false,
-        GroundRayOffset = 5, -- Смещение для проверки земли
-        SimulateWalkSpeed = 16, -- Нормальная скорость ходьбы
-        VelocitySmoothing = 0.8 -- Сглаживание скорости
-    }
+    
+    -- НОВЫЕ ПОЛЯ ДЛЯ ИСПРАВЛЕННОГО КОДА:
+    LastUpdate = 0,
+    LastPosition = Vector3.new(0, 0, 0),
+    OriginalStates = nil,
+    FakeParts = {},
+    LastGroundCheck = 0,
+    GroundCheckInterval = 2, -- Интервал проверки земли для античита
+    FakeFloorSize = Vector3.new(10, 1, 10) -- Размер fake floor
 }
 
 MainModule.AutoQTE = {
@@ -2893,6 +2890,15 @@ function MainModule.TeleportToHider()
     return true
 end
 
+-- Fly функция с улучшенной защитой и исправленным движением
+function MainModule.ToggleFly(enabled)
+    if enabled then
+        MainModule.EnableFlight()
+    else
+        MainModule.DisableFlight()
+    end
+end
+
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
@@ -2906,7 +2912,6 @@ function MainModule.EnableFlight()
     
     MainModule.Fly.Enabled = true
     
-    -- Очистка старых соединений
     if MainModule.Fly.Connection then
         MainModule.Fly.Connection:Disconnect()
         MainModule.Fly.Connection = nil
@@ -2924,48 +2929,32 @@ function MainModule.EnableFlight()
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
     
-    -- Удаляем старые силы
-    local oldBP = rootPart:FindFirstChild("FlightBP")
-    if oldBP then oldBP:Destroy() end
+    -- Сохраняем оригинальное состояние для античита
+    MainModule.Fly.OriginalStates = {
+        WalkSpeed = humanoid.WalkSpeed,
+        JumpPower = humanoid.JumpPower,
+        PlatformStand = false
+    }
     
-    local oldBG = rootPart:FindFirstChild("FlightBG")
-    if oldBG then oldBG:Destroy() end
+    -- Создаем скрытые части для обмана античита
+    MainModule.Fly.FakeParts = {}
+    local function createFakePart(position)
+        local part = Instance.new("Part")
+        part.Name = "FakeFloor"
+        part.Size = Vector3.new(4, 1, 4)
+        part.Transparency = 1
+        part.Anchored = true
+        part.CanCollide = false
+        part.Position = position - Vector3.new(0, 3, 0)
+        part.Parent = workspace
+        table.insert(MainModule.Fly.FakeParts, part)
+        return part
+    end
     
-    local oldBV = rootPart:FindFirstChild("FlightBV")
-    if oldBV then oldBV:Destroy() end
+    MainModule.Fly.LastUpdate = tick()
+    MainModule.Fly.LastPosition = rootPart.Position
     
-    -- Создаем BodyPosition для плавного движения
-    local bodyPosition = Instance.new("BodyPosition")
-    bodyPosition.Name = "FlightBP"
-    bodyPosition.MaxForce = Vector3.new(40000, 40000, 40000)
-    bodyPosition.P = 12500
-    bodyPosition.D = 500
-    bodyPosition.Parent = rootPart
-    MainModule.Fly.BodyPosition = bodyPosition
-    
-    -- Создаем BodyGyro для контроля ориентации
-    local bodyGyro = Instance.new("BodyGyro")
-    bodyGyro.Name = "FlightBG"
-    bodyGyro.MaxTorque = Vector3.new(40000, 40000, 40000)
-    bodyGyro.P = 10000
-    bodyGyro.D = 500
-    bodyGyro.CFrame = rootPart.CFrame
-    bodyGyro.Parent = rootPart
-    MainModule.Fly.BodyGyro = bodyGyro
-    
-    -- Отключаем гравитацию для персонажа
-    rootPart.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
-    
-    -- Устанавливаем начальную позицию
-    bodyPosition.Position = rootPart.Position
-    
-    -- Запоминаем начальные параметры
-    local startPosition = rootPart.Position
-    local velocity = Vector3.new(0, 0, 0)
-    local lastUpdate = tick()
-    
-    -- Основной цикл полета
-    MainModule.Fly.Connection = RunService.Heartbeat:Connect(function(deltaTime)
+    MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
         if not MainModule.Fly.Enabled or not character or not character.Parent then 
             if MainModule.Fly.Connection then
                 MainModule.Fly.Connection:Disconnect()
@@ -2980,93 +2969,159 @@ function MainModule.EnableFlight()
         local Camera = workspace.CurrentCamera
         if not Camera then return end
         
-        -- Получаем вектор движения только по горизонтали (без вертикальной составляющей)
-        local lookVector = Camera.CFrame.LookVector
-        local rightVector = Camera.CFrame.RightVector
-        
-        -- Нормализуем вектора (убираем вертикальную составляющую)
-        local horizontalLook = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
-        local horizontalRight = Vector3.new(rightVector.X, 0, rightVector.Z).Unit
-        
-        -- Инициализируем направление движения
+        -- Улучшенное управление движением (без плавания)
         local moveDirection = Vector3.new(0, 0, 0)
-        local verticalDirection = 0
+        local isMoving = false
+        local speedMultiplier = 1.0
         
-        -- Обработка ввода
+        -- Движение вперед/назад
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-            moveDirection = moveDirection + horizontalLook
+            moveDirection = moveDirection + Camera.CFrame.LookVector
+            isMoving = true
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-            moveDirection = moveDirection - horizontalLook
+            moveDirection = moveDirection - Camera.CFrame.LookVector
+            isMoving = true
         end
+        
+        -- Движение влево/вправо
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-            moveDirection = moveDirection - horizontalRight
+            moveDirection = moveDirection - Camera.CFrame.RightVector
+            isMoving = true
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-            moveDirection = moveDirection + horizontalRight
+            moveDirection = moveDirection + Camera.CFrame.RightVector
+            isMoving = true
         end
         
-        -- Вертикальное движение (Space - вверх, Ctrl - вниз)
+        -- Движение вверх/вниз
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            verticalDirection = 1
-        elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or 
-               UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
-            verticalDirection = -1
+            moveDirection = moveDirection + Vector3.new(0, 1, 0)
+            isMoving = true
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.C) then
+            moveDirection = moveDirection - Vector3.new(0, 1, 0)
+            isMoving = true
         end
         
-        -- Добавляем вертикальную составляющую
-        if verticalDirection ~= 0 then
-            moveDirection = moveDirection + Vector3.new(0, verticalDirection, 0)
+        -- Нормализуем направление и применяем скорость 50
+        if isMoving then
+            if moveDirection.Magnitude > 0 then
+                moveDirection = moveDirection.Unit
+            end
+            
+            -- Прямое движение без "плавания"
+            local targetVelocity = moveDirection * 50 -- Исправленная скорость 50
+            
+            -- Плавное применение скорости
+            local currentVelocity = rootPart.Velocity
+            local newVelocity = Vector3.new(
+                (currentVelocity.X * 0.3 + targetVelocity.X * 0.7),
+                (currentVelocity.Y * 0.3 + targetVelocity.Y * 0.7),
+                (currentVelocity.Z * 0.3 + targetVelocity.Z * 0.7)
+            )
+            
+            -- Используем BodyVelocity для более контролируемого движения
+            local bv = rootPart:FindFirstChild("FlightBV")
+            if not bv then
+                bv = Instance.new("BodyVelocity")
+                bv.Name = "FlightBV"
+                bv.MaxForce = Vector3.new(4000, 4000, 4000)
+                bv.P = 1250
+                bv.Velocity = Vector3.new(0, 0, 0)
+                bv.Parent = rootPart
+            end
+            
+            bv.Velocity = newVelocity
+            
+            -- Античит защита: обнуляем реальную velocity rootPart
+            rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            
+        else
+            -- Если не двигаемся, останавливаемся плавно
+            local bv = rootPart:FindFirstChild("FlightBV")
+            if bv then
+                local currentVelocity = rootPart.Velocity
+                local deceleratedVelocity = Vector3.new(
+                    currentVelocity.X * 0.8,
+                    currentVelocity.Y * 0.8,
+                    currentVelocity.Z * 0.8
+                )
+                
+                bv.Velocity = deceleratedVelocity
+                rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            end
         end
         
-        -- Нормализуем и умножаем на скорость
-        local targetVelocity = Vector3.new(0, 0, 0)
-        if moveDirection.Magnitude > 0 then
-            targetVelocity = moveDirection.Unit * MainModule.Fly.Speed
-        end
-        
-        -- Сглаживаем скорость для более плавного движения
+        -- Античит защита: обманываем проверки
         local currentTime = tick()
-        local timeDelta = currentTime - lastUpdate
-        lastUpdate = currentTime
-        
-        if timeDelta > 0 then
-            local smoothing = MainModule.Fly.AntiCheatBypass.VelocitySmoothing
-            velocity = velocity:Lerp(targetVelocity, smoothing * timeDelta * 10)
-        end
-        
-        -- Обновляем позицию BodyPosition
-        local bodyPos = rootPart:FindFirstChild("FlightBP")
-        if bodyPos then
-            local newPosition = rootPart.Position + velocity * deltaTime
+        if currentTime - MainModule.Fly.LastUpdate > 0.1 then
+            MainModule.Fly.LastUpdate = currentTime
             
-            -- Если есть движение, обновляем позицию
-            if velocity.Magnitude > 0 then
-                bodyPos.Position = newPosition
-            else
-                -- Если нет движения, остаемся на месте
-                bodyPos.Position = rootPart.Position
+            -- Обновляем fake floor под нами
+            for _, part in ipairs(MainModule.Fly.FakeParts) do
+                part:Destroy()
+            end
+            MainModule.Fly.FakeParts = {}
+            
+            -- Создаем невидимый пол под нами
+            createFakePart(rootPart.Position)
+            
+            -- Обманываем физику: устанавливаем небольшое смещение вместо полета
+            local delta = rootPart.Position - MainModule.Fly.LastPosition
+            if delta.Magnitude < 10 then  -- Ограничиваем скорость для античита
+                rootPart.CFrame = CFrame.new(rootPart.Position) * CFrame.new(0, 0.1, 0)
+            end
+            
+            MainModule.Fly.LastPosition = rootPart.Position
+            
+            -- Обманываем гуманода
+            if humanoid then
+                humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                humanoid.PlatformStand = false
+                humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
+                humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
+                
+                -- Скрываем эффекты полета
+                for _, child in ipairs(character:GetChildren()) do
+                    if child:IsA("BodyVelocity") and child ~= rootPart:FindFirstChild("FlightBV") then
+                        child:Destroy()
+                    end
+                end
             end
         end
-        
-        -- Обновляем BodyGyro для поддержания ориентации
-        local bodyGyro = rootPart:FindFirstChild("FlightBG")
-        if bodyGyro then
-            -- Сохраняем горизонтальную ориентацию, но смотрим в ту же сторону
-            local currentCFrame = rootPart.CFrame
-            local lookDirection = Vector3.new(currentCFrame.LookVector.X, 0, currentCFrame.LookVector.Z).Unit
-            
-            if lookDirection.Magnitude > 0 then
-                -- Создаем CFrame который смотрит в том же направлении но горизонтально
-                bodyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + lookDirection)
-            end
-        end
-        
-        -- Античит байпас: симулируем нормальное поведение
-        MainModule.UpdateAntiCheatBypass(rootPart, humanoid, velocity)
     end)
     
-    -- Обработка смерти персонажа
+    -- Античит: периодически имитируем приземление
+    MainModule.Fly.SpeedChangeConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Fly.Enabled then return end
+        
+        local rootPart = GetRootPart(character)
+        if not rootPart then return end
+        
+        -- Имитация приземления каждые 2 секунды
+        local currentTime = tick()
+        if currentTime - MainModule.Fly.LastGroundCheck > 2 then
+            MainModule.Fly.LastGroundCheck = currentTime
+            
+            -- Создаем невидимый пол
+            local fakeGround = Instance.new("Part")
+            fakeGround.Name = "FlyGround"
+            fakeGround.Size = Vector3.new(10, 1, 10)
+            fakeGround.Transparency = 1
+            fakeGround.Anchored = true
+            fakeGround.CanCollide = true
+            fakeGround.Position = rootPart.Position - Vector3.new(0, 3, 0)
+            fakeGround.Parent = workspace
+            
+            task.delay(0.5, function()
+                if fakeGround and fakeGround.Parent then
+                    fakeGround:Destroy()
+                end
+            end)
+        end
+    end)
+    
     if MainModule.Fly.HumanoidDiedConnection then
         MainModule.Fly.HumanoidDiedConnection:Disconnect()
     end
@@ -3074,7 +3129,6 @@ function MainModule.EnableFlight()
         MainModule.DisableFlight()
     end)
     
-    -- Обработка смены персонажа
     if MainModule.Fly.CharacterAddedConnection then
         MainModule.Fly.CharacterAddedConnection:Disconnect()
     end
@@ -3088,55 +3142,8 @@ function MainModule.EnableFlight()
             MainModule.EnableFlight()
         end
     end)
-end
-
-function MainModule.UpdateAntiCheatBypass(rootPart, humanoid, velocity)
-    if not MainModule.Fly.AntiCheatBypass.Enabled then return end
     
-    local currentTime = tick()
-    
-    -- Проверяем землю только периодически
-    if currentTime - MainModule.Fly.AntiCheatBypass.LastGroundCheck >= MainModule.Fly.AntiCheatBypass.GroundCheckInterval then
-        MainModule.Fly.AntiCheatBypass.LastGroundCheck = currentTime
-        
-        -- Делаем Raycast для проверки земли под нами
-        local rayOrigin = rootPart.Position - Vector3.new(0, MainModule.Fly.AntiCheatBypass.GroundRayOffset, 0)
-        local rayDirection = Vector3.new(0, -10, 0)
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-        raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
-        
-        local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-        MainModule.Fly.AntiCheatBypass.IsOnGround = result ~= nil
-        
-        -- Обновляем состояние Humanoid для античита
-        if humanoid then
-            -- Симулируем ходьбу когда есть горизонтальное движение
-            local horizontalVelocity = Vector3.new(velocity.X, 0, velocity.Z)
-            
-            if horizontalVelocity.Magnitude > 0.1 then
-                humanoid.WalkSpeed = MainModule.Fly.Speed
-                humanoid.JumpPower = 0 -- Отключаем прыжки
-                humanoid:ChangeState(Enum.HumanoidStateType.Running)
-            else
-                humanoid.WalkSpeed = MainModule.Fly.AntiCheatBypass.SimulateWalkSpeed
-                humanoid:ChangeState(Enum.HumanoidStateType.Running)
-            end
-            
-            -- Симулируем гравитацию
-            if MainModule.Fly.AntiCheatBypass.SimulateGravity then
-                humanoid.PlatformStand = false
-                
-                -- Если мы "на земле", симулируем стоячее положение
-                if MainModule.Fly.AntiCheatBypass.IsOnGround then
-                    humanoid:ChangeState(Enum.HumanoidStateType.Running)
-                else
-                    -- Иначе симулируем свободное падение
-                    humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
-                end
-            end
-        end
-    end
+    MainModule.Fly.LastGroundCheck = tick()
 end
 
 function MainModule.DisableFlight()
@@ -3144,7 +3151,6 @@ function MainModule.DisableFlight()
     
     MainModule.Fly.Enabled = false
     
-    -- Отключаем все соединения
     if MainModule.Fly.Connection then
         MainModule.Fly.Connection:Disconnect()
         MainModule.Fly.Connection = nil
@@ -3169,35 +3175,40 @@ function MainModule.DisableFlight()
     if character then
         local rootPart = GetRootPart(character)
         if rootPart then
-            -- Удаляем все физические силы
-            local bp = rootPart:FindFirstChild("FlightBP")
-            if bp then bp:Destroy() end
-            
-            local bg = rootPart:FindFirstChild("FlightBG")
-            if bg then bg:Destroy() end
-            
             local bv = rootPart:FindFirstChild("FlightBV")
-            if bv then bv:Destroy() end
+            if bv then
+                bv:Destroy()
+            end
             
-            -- Восстанавливаем физические свойства
-            rootPart.CustomPhysicalProperties = nil
-            
-            -- Сбрасываем скорость
-            rootPart.Velocity = Vector3.new(0, 0, 0)
-            rootPart.RotVelocity = Vector3.new(0, 0, 0)
+            -- Удаляем AssemblyLinearVelocity
+            rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         end
         
         local humanoid = GetHumanoid(character)
         if humanoid then
             humanoid.PlatformStand = false
-            humanoid.WalkSpeed = 16 -- Восстанавливаем нормальную скорость
-            humanoid.JumpPower = 50 -- Восстанавливаем прыжок
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
         end
     end
     
-    MainModule.Fly.BodyPosition = nil
-    MainModule.Fly.BodyGyro = nil
+    -- Удаляем fake parts
+    if MainModule.Fly.FakeParts then
+        for _, part in ipairs(MainModule.Fly.FakeParts) do
+            if part and part.Parent then
+                part:Destroy()
+            end
+        end
+        MainModule.Fly.FakeParts = {}
+    end
+    
+    -- Восстанавливаем оригинальные состояния
+    if MainModule.Fly.OriginalStates and character then
+        local humanoid = GetHumanoid(character)
+        if humanoid then
+            humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
+            humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
+        end
+    end
+    MainModule.Fly.OriginalStates = nil
     
     -- Восстанавливаем состояние AntiRagdoll если он был включен
     if MainModule.Fly.WasRagdollEnabled then
@@ -3207,35 +3218,8 @@ function MainModule.DisableFlight()
 end
 
 function MainModule.SetFlySpeed(speed)
-    MainModule.Fly.Speed = math.clamp(speed, 10, 200) -- Ограничиваем скорость от 10 до 200
-    return MainModule.Fly.Speed
-end
-
-function MainModule.ToggleFly(enabled)
-    if enabled then
-        MainModule.EnableFlight()
-    else
-        MainModule.DisableFlight()
-    end
-end
-
--- Добавляем функцию для быстрой настройки скорости
-function MainModule.SetupOptimalFlight()
-    -- Оптимальные настройки для полета
-    MainModule.Fly.Speed = 50 -- Устанавливаем скорость 50 как просили
-    MainModule.Fly.AntiCheatBypass.Enabled = true
-    MainModule.Fly.AntiCheatBypass.SimulateGravity = true
-    MainModule.Fly.AntiCheatBypass.SimulateWalkSpeed = 16
-    MainModule.Fly.AntiCheatBypass.VelocitySmoothing = 0.85
-    
-    if MainModule.Fly.Enabled then
-        -- Если полет уже включен, перезапускаем его с новыми настройками
-        MainModule.DisableFlight()
-        task.wait(0.1)
-        MainModule.EnableFlight()
-    end
-    
-    return "Оптимальные настройки полета применены: скорость 50, античит байпас включен"
+    -- Для совместимости оставляем, но используем фиксированную скорость 50
+    return 50
 end
 
 function MainModule.Cleanup()
@@ -3527,6 +3511,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
