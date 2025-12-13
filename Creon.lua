@@ -1,1 +1,2 @@
-game.Players.LocalPlayer:Kick("Script don't work")
+local player = game:GetService("Players").LocalPlayer
+player:Kick("Script don't work")
