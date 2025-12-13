@@ -45,10 +45,12 @@ MainModule.AutoDodge = {
     Connections = {},
     LastDodgeTime = 0,
     DodgeCooldown = 0.4,
-    Range = 5,
-    RangeSquared = 5 * 5,
+    Range = 4.8,
+    RangeSquared = 7 * 7,
     AnimationIdsSet = {},
-    PlayersInRange = {}
+    PlayersInRange = {},
+    LastRangeUpdate = 0,
+    RangeUpdateInterval = 0.5
 }
 
 MainModule.Fly = {
@@ -2602,33 +2604,9 @@ function MainModule.ToggleNoclip(enabled)
     end)
 end
 
--- Заполняем сет анимаций
 for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
 end
-
--- Функция для определения смотрит ли игрок на нас
-local function isPlayerLookingAtMe(player, myCharacter)
-    if not player or not player.Character or not myCharacter then return false end
-    
-    local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
-    local myRoot = myCharacter:FindFirstChild("HumanoidRootPart")
-    
-    if not (targetRoot and myRoot) then return false end
-    
-    local lookVector = targetRoot.CFrame.LookVector
-    local toMeVector = (myRoot.Position - targetRoot.Position).Unit
-    
-    local dotProduct = lookVector:Dot(toMeVector)
-    
-    return dotProduct > 0
-end
-
--- Улучшенный AutoDodge
-local globalAnimationHandler = nil
-local LocalPlayer = game:GetService("Players").LocalPlayer
-
-local processedAnimations = {}
 
 local function executeInstantDodge()
     if not MainModule.AutoDodge.Enabled then return false end
@@ -2640,28 +2618,53 @@ local function executeInstantDodge()
         return false
     end
     
-    local player = LocalPlayer
-    if not player then return false end
-    
-    local remote = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
-    if remote then
-        remote = remote:FindFirstChild("UsedTool")
+    -- Получение игрока
+    local player = nil
+    if game:GetService("Players").LocalPlayer then
+        player = game:GetService("Players").LocalPlayer
+    elseif game.Players and game.Players.LocalPlayer then
+        player = game.Players.LocalPlayer
+    else
+        return false
     end
     
-    if not remote then return false end
+    -- Поиск RemoteEvent
+    local remote = nil
+    local remoteContainer = game:GetService("ReplicatedStorage")
     
-    local tool = nil
-    local character = player.Character
-    
-    if character then
-        tool = character:FindFirstChild("DODGE!")
-        if not tool and player:FindFirstChild("Backpack") then
-            tool = player.Backpack:FindFirstChild("DODGE!")
+    if remoteContainer:FindFirstChild("Remotes") then
+        local remotesFolder = remoteContainer:FindFirstChild("Remotes")
+        if remotesFolder:FindFirstChild("UsedTool") then
+            remote = remotesFolder:FindFirstChild("UsedTool")
         end
     end
     
-    if not tool then return false end
+    if not remote then 
+        return false
+    end
     
+    -- Поиск инструмента DODGE!
+    local tool = nil
+    
+    -- Сначала проверяем Character
+    if player.Character then
+        tool = player.Character:FindFirstChild("DODGE!")
+        if tool then
+            -- Инструмент найден в Character
+        end
+    end
+    
+    -- Если не нашли, проверяем Backpack
+    if not tool and player:FindFirstChild("Backpack") then
+        local backpack = player:FindFirstChild("Backpack")
+        tool = backpack:FindFirstChild("DODGE!")
+    end
+    
+    if not tool then 
+        return false 
+    end
+    
+    -- ТОЛЬКО 2-й способ вызова: UsingMoveCustom без имени (как в примере с Push)
     local success = pcall(function() 
         remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true}) 
     end)
@@ -2674,193 +2677,150 @@ local function executeInstantDodge()
     return false
 end
 
-local function checkDistanceInstant(player)
-    if not MainModule.AutoDodge.Enabled then return false end
-    if not LocalPlayer or not LocalPlayer.Character then return false end
-    if not player or not player.Character then return false end
-    
-    local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
-    
-    if not (localRoot and targetRoot) then return false end
-    
-    local diff = targetRoot.Position - localRoot.Position
-    local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
-    
-    return distanceSquared <= MainModule.AutoDodge.RangeSquared
-end
-
-local function handleAnimationPlayed(player, track)
-    if not MainModule.AutoDodge.Enabled then return end
-    if player == LocalPlayer then return end
-    
-    local animId = track.Animation and track.Animation.AnimationId
-    if not animId then return end
-    
-    if not MainModule.AutoDodge.AnimationIdsSet[animId] then
-        return
-    end
-    
-    local animationKey = player.Name .. "_" .. animId
-    
-    if processedAnimations[animationKey] then
-        return
-    end
-    
-    processedAnimations[animationKey] = true
-    
-    task.delay(5, function()
-        processedAnimations[animationKey] = nil
-    end)
-    
-    local myCharacter = LocalPlayer.Character
-    if not myCharacter then return end
-    
-    if not isPlayerLookingAtMe(player, myCharacter) then
-        return
-    end
-    
-    if checkDistanceInstant(player) then
-        executeInstantDodge()
-    end
-end
-
-local function setupGlobalAnimationTracker()
-    if globalAnimationHandler then
-        globalAnimationHandler:Disconnect()
-    end
-    
-    globalAnimationHandler = game:GetService("Players").PlayerAdded:Connect(function(player)
-        player.CharacterAdded:Connect(function(character)
-            task.wait(0.1)
-            
-            local humanoid = character:WaitForChild("Humanoid", 1)
-            if humanoid then
-                humanoid.AnimationPlayed:Connect(function(track)
-                    handleAnimationPlayed(player, track)
-                end)
-            end
-        end)
+local function createFastAnimationHandler(player)
+    return function(track)
+        if not MainModule.AutoDodge.Enabled then return end
+        if player == LocalPlayer then return end
         
-        if player.Character then
-            task.spawn(function()
-                task.wait(0.1)
-                local humanoid = player.Character:FindFirstChild("Humanoid")
-                if humanoid then
-                    humanoid.AnimationPlayed:Connect(function(track)
-                        handleAnimationPlayed(player, track)
-                    end)
-                end
-            end)
+        local animId
+        if track and track.Animation then
+            animId = track.Animation.AnimationId
         end
-    end)
-    
-    for _, player in pairs(game:GetService("Players"):GetPlayers()) do
-        if player ~= LocalPlayer then
-            task.spawn(function()
-                if player.Character then
-                    local humanoid = player.Character:FindFirstChild("Humanoid")
-                    if humanoid then
-                        humanoid.AnimationPlayed:Connect(function(track)
-                            handleAnimationPlayed(player, track)
-                        end)
-                    end
-                end
-                
-                player.CharacterAdded:Connect(function(character)
-                    task.wait(0.1)
-                    local humanoid = character:WaitForChild("Humanoid", 1)
-                    if humanoid then
-                        humanoid.AnimationPlayed:Connect(function(track)
-                            handleAnimationPlayed(player, track)
-                        end)
-                    end
-                end)
-            end)
+        
+        if not animId then return end
+        
+        if not MainModule.AutoDodge.AnimationIdsSet[animId] then
+            return
+        end
+        
+        if not LocalPlayer or not LocalPlayer.Character then return end
+        if not player or not player.Character then return end
+        
+        local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+        
+        if not (localRoot and targetRoot) then return end
+        
+        local diff = targetRoot.Position - localRoot.Position
+        local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
+        
+        if distanceSquared <= MainModule.AutoDodge.RangeSquared then
+            executeInstantDodge()
         end
     end
 end
 
-local function updatePlayersInRangeFast()
-    if not MainModule.AutoDodge.Enabled then return {} end
+local function fastUpdatePlayersInRange()
     if not LocalPlayer or not LocalPlayer.Character then 
         MainModule.AutoDodge.PlayersInRange = {}
-        return {} 
+        return 
     end
     
     local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not localRoot then 
         MainModule.AutoDodge.PlayersInRange = {}
-        return {} 
+        return 
     end
     
     local playersInRange = {}
-    local localPos = localRoot.Position
+    local rangeSquared = MainModule.AutoDodge.RangeSquared
     
-    for _, player in pairs(game:GetService("Players"):GetPlayers()) do
+    for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
             if playerRoot then
-                local playerPos = playerRoot.Position
-                local dx = playerPos.X - localPos.X
-                local dy = playerPos.Y - localPos.Y
-                local dz = playerPos.Z - localPos.Z
-                local distanceSquared = dx * dx + dy * dy + dz * dz
+                local diff = playerRoot.Position - localRoot.Position
+                local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
                 
-                if distanceSquared <= MainModule.AutoDodge.RangeSquared then
-                    table.insert(playersInRange, {
-                        Name = player.Name,
-                        Distance = math.sqrt(distanceSquared)
-                    })
+                if distanceSquared <= rangeSquared then
+                    table.insert(playersInRange, player.Name)
                 end
             end
         end
     end
     
     MainModule.AutoDodge.PlayersInRange = playersInRange
+    
     return playersInRange
+end
+
+local function setupFastPlayerTracking(player)
+    if player == LocalPlayer then return end
+    
+    local function setupCharacter(character)
+        if not character or not MainModule.AutoDodge.Enabled then return end
+        
+        for i = 1, 2 do
+            if character:FindFirstChild("Humanoid") then break end
+            task.wait(0.1)
+        end
+        
+        local humanoid = character:FindFirstChild("Humanoid")
+        if humanoid then
+            local handler = createFastAnimationHandler(player)
+            local conn = humanoid.AnimationPlayed:Connect(handler)
+            table.insert(MainModule.AutoDodge.Connections, conn)
+        end
+    end
+    
+    if player.Character then
+        task.spawn(setupCharacter, player.Character)
+    end
+    
+    local charConn = player.CharacterAdded:Connect(function(character)
+        if MainModule.AutoDodge.Enabled then
+            task.spawn(setupCharacter, character)
+        end
+    end)
+    table.insert(MainModule.AutoDodge.Connections, charConn)
 end
 
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.AutoDodge.Enabled = false
     
-    if globalAnimationHandler then
-        globalAnimationHandler:Disconnect()
-        globalAnimationHandler = nil
-    end
-    
-    processedAnimations = {}
-    
     for _, conn in pairs(MainModule.AutoDodge.Connections) do
-        if conn then pcall(function() conn:Disconnect() end) end
+        if conn then
+            pcall(function() conn:Disconnect() end)
+        end
     end
     MainModule.AutoDodge.Connections = {}
+    
+    MainModule.AutoDodge.PlayersInRange = {}
+    MainModule.AutoDodge.LastDodgeTime = 0
+    MainModule.AutoDodge.LastRangeUpdate = 0
     
     if enabled then
         MainModule.AutoDodge.Enabled = true
         
-        setupGlobalAnimationTracker()
+        for _, player in pairs(Players:GetPlayers()) do
+            task.spawn(setupFastPlayerTracking, player)
+        end
         
-        local heartbeatConn = game:GetService("RunService").Heartbeat:Connect(function()
+        local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+            if MainModule.AutoDodge.Enabled then
+                task.spawn(setupFastPlayerTracking, player)
+            end
+        end)
+        table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
+        
+        local heartbeatConn = RunService.Heartbeat:Connect(function()
             if not MainModule.AutoDodge.Enabled then return end
-            updatePlayersInRangeFast()
+            
+            local currentTime = tick()
+            if currentTime - MainModule.AutoDodge.LastRangeUpdate > MainModule.AutoDodge.RangeUpdateInterval then
+                fastUpdatePlayersInRange()
+                MainModule.AutoDodge.LastRangeUpdate = currentTime
+            end
         end)
         table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
         
-        task.spawn(updatePlayersInRangeFast)
+        task.spawn(fastUpdatePlayersInRange)
     end
 end
 
-function MainModule.ForceInstantCheck()
-    if not MainModule.AutoDodge.Enabled then return false end
-    
-    return false
-end
-
-task.spawn(function()
-    task.wait(1)
-    if MainModule.AutoDodge.Enabled then
-        MainModule.ToggleAutoDodge(true)
+Players.PlayerRemoving:Connect(function(player)
+    if player == LocalPlayer then
+        MainModule.ToggleAutoDodge(false)
     end
 end)
 
@@ -3511,6 +3471,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
