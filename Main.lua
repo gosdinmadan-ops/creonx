@@ -1684,7 +1684,6 @@ function MainModule.ToggleVoidKill(enabled)
     end)
 end
 
--- Исправленная функция Zone Kill
 function MainModule.ToggleZoneKill(enabled)
     MainModule.ZoneKillFeature.Enabled = enabled
     
@@ -1717,10 +1716,11 @@ function MainModule.ToggleZoneKill(enabled)
     MainModule.ZoneKillFeature.ActiveAnimation = false
     MainModule.ZoneKillFeature.AnimationStartTime = 0
     MainModule.ZoneKillFeature.TrackedAnimations = {}
+    MainModule.ZoneKillFeature.LastAnimationCheckTime = 0
     
     if not enabled then return end
     
-    -- Функция для проверки анимаций Zone Kill
+    -- Функция для проверки анимаций Zone Kill (от нашего персонажа)
     local function checkAnimations()
         if not MainModule.ZoneKillFeature.Enabled then return end
         
@@ -1730,18 +1730,20 @@ function MainModule.ToggleZoneKill(enabled)
         if not humanoid then return end
         
         local currentTime = tick()
-        if currentTime - MainModule.ZoneKillFeature.LastAnimationCheckTime < 0.1 then
+        if currentTime - MainModule.ZoneKillFeature.LastAnimationCheckTime < 0.05 then
             return
         end
         MainModule.ZoneKillFeature.LastAnimationCheckTime = currentTime
         
-        -- Проверяем текущие анимации
+        -- Проверяем текущие анимации нашего персонажа
         local activeTracks = humanoid:GetPlayingAnimationTracks()
+        
         for _, track in pairs(activeTracks) do
-            if track.Animation and track.Animation.AnimationId == MainModule.ZoneKillFeature.AnimationId then
+            if track and track.Animation and track.Animation.AnimationId == MainModule.ZoneKillFeature.AnimationId then
                 -- Проверяем, не отслеживаем ли мы уже эту анимацию
-                if not MainModule.ZoneKillFeature.TrackedAnimations[track] then
-                    MainModule.ZoneKillFeature.TrackedAnimations[track] = true
+                local trackKey = tostring(track)
+                if not MainModule.ZoneKillFeature.TrackedAnimations[trackKey] then
+                    MainModule.ZoneKillFeature.TrackedAnimations[trackKey] = true
                     
                     -- Если анимация активна, но мы еще не начали обработку
                     if not MainModule.ZoneKillFeature.ActiveAnimation then
@@ -1777,18 +1779,19 @@ function MainModule.ToggleZoneKill(enabled)
         end
     end
     
-    -- Функция для настройки обработки анимаций персонажа
+    -- Функция для настройки обработки анимаций нашего персонажа
     local function setupCharacter(char)
         local humanoid = char:WaitForChild("Humanoid", 5)
         if not humanoid then return end
         
-        -- Подключаемся к событию проигрывания анимации
+        -- Подключаемся к событию проигрывания анимации нашего персонажа
         MainModule.ZoneKillFeature.AnimationConnection = humanoid.AnimationPlayed:Connect(function(track)
             if not MainModule.ZoneKillFeature.Enabled then return end
             
-            if track.Animation and track.Animation.AnimationId == MainModule.ZoneKillFeature.AnimationId then
+            if track and track.Animation and track.Animation.AnimationId == MainModule.ZoneKillFeature.AnimationId then
                 -- Отмечаем анимацию как отслеживаемую
-                MainModule.ZoneKillFeature.TrackedAnimations[track] = true
+                local trackKey = tostring(track)
+                MainModule.ZoneKillFeature.TrackedAnimations[trackKey] = true
                 
                 -- Если анимация активна, но мы еще не начали обработку
                 if not MainModule.ZoneKillFeature.ActiveAnimation then
@@ -1839,6 +1842,12 @@ function MainModule.ToggleZoneKill(enabled)
     
     -- Запускаем проверку анимаций
     MainModule.ZoneKillFeature.AnimationCheckConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.ZoneKillFeature.Enabled then return end
+        checkAnimations()
+    end)
+    
+    -- Также запускаем дополнительную проверку в RenderStepped для более быстрого реагирования
+    MainModule.ZoneKillFeature.ZoneCheckConnection = RunService.RenderStepped:Connect(function()
         if not MainModule.ZoneKillFeature.Enabled then return end
         checkAnimations()
     end)
@@ -3581,6 +3590,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
