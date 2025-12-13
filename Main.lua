@@ -181,8 +181,8 @@ MainModule.SpikesKillFeature = {
 MainModule.VoidKillFeature = {
     Enabled = false,
     AnimationId = "rbxassetid://107989020363293", -- Анимация для Void Kill
-    ZonePosition = Vector3.new(-95.1, 964.6, 67.6), -- Координаты для телепорта
-    PlatformYOffset = -1, -- Смещение платформы вниз на 4 единицы
+    ZonePosition = Vector3.new(-63.4, 964.6, -16.4), -- Координаты для телепорта
+    PlatformYOffset = -5, -- Смещение платформы вниз на 4 единицы
     PlatformSize = Vector3.new(10, 1, 10), -- Средняя платформа
     ReturnDelay = 1, -- Задержка перед возвратом
     SavedCFrame = nil,
@@ -3590,6 +3590,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
