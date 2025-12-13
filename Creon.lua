@@ -46,10 +46,16 @@ local SkySquidAntiFallEnabled = false
 -- Переменная для Zone Kill
 local ZoneKillEnabled = false
 
--- Переменные для горячей клавиши
+-- Переменные для горячей клавиши меню
 local menuHotkey = Enum.KeyCode.M
-local isChoosingKey = false
+local isChoosingMenuKey = false
 local keyChangeButton = nil
+
+-- Переменные для биндов Fly и Noclip
+local FlyHotkey = nil
+local NoclipHotkey = nil
+local isChoosingFlyKey = false
+local isChoosingNoclipKey = false
 
 -- GUI Creon X v2.5
 local ScreenGui = Instance.new("ScreenGui")
@@ -523,7 +529,126 @@ local function CreateSpeedSlider()
     return speedLabel
 end
 
--- Функция для создания кнопки изменения горячей клавиши
+-- Функция для создания кнопки бинда
+local function CreateBindButton(labelText, currentKey, onBindChanged)
+    local bindContainer = Instance.new("Frame")
+    bindContainer.Size = UDim2.new(1, -10, 0, 32)
+    bindContainer.BackgroundTransparency = 1
+    bindContainer.Parent = ContentScrolling
+    
+    local bindFrame = Instance.new("Frame")
+    bindFrame.Size = UDim2.new(1, 0, 1, 0)
+    bindFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+    bindFrame.BorderSizePixel = 0
+    bindFrame.Parent = bindContainer
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = bindFrame
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(80, 80, 100)
+    stroke.Thickness = 1.2
+    stroke.Parent = bindFrame
+    
+    -- Текст
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.6, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = labelText
+    label.TextColor3 = Color3.fromRGB(240, 240, 255)
+    label.TextSize = 12
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = bindFrame
+    
+    -- Кнопка бинда
+    local bindBtn = Instance.new("TextButton")
+    bindBtn.Size = UDim2.new(0.35, 0, 0.7, 0)
+    bindBtn.Position = UDim2.new(0.62, 0, 0.15, 0)
+    bindBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+    bindBtn.BorderSizePixel = 0
+    bindBtn.Text = currentKey and currentKey.Name or "None"
+    bindBtn.TextColor3 = Color3.fromRGB(240, 240, 255)
+    bindBtn.TextSize = 11
+    bindBtn.Font = Enum.Font.Gotham
+    bindBtn.AutoButtonColor = false
+    bindBtn.Parent = bindFrame
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 4)
+    btnCorner.Parent = bindBtn
+    
+    local btnStroke = Instance.new("UIStroke")
+    btnStroke.Color = Color3.fromRGB(80, 80, 100)
+    btnStroke.Thickness = 1
+    btnStroke.Parent = bindBtn
+    
+    -- Анимации для кнопки
+    bindBtn.MouseEnter:Connect(function()
+        TweenService:Create(bindBtn, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(75, 75, 95),
+            TextColor3 = Color3.fromRGB(255, 255, 255)
+        }):Play()
+    end)
+    
+    bindBtn.MouseLeave:Connect(function()
+        TweenService:Create(bindBtn, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(60, 60, 75),
+            TextColor3 = Color3.fromRGB(240, 240, 255)
+        }):Play()
+    end)
+    
+    -- Функция изменения бинда
+    local function startKeyChange()
+        bindBtn.Text = "Press a key..."
+        bindBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+        
+        local connection
+        connection = UIS.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                local newKey = input.KeyCode
+                bindBtn.Text = newKey.Name
+                bindBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+                
+                if onBindChanged then
+                    onBindChanged(newKey)
+                end
+                
+                if connection then
+                    connection:Disconnect()
+                end
+            elseif input.UserInputType == Enum.UserInputType.MouseButton1 or 
+                   input.UserInputType == Enum.UserInputType.MouseButton2 or
+                   input.UserInputType == Enum.UserInputType.MouseButton3 then
+                bindBtn.Text = currentKey and currentKey.Name or "None"
+                bindBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+                
+                if connection then
+                    connection:Disconnect()
+                end
+            end
+        end)
+        
+        -- Если 5 секунд не выбрали клавишу - отменяем
+        task.delay(5, function()
+            if bindBtn.Text == "Press a key..." then
+                bindBtn.Text = currentKey and currentKey.Name or "None"
+                bindBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+                
+                if connection then
+                    connection:Disconnect()
+                end
+            end
+        end)
+    end
+    
+    bindBtn.MouseButton1Click:Connect(startKeyChange)
+    
+    return bindContainer, bindBtn
+end
+
+-- Функция для создания кнопки изменения горячей клавиши меню
 local function CreateKeybindButton()
     local keybindContainer = Instance.new("Frame")
     keybindContainer.Size = UDim2.new(1, -10, 0, 32)
@@ -580,7 +705,7 @@ local function CreateKeybindButton()
     
     -- Анимации для кнопки
     changeBtn.MouseEnter:Connect(function()
-        if not isChoosingKey then
+        if not isChoosingMenuKey then
             TweenService:Create(changeBtn, TweenInfo.new(0.2), {
                 BackgroundColor3 = Color3.fromRGB(75, 75, 95),
                 TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -589,7 +714,7 @@ local function CreateKeybindButton()
     end)
     
     changeBtn.MouseLeave:Connect(function()
-        if not isChoosingKey then
+        if not isChoosingMenuKey then
             TweenService:Create(changeBtn, TweenInfo.new(0.2), {
                 BackgroundColor3 = Color3.fromRGB(60, 60, 75),
                 TextColor3 = Color3.fromRGB(240, 240, 255)
@@ -604,30 +729,29 @@ local function CreateKeybindButton()
     
     -- Функция изменения клавиши
     local function startKeyChange()
-        isChoosingKey = true
+        isChoosingMenuKey = true
         changeBtn.Text = "Press any key..."
         changeBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
         
         local connection
         connection = UIS.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Keyboard then
-                -- Сохраняем новую клавишу
                 menuHotkey = input.KeyCode
                 updateKeyText()
                 
-                -- Останавливаем выбор
-                isChoosingKey = false
+                isChoosingMenuKey = false
                 changeBtn.Text = "Change"
                 changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
                 
                 if connection then
                     connection:Disconnect()
                 end
+                
+                updateHotkeyListener()
             elseif input.UserInputType == Enum.UserInputType.MouseButton1 or 
                    input.UserInputType == Enum.UserInputType.MouseButton2 or
                    input.UserInputType == Enum.UserInputType.MouseButton3 then
-                -- Можно добавить поддержку мыши, если нужно
-                isChoosingKey = false
+                isChoosingMenuKey = false
                 changeBtn.Text = "Change"
                 changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
                 
@@ -637,10 +761,9 @@ local function CreateKeybindButton()
             end
         end)
         
-        -- Если 5 секунд не выбрали клавишу - отменяем
         task.delay(5, function()
-            if isChoosingKey then
-                isChoosingKey = false
+            if isChoosingMenuKey then
+                isChoosingMenuKey = false
                 changeBtn.Text = "Change"
                 changeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
                 
@@ -652,7 +775,7 @@ local function CreateKeybindButton()
     end
     
     changeBtn.MouseButton1Click:Connect(function()
-        if not isChoosingKey then
+        if not isChoosingMenuKey then
             startKeyChange()
         end
     end)
@@ -798,7 +921,14 @@ local function CreateMainContent()
     end)
     flyToggle.LayoutOrder = 2
     
-    -- Noclip
+    -- Fly Bind
+    local flyBindContainer, flyBindBtn = CreateBindButton("Fly Bind", FlyHotkey, function(newKey)
+        FlyHotkey = newKey
+        setupFlyListener()
+    end)
+    flyBindContainer.LayoutOrder = 3
+    
+    -- Noclip Toggle
     local noclipToggle, updateNoclipToggle = CreateToggle("Noclip", MainModule.Noclip.Enabled, function(enabled)
         if MainModule.ToggleNoclip then
             MainModule.ToggleNoclip(enabled)
@@ -806,7 +936,24 @@ local function CreateMainContent()
             MainModule.Noclip.Enabled = enabled
         end
     end)
-    noclipToggle.LayoutOrder = 3
+    noclipToggle.LayoutOrder = 4
+    
+    -- Noclip Bind
+    local noclipBindContainer, noclipBindBtn = CreateBindButton("Noclip Bind", NoclipHotkey, function(newKey)
+        NoclipHotkey = newKey
+        setupNoclipListener()
+    end)
+    noclipBindContainer.LayoutOrder = 5
+    
+    -- Free Dash (only player)
+    local freeDashToggle, updateFreeDashToggle = CreateToggle("Free Dash (only player)", MainModule.FreeDash.Enabled, function(enabled)
+        if MainModule.ToggleFreeDash then
+            MainModule.ToggleFreeDash(enabled)
+        else
+            MainModule.FreeDash.Enabled = enabled
+        end
+    end)
+    freeDashToggle.LayoutOrder = 6
     
     -- Anti Stun QTE
     local antiStunToggle, updateAntiStunToggle = CreateToggle("Anti Stun QTE", MainModule.AutoQTE.AntiStunEnabled, function(enabled)
@@ -816,7 +963,7 @@ local function CreateMainContent()
             MainModule.AutoQTE.AntiStunEnabled = enabled
         end
     end)
-    antiStunToggle.LayoutOrder = 4
+    antiStunToggle.LayoutOrder = 7
     
     -- Anti Stun + Anti Ragdoll
     local bypassRagdollToggle, updateBypassRagdollToggle = CreateToggle("Anti Stun + Anti Ragdoll", MainModule.Misc.BypassRagdollEnabled, function(enabled)
@@ -826,7 +973,7 @@ local function CreateMainContent()
             MainModule.Misc.BypassRagdollEnabled = enabled
         end
     end)
-    bypassRagdollToggle.LayoutOrder = 5
+    bypassRagdollToggle.LayoutOrder = 8
     
     -- Instance Interact
     local instaInteractToggle, updateInstaInteractToggle = CreateToggle("Instance Interact", MainModule.Misc.InstaInteract, function(enabled)
@@ -836,7 +983,7 @@ local function CreateMainContent()
             MainModule.Misc.InstaInteract = enabled
         end
     end)
-    instaInteractToggle.LayoutOrder = 6
+    instaInteractToggle.LayoutOrder = 9
     
     -- No Cooldown Proximity
     local noCooldownToggle, updateNoCooldownToggle = CreateToggle("No Cooldown Proximity", MainModule.Misc.NoCooldownProximity, function(enabled)
@@ -846,11 +993,11 @@ local function CreateMainContent()
             MainModule.Misc.NoCooldownProximity = enabled
         end
     end)
-    noCooldownToggle.LayoutOrder = 7
+    noCooldownToggle.LayoutOrder = 10
     
     -- Teleport Buttons
     local tpUpBtn = CreateButton("TP 100 blocks up")
-    tpUpBtn.LayoutOrder = 8
+    tpUpBtn.LayoutOrder = 11
     tpUpBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportUp100 then
             MainModule.TeleportUp100()
@@ -858,7 +1005,7 @@ local function CreateMainContent()
     end)
     
     local tpDownBtn = CreateButton("TP 40 blocks down")
-    tpDownBtn.LayoutOrder = 9
+    tpDownBtn.LayoutOrder = 12
     tpDownBtn.MouseButton1Click:Connect(function()
         if MainModule.TeleportDown40 then
             MainModule.TeleportDown40()
@@ -867,7 +1014,7 @@ local function CreateMainContent()
     
     -- Position display
     local positionLabel = CreateButton("Position: " .. MainModule.GetPlayerPosition())
-    positionLabel.LayoutOrder = 10
+    positionLabel.LayoutOrder = 13
     positionLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     positionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
     
@@ -1029,6 +1176,16 @@ local function CreateGuardsContent()
         end
     end)
     
+    -- Free Dash (only guard)
+    local freeDashGuardsToggle, updateFreeDashGuardsToggle = CreateToggle("Free Dash (only guard)", MainModule.FreeDashGuards.Enabled, function(enabled)
+        if MainModule.ToggleFreeDashGuards then
+            MainModule.ToggleFreeDashGuards(enabled)
+        else
+            MainModule.FreeDashGuards.Enabled = enabled
+        end
+    end)
+    freeDashGuardsToggle.LayoutOrder = 3
+    
     -- Rapid Fire
     local rapidFireToggle, updateRapidFireToggle = CreateToggle("Rapid Fire", MainModule.Guards.RapidFire, function(enabled)
         if MainModule.ToggleRapidFire then
@@ -1037,7 +1194,7 @@ local function CreateGuardsContent()
             MainModule.Guards.RapidFire = enabled
         end
     end)
-    rapidFireToggle.LayoutOrder = 3
+    rapidFireToggle.LayoutOrder = 4
     
     -- Infinite Ammo
     local infiniteAmmoToggle, updateInfiniteAmmoToggle = CreateToggle("Infinite Ammo", MainModule.Guards.InfiniteAmmo, function(enabled)
@@ -1047,7 +1204,7 @@ local function CreateGuardsContent()
             MainModule.Guards.InfiniteAmmo = enabled
         end
     end)
-    infiniteAmmoToggle.LayoutOrder = 4
+    infiniteAmmoToggle.LayoutOrder = 5
     
     -- Hitbox Expander
     local hitboxToggle, updateHitboxToggle = CreateToggle("Hitbox Expander", MainModule.Guards.HitboxExpander, function(enabled)
@@ -1057,7 +1214,7 @@ local function CreateGuardsContent()
             MainModule.Guards.HitboxExpander = enabled
         end
     end)
-    hitboxToggle.LayoutOrder = 5
+    hitboxToggle.LayoutOrder = 6
     
     -- AutoFarm
     local autoFarmToggle, updateAutoFarmToggle = CreateToggle("AutoFarm", MainModule.Guards.AutoFarm, function(enabled)
@@ -1067,7 +1224,7 @@ local function CreateGuardsContent()
             MainModule.Guards.AutoFarm = enabled
         end
     end)
-    autoFarmToggle.LayoutOrder = 6
+    autoFarmToggle.LayoutOrder = 7
 end
 
 -- DALGONA TAB
@@ -1091,7 +1248,7 @@ local function CreateDalgonaContent()
     end)
 end
 
--- HNS TAB (ИСПРАВЛЕННЫЙ: удалена кнопка Disable Spikes)
+-- HNS TAB
 local function CreateHNSContent()
     ClearContent()
     
@@ -1106,11 +1263,11 @@ local function CreateHNSContent()
     staminaToggle.LayoutOrder = 1
     
     -- Spikes Kill
-    local spikesKillToggle, updateSpikesKillToggle = CreateToggle("Spikes Kill", MainModule.SpikesKill.Enabled, function(enabled)
+    local spikesKillToggle, updateSpikesKillToggle = CreateToggle("Spikes Kill", MainModule.SpikesKillFeature.Enabled, function(enabled)
         if MainModule.ToggleSpikesKill then
             MainModule.ToggleSpikesKill(enabled)
         else
-            MainModule.SpikesKill.Enabled = enabled
+            MainModule.SpikesKillFeature.Enabled = enabled
         end
     end)
     spikesKillToggle.LayoutOrder = 2
@@ -1125,88 +1282,47 @@ local function CreateHNSContent()
     end)
     autoDodgeToggle.LayoutOrder = 3
     
-    -- НОВАЯ ФУНКЦИЯ: Teleport to Hider
+    -- Teleport to Hider
     local teleportToHiderBtn = CreateButton("Teleport to Hider")
     teleportToHiderBtn.LayoutOrder = 4
     teleportToHiderBtn.MouseButton1Click:Connect(function()
-        -- Функция телепортации к Hider
-        local function teleportToRandomHider()
-            local players = Players:GetPlayers()
-            local hiders = {}
-            
-            -- Находим всех Hiders (кроме себя)
-            for _, plr in ipairs(players) do
-                if plr ~= player then
-                    -- Проверяем, является ли игрок Hider (это пример, нужно адаптировать под вашу игру)
-                    local character = plr.Character
-                    if character then
-                        -- Здесь должна быть логика определения Hider
-                        -- Например, проверка тега или имени
-                        table.insert(hiders, plr)
-                    end
-                end
-            end
-            
-            if #hiders > 0 then
-                -- Телепортируемся к случайному Hider
-                local randomHider = hiders[math.random(1, #hiders)]
-                local hiderChar = randomHider.Character
-                
-                if hiderChar and hiderChar:FindFirstChild("HumanoidRootPart") then
-                    local playerChar = player.Character
-                    if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
-                        playerChar.HumanoidRootPart.CFrame = hiderChar.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
-                        teleportToHiderBtn.Text = "Teleported!"
-                        teleportToHiderBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-                        task.wait(1)
-                        teleportToHiderBtn.Text = "Teleport to Hider"
-                        teleportToHiderBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-                    end
-                end
-            else
-                teleportToHiderBtn.Text = "No Hiders Found"
-                teleportToHiderBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
-                task.wait(1)
-                teleportToHiderBtn.Text = "Teleport to Hider"
-                teleportToHiderBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-            end
+        if MainModule.TeleportToHider then
+            MainModule.TeleportToHider()
+        else
+            teleportToHiderBtn.Text = "Function Not Available"
+            teleportToHiderBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+            task.wait(1)
+            teleportToHiderBtn.Text = "Teleport to Hider"
+            teleportToHiderBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
         end
-        
-        -- Вызываем функцию телепортации
-        teleportToRandomHider()
     end)
 end
 
--- Функция для GLASS BRIDGE с автоматическим AntiFall при включении
-local function GlassBridgeToggleCallback(enabled)
-    if MainModule.ToggleGlassBridgeAntiBreak then
-        MainModule.ToggleGlassBridgeAntiBreak(enabled)
-    else
-        MainModule.GlassBridge.AntiBreakEnabled = enabled
-    end
-    
-    -- Автоматически создаем AntiFall платформу при включении
-    if enabled then
-        task.wait(0.3) -- Небольшая задержка
-        if MainModule.CreateGlassBridgeAntiFall then
-            MainModule.CreateGlassBridgeAntiFall()
-            GlassBridgeAntiFallEnabled = true
-        end
-    else
-        -- При выключении удаляем AntiFall платформу
-        if MainModule.RemoveGlassBridgeAntiFall then
-            MainModule.RemoveGlassBridgeAntiFall()
-            GlassBridgeAntiFallEnabled = false
-        end
-    end
-end
-
--- GLASS BRIDGE TAB (ИСПРАВЛЕННЫЙ: удален ручной AntiFall переключатель)
+-- GLASS BRIDGE TAB
 local function CreateGlassBridgeContent()
     ClearContent()
     
     -- AntiBreak (включает и AntiFall автоматически)
-    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("AntiBreak", MainModule.GlassBridge.AntiBreakEnabled, GlassBridgeToggleCallback)
+    local antiBreakToggle, updateAntiBreakToggle = CreateToggle("AntiBreak", MainModule.GlassBridge.AntiBreakEnabled, function(enabled)
+        if MainModule.ToggleGlassBridgeAntiBreak then
+            MainModule.ToggleGlassBridgeAntiBreak(enabled)
+        else
+            MainModule.GlassBridge.AntiBreakEnabled = enabled
+        end
+        
+        if enabled then
+            task.wait(0.3)
+            if MainModule.CreateGlassBridgeAntiFall then
+                MainModule.CreateGlassBridgeAntiFall()
+                GlassBridgeAntiFallEnabled = true
+            end
+        else
+            if MainModule.RemoveGlassBridgeAntiFall then
+                MainModule.RemoveGlassBridgeAntiFall()
+                GlassBridgeAntiFallEnabled = false
+            end
+        end
+    end)
     antiBreakToggle.LayoutOrder = 1
     
     -- Glass ESP (кликабельная кнопка)
@@ -1322,17 +1438,17 @@ local function CreateSkySquidContent()
     antiFallToggle.LayoutOrder = 1
     
     -- Void Kill
-    local voidKillToggle, updateVoidKillToggle = CreateToggle("Void Kill", MainModule.VoidKill.Enabled, function(enabled)
+    local voidKillToggle, updateVoidKillToggle = CreateToggle("Void Kill", MainModule.VoidKillFeature.Enabled, function(enabled)
         if MainModule.ToggleVoidKill then
             MainModule.ToggleVoidKill(enabled)
         else
-            MainModule.VoidKill.Enabled = enabled
+            MainModule.VoidKillFeature.Enabled = enabled
         end
     end)
     voidKillToggle.LayoutOrder = 2
 end
 
--- НОВАЯ ВКЛАДКА: LAST DINNER
+-- LAST DINNER TAB
 local function CreateLastDinnerContent()
     ClearContent()
     
@@ -1346,25 +1462,9 @@ local function CreateLastDinnerContent()
     local zoneKillToggle, updateZoneKillToggle, zoneKillTextLabel = CreateToggle("Zone Kill [" .. (ZoneKillEnabled and "ON" or "OFF") .. "]", ZoneKillEnabled, function(enabled)
         ZoneKillEnabled = enabled
         if enabled then
-            -- Активация Zone Kill
             zoneKillTextLabel.Text = "Zone Kill [ON]"
-            
-            -- Здесь должна быть логика активации Zone Kill
-            -- Например, убийство игроков в определенной зоне
             print("Zone Kill активирован")
-            
-            -- Пример реализации (нужно адаптировать под вашу игру):
-            local function activateZoneKill()
-                while ZoneKillEnabled do
-                    task.wait(1)
-                    -- Логика убийства в зоне
-                end
-            end
-            
-            -- Запускаем в отдельной корутине
-            coroutine.wrap(activateZoneKill)()
         else
-            -- Деактивация Zone Kill
             zoneKillTextLabel.Text = "Zone Kill [OFF]"
             print("Zone Kill деактивирован")
         end
@@ -1417,12 +1517,11 @@ local function CreateSettingsContent()
     end)
 end
 
--- Создание вкладок с обновленным списком (добавлена Last Dinner)
+-- Создание вкладок с обновленным списком
 local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Sky Squid", "Last Dinner", "Settings"}
 local tabButtons = {}
 
--- УВЕЛИЧИВАЕМ ШИРИНУ КНОПОК ВКЛАДОК
-local TAB_BUTTON_WIDTH_PERCENT = 1.00 -- 95% ширины контейнера (было 0.9)
+local TAB_BUTTON_WIDTH_PERCENT = 1.00 -- 95% ширины контейнера
 
 for i, name in pairs(tabs) do
     local buttonContainer = Instance.new("Frame")
@@ -1511,15 +1610,19 @@ for i, name in pairs(tabs) do
     button.MouseButton1Click:Connect(ActivateTab)
 end
 
--- Обновленная функция управления горячими клавишами
-local hotkeyConnection
+-- Слушатели для горячих клавиш
+local menuHotkeyConnection
+local flyHotkeyConnection
+local noclipHotkeyConnection
+
+-- Функция для настройки слушателя меню
 local function setupHotkeyListener()
-    if hotkeyConnection then
-        hotkeyConnection:Disconnect()
-        hotkeyConnection = nil
+    if menuHotkeyConnection then
+        menuHotkeyConnection:Disconnect()
+        menuHotkeyConnection = nil
     end
     
-    hotkeyConnection = UIS.InputBegan:Connect(function(input)
+    menuHotkeyConnection = UIS.InputBegan:Connect(function(input)
         if input.KeyCode == menuHotkey then
             MainFrame.Visible = not MainFrame.Visible
             if MainFrame.Visible then
@@ -1536,7 +1639,50 @@ local function setupHotkeyListener()
     end)
 end
 
--- Установка начального слушателя
+-- Функция для настройки слушателя Fly
+local function setupFlyListener()
+    if flyHotkeyConnection then
+        flyHotkeyConnection:Disconnect()
+        flyHotkeyConnection = nil
+    end
+    
+    if FlyHotkey then
+        flyHotkeyConnection = UIS.InputBegan:Connect(function(input)
+            if input.KeyCode == FlyHotkey then
+                if MainModule.ToggleFly then
+                    MainModule.ToggleFly(not MainModule.Fly.Enabled)
+                end
+            end
+        end)
+    end
+end
+
+-- Функция для настройки слушателя Noclip
+local function setupNoclipListener()
+    if noclipHotkeyConnection then
+        noclipHotkeyConnection:Disconnect()
+        noclipHotkeyConnection = nil
+    end
+    
+    if NoclipHotkey then
+        noclipHotkeyConnection = UIS.InputBegan:Connect(function(input)
+            if input.KeyCode == NoclipHotkey then
+                if MainModule.ToggleNoclip then
+                    MainModule.ToggleNoclip(not MainModule.Noclip.Enabled)
+                end
+            end
+        end)
+    end
+end
+
+-- Функция для обновления всех слушателей горячих клавиш
+local function updateHotkeyListener()
+    setupHotkeyListener()
+    setupFlyListener()
+    setupNoclipListener()
+end
+
+-- Установка начальных слушателей
 setupHotkeyListener()
 
 -- Закрытие при нажатии ESC
@@ -1562,33 +1708,25 @@ ScreenGui.AncestryChanged:Connect(function()
         if MainModule.Cleanup then
             MainModule.Cleanup()
         end
-        if hotkeyConnection then
-            hotkeyConnection:Disconnect()
+        if menuHotkeyConnection then
+            menuHotkeyConnection:Disconnect()
+        end
+        if flyHotkeyConnection then
+            flyHotkeyConnection:Disconnect()
+        end
+        if noclipHotkeyConnection then
+            noclipHotkeyConnection:Disconnect()
         end
     end
 end)
 
--- Функция для обновления слушателя горячей клавиши при изменении
-local function updateHotkeyListener()
-    setupHotkeyListener()
-end
-
--- Создаем связь между кнопкой изменения и обновлением слушателя
-if keyChangeButton then
-    keyChangeButton.MouseButton1Click:Connect(updateHotkeyListener)
-end
-
 -- Отображение сообщения о загрузке
 print("Creon X v2.5 loaded successfully")
 print("Menu Hotkey: " .. menuHotkey.Name)
+print("Fly Hotkey: " .. (FlyHotkey and FlyHotkey.Name or "Not set"))
+print("Noclip Hotkey: " .. (NoclipHotkey and NoclipHotkey.Name or "Not set"))
 if not isSupported then
     warn("Warning: Executor " .. executorName .. " is not officially supported")
 else
     print("Executor " .. executorName .. " is supported")
 end
-
-
-
-
-
-
