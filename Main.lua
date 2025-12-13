@@ -49,19 +49,20 @@ MainModule.AutoDodge = {
     RangeSquared = 5 * 5,
     AnimationIdsSet = {},
     PlayersInRange = {},
-    ActiveAttacks = {}, -- Трекер активных атак
-    TrackedHumans = {} -- Отслеживаемые humanoid'ы
+    ActiveAttacks = {},
+    TrackedHumans = {},
+    LastAnimationTimes = {}
 }
 
--- В начало модуля добавьте этот раздел после остальных конфигураций:
 MainModule.Fly = {
     Enabled = false,
-    Speed = 45,
+    Speed = 39,
     Connection = nil,
     BodyVelocity = nil,
     HumanoidDiedConnection = nil,
     CharacterAddedConnection = nil,
-    SpeedChangeConnection = nil
+    SpeedChangeConnection = nil,
+    WasRagdollEnabled = false
 }
 
 MainModule.AutoQTE = {
@@ -143,23 +144,8 @@ MainModule.SkySquid = {
     PlatformSize = Vector3.new(10000, 1, 10000)
 }
 
-MainModule.VoidKill = {
-    Enabled = false,
-    AnimationId = "rbxassetid://107989020363293",
-    ReturnDelay = 1,
-    SavedCFrame = nil,
-    ActiveAnimation = false,
-    AnimationStartTime = 0,
-    AnimationConnection = nil,
-    CharacterAddedConnection = nil,
-    AnimationStoppedConnections = {},
-    AnimationCheckConnection = nil,
-    TrackedAnimations = {},
-    AntiFallEnabled = false,
-    AntiFallPlatform = nil
-}
-
-MainModule.SpikesKill = {
+-- Изменены названия переменных для устранения конфликтов
+MainModule.SpikesKillFeature = {
     Enabled = false,
     AnimationId = "rbxassetid://105341857343164",
     SpikesPosition = nil,
@@ -184,9 +170,25 @@ MainModule.SpikesKill = {
     NoKnifeTimeout = 2
 }
 
-MainModule.ZoneKill = {
+MainModule.VoidKillFeature = {
     Enabled = false,
-    AnimationId = "rbxassetid://105341857343164",
+    AnimationId = "rbxassetid://107989020363293",
+    ReturnDelay = 1,
+    SavedCFrame = nil,
+    ActiveAnimation = false,
+    AnimationStartTime = 0,
+    AnimationConnection = nil,
+    CharacterAddedConnection = nil,
+    AnimationStoppedConnections = {},
+    AnimationCheckConnection = nil,
+    TrackedAnimations = {},
+    AntiFallEnabled = false,
+    AntiFallPlatform = nil
+}
+
+MainModule.ZoneKillFeature = {
+    Enabled = false,
+    AnimationId = "rbxassetid://113345678901234",
     ZonePosition = Vector3.new(127.2, 54.6, 4.3),
     ReturnDelay = 0.6,
     SavedCFrame = nil,
@@ -197,7 +199,8 @@ MainModule.ZoneKill = {
     AnimationStoppedConnections = {},
     AnimationCheckConnection = nil,
     TrackedAnimations = {},
-    ZoneCheckConnection = nil
+    ZoneCheckConnection = nil,
+    LastAnimationCheckTime = 0
 }
 
 MainModule.AntiTimeStop = {
@@ -211,6 +214,18 @@ MainModule.Hitbox = {
     Enabled = false,
     Connection = nil,
     ModifiedParts = {}
+}
+
+-- Новые функции
+MainModule.FreeDash = {
+    Enabled = false,
+    OriginalSprintValue = 4,
+    RemoteDestroyed = false
+}
+
+MainModule.FreeDashGuards = {
+    Enabled = false,
+    OriginalSprintValue = 4
 }
 
 MainModule.Misc = {
@@ -447,6 +462,67 @@ local function KillEnemy(enemyName)
     end)
 end
 
+-- Новые функции FreeDash и FreeDashGuards
+function MainModule.ToggleFreeDash(enabled)
+    MainModule.FreeDash.Enabled = enabled
+    
+    if enabled then
+        -- Сохраняем оригинальное значение
+        local boosts = LocalPlayer:FindFirstChild("Boosts")
+        if boosts then
+            local fasterSprint = boosts:FindFirstChild("Faster Sprint")
+            if fasterSprint then
+                MainModule.FreeDash.OriginalSprintValue = fasterSprint.Value
+                fasterSprint.Value = 5
+            end
+        end
+        
+        -- Уничтожаем Remote если существует
+        local remote = ReplicatedStorage:FindFirstChild("Remotes")
+        if remote then
+            remote = remote:FindFirstChild("DashRequest")
+            if remote then
+                remote:Destroy()
+                MainModule.FreeDash.RemoteDestroyed = true
+            end
+        end
+    else
+        -- Восстанавливаем оригинальное значение
+        local boosts = LocalPlayer:FindFirstChild("Boosts")
+        if boosts then
+            local fasterSprint = boosts:FindFirstChild("Faster Sprint")
+            if fasterSprint then
+                fasterSprint.Value = MainModule.FreeDash.OriginalSprintValue
+            end
+        end
+    end
+end
+
+function MainModule.ToggleFreeDashGuards(enabled)
+    MainModule.FreeDashGuards.Enabled = enabled
+    
+    if enabled then
+        -- Сохраняем оригинальное значение
+        local boosts = LocalPlayer:FindFirstChild("Boosts")
+        if boosts then
+            local fasterSprint = boosts:FindFirstChild("Faster Sprint")
+            if fasterSprint then
+                MainModule.FreeDashGuards.OriginalSprintValue = fasterSprint.Value
+                fasterSprint.Value = 5
+            end
+        end
+    else
+        -- Восстанавливаем оригинальное значение
+        local boosts = LocalPlayer:FindFirstChild("Boosts")
+        if boosts then
+            local fasterSprint = boosts:FindFirstChild("Faster Sprint")
+            if fasterSprint then
+                fasterSprint.Value = MainModule.FreeDashGuards.OriginalSprintValue
+            end
+        end
+    end
+end
+
 function MainModule.ToggleAntiTimeStop(enabled)
     MainModule.AntiTimeStop.Enabled = enabled
     if MainModule.AntiTimeStop.Connection then
@@ -672,6 +748,11 @@ function MainModule.TeleportToStart()
 end
 
 function MainModule.ToggleBypassRagdoll(enabled)
+    if MainModule.Fly.Enabled then
+        MainModule.Fly.WasRagdollEnabled = enabled
+        return
+    end
+    
     MainModule.Misc.BypassRagdollEnabled = enabled
     if bypassRagdollConnection then
         bypassRagdollConnection:Disconnect()
@@ -1122,12 +1203,10 @@ function MainModule.ClearESP()
     end
 end
 
--- Функция для проверки наличия ножа
 function MainModule.CheckKnifeInInventory()
     local character = GetCharacter()
     if not character then return false end
     
-    -- Проверяем инструмент в инвентаре персонажа
     for _, tool in pairs(character:GetChildren()) do
         if tool:IsA("Tool") then
             local toolName = tool.Name:lower()
@@ -1137,7 +1216,6 @@ function MainModule.CheckKnifeInInventory()
         end
     end
     
-    -- Проверяем в бэкпаке
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     if backpack then
         for _, tool in pairs(backpack:GetChildren()) do
@@ -1155,61 +1233,58 @@ end
 
 function MainModule.ToggleSpikesKill(enabled)
     if enabled then
-        -- Проверяем, есть ли нож в инвентаре
         local hasKnife = MainModule.CheckKnifeInInventory()
         if not hasKnife then
             print("[CreonX] Spikes Kill: No knife in inventory")
-            MainModule.SpikesKill.Enabled = false
+            MainModule.SpikesKillFeature.Enabled = false
             return
         end
-        MainModule.SpikesKill.HasKnife = true
+        MainModule.SpikesKillFeature.HasKnife = true
     end
     
-    MainModule.SpikesKill.Enabled = enabled
+    MainModule.SpikesKillFeature.Enabled = enabled
     
-    -- Очистка всех соединений
-    if MainModule.SpikesKill.AnimationConnection then
-        MainModule.SpikesKill.AnimationConnection:Disconnect()
-        MainModule.SpikesKill.AnimationConnection = nil
+    if MainModule.SpikesKillFeature.AnimationConnection then
+        MainModule.SpikesKillFeature.AnimationConnection:Disconnect()
+        MainModule.SpikesKillFeature.AnimationConnection = nil
     end
-    if MainModule.SpikesKill.CharacterAddedConnection then
-        MainModule.SpikesKill.CharacterAddedConnection:Disconnect()
-        MainModule.SpikesKill.CharacterAddedConnection = nil
+    if MainModule.SpikesKillFeature.CharacterAddedConnection then
+        MainModule.SpikesKillFeature.CharacterAddedConnection:Disconnect()
+        MainModule.SpikesKillFeature.CharacterAddedConnection = nil
     end
-    if MainModule.SpikesKill.SafetyCheckConnection then
-        MainModule.SpikesKill.SafetyCheckConnection:Disconnect()
-        MainModule.SpikesKill.SafetyCheckConnection = nil
+    if MainModule.SpikesKillFeature.SafetyCheckConnection then
+        MainModule.SpikesKillFeature.SafetyCheckConnection:Disconnect()
+        MainModule.SpikesKillFeature.SafetyCheckConnection = nil
     end
-    if MainModule.SpikesKill.AnimationCheckConnection then
-        MainModule.SpikesKill.AnimationCheckConnection:Disconnect()
-        MainModule.SpikesKill.AnimationCheckConnection = nil
+    if MainModule.SpikesKillFeature.AnimationCheckConnection then
+        MainModule.SpikesKillFeature.AnimationCheckConnection:Disconnect()
+        MainModule.SpikesKillFeature.AnimationCheckConnection = nil
     end
-    if MainModule.SpikesKill.KnifeCheckConnection then
-        MainModule.SpikesKill.KnifeCheckConnection:Disconnect()
-        MainModule.SpikesKill.KnifeCheckConnection = nil
+    if MainModule.SpikesKillFeature.KnifeCheckConnection then
+        MainModule.SpikesKillFeature.KnifeCheckConnection:Disconnect()
+        MainModule.SpikesKillFeature.KnifeCheckConnection = nil
     end
     
-    for _, conn in ipairs(MainModule.SpikesKill.AnimationStoppedConnections) do
+    for _, conn in ipairs(MainModule.SpikesKillFeature.AnimationStoppedConnections) do
         pcall(function() conn:Disconnect() end)
     end
-    MainModule.SpikesKill.AnimationStoppedConnections = {}
+    MainModule.SpikesKillFeature.AnimationStoppedConnections = {}
     
-    MainModule.SpikesKill.SavedCFrame = nil
-    MainModule.SpikesKill.ActiveAnimation = false
-    MainModule.SpikesKill.AnimationStartTime = 0
-    MainModule.SpikesKill.TrackedAnimations = {}
-    MainModule.SpikesKill.NoKnifeTimer = 0
+    MainModule.SpikesKillFeature.SavedCFrame = nil
+    MainModule.SpikesKillFeature.ActiveAnimation = false
+    MainModule.SpikesKillFeature.AnimationStartTime = 0
+    MainModule.SpikesKillFeature.TrackedAnimations = {}
+    MainModule.SpikesKillFeature.NoKnifeTimer = 0
     
     if not enabled then
-        MainModule.SpikesKill.HasKnife = false
+        MainModule.SpikesKillFeature.HasKnife = false
         return
     end
     
-    -- Отключаем шипы
     MainModule.DisableSpikes(true)
     
     local function checkAnimations()
-        if not MainModule.SpikesKill.Enabled or MainModule.ZoneKill.ActiveAnimation then return end
+        if not MainModule.SpikesKillFeature.Enabled then return end
         
         local character = GetCharacter()
         if not character then return end
@@ -1218,19 +1293,17 @@ function MainModule.ToggleSpikesKill(enabled)
         
         local activeTracks = humanoid:GetPlayingAnimationTracks()
         for _, track in pairs(activeTracks) do
-            if track.Animation and track.Animation.AnimationId == MainModule.SpikesKill.AnimationId then
-                if not MainModule.SpikesKill.TrackedAnimations[track] then
-                    MainModule.SpikesKill.TrackedAnimations[track] = true
+            if track.Animation and track.Animation.AnimationId == MainModule.SpikesKillFeature.AnimationId then
+                if not MainModule.SpikesKillFeature.TrackedAnimations[track] then
+                    MainModule.SpikesKillFeature.TrackedAnimations[track] = true
                     
-                    if not MainModule.SpikesKill.ActiveAnimation then
-                        MainModule.SpikesKill.ActiveAnimation = true
-                        MainModule.SpikesKill.AnimationStartTime = tick()
+                    if not MainModule.SpikesKillFeature.ActiveAnimation then
+                        MainModule.SpikesKillFeature.ActiveAnimation = true
+                        MainModule.SpikesKillFeature.AnimationStartTime = tick()
                         
-                        -- Сохраняем позицию
-                        MainModule.SpikesKill.SavedCFrame = character:GetPrimaryPartCFrame()
+                        MainModule.SpikesKillFeature.SavedCFrame = character:GetPrimaryPartCFrame()
                         
-                        -- Находим позицию шипов
-                        local spikesPosition = MainModule.SpikesKill.SpikesPosition
+                        local spikesPosition = MainModule.SpikesKillFeature.SpikesPosition
                         if not spikesPosition then
                             local hideAndSeekMap = workspace:FindFirstChild("HideAndSeekMap")
                             local killingParts = hideAndSeekMap and hideAndSeekMap:FindFirstChild("KillingParts")
@@ -1238,33 +1311,31 @@ function MainModule.ToggleSpikesKill(enabled)
                                 local firstSpike = killingParts:FindFirstChildWhichIsA("BasePart")
                                 if firstSpike then
                                     spikesPosition = firstSpike.Position
-                                    MainModule.SpikesKill.SpikesPosition = spikesPosition
+                                    MainModule.SpikesKillFeature.SpikesPosition = spikesPosition
                                 end
                             end
                         end
                         
-                        -- Телепортируем к шипам
                         if spikesPosition then
-                            local targetPosition = spikesPosition + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
+                            local targetPosition = spikesPosition + Vector3.new(0, MainModule.SpikesKillFeature.PlatformHeightOffset, 0)
                             character:SetPrimaryPartCFrame(CFrame.new(targetPosition))
                         else
                             local currentPos = character:GetPrimaryPartCFrame().Position
-                            local targetPosition = currentPos + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
+                            local targetPosition = currentPos + Vector3.new(0, MainModule.SpikesKillFeature.PlatformHeightOffset, 0)
                             character:SetPrimaryPartCFrame(CFrame.new(targetPosition))
                         end
                         
-                        -- Создаем соединение для возврата
                         local stoppedConn = track.Stopped:Connect(function()
-                            task.wait(MainModule.SpikesKill.ReturnDelay)
+                            task.wait(MainModule.SpikesKillFeature.ReturnDelay)
                             
-                            if MainModule.SpikesKill.ActiveAnimation and MainModule.SpikesKill.SavedCFrame then
-                                character:SetPrimaryPartCFrame(MainModule.SpikesKill.SavedCFrame)
-                                MainModule.SpikesKill.SavedCFrame = nil
-                                MainModule.SpikesKill.ActiveAnimation = false
-                                MainModule.SpikesKill.TrackedAnimations = {}
+                            if MainModule.SpikesKillFeature.ActiveAnimation and MainModule.SpikesKillFeature.SavedCFrame then
+                                character:SetPrimaryPartCFrame(MainModule.SpikesKillFeature.SavedCFrame)
+                                MainModule.SpikesKillFeature.SavedCFrame = nil
+                                MainModule.SpikesKillFeature.ActiveAnimation = false
+                                MainModule.SpikesKillFeature.TrackedAnimations = {}
                             end
                         end)
-                        table.insert(MainModule.SpikesKill.AnimationStoppedConnections, stoppedConn)
+                        table.insert(MainModule.SpikesKillFeature.AnimationStoppedConnections, stoppedConn)
                     end
                 end
             end
@@ -1274,21 +1345,19 @@ function MainModule.ToggleSpikesKill(enabled)
     local function setupCharacter(char)
         local humanoid = char:WaitForChild("Humanoid")
         
-        MainModule.SpikesKill.AnimationConnection = humanoid.AnimationPlayed:Connect(function(track)
-            if not MainModule.SpikesKill.Enabled or MainModule.ZoneKill.ActiveAnimation then return end
+        MainModule.SpikesKillFeature.AnimationConnection = humanoid.AnimationPlayed:Connect(function(track)
+            if not MainModule.SpikesKillFeature.Enabled then return end
             
-            if track.Animation and track.Animation.AnimationId == MainModule.SpikesKill.AnimationId then
-                MainModule.SpikesKill.TrackedAnimations[track] = true
+            if track.Animation and track.Animation.AnimationId == MainModule.SpikesKillFeature.AnimationId then
+                MainModule.SpikesKillFeature.TrackedAnimations[track] = true
                 
-                if not MainModule.SpikesKill.ActiveAnimation then
-                    MainModule.SpikesKill.ActiveAnimation = true
-                    MainModule.SpikesKill.AnimationStartTime = tick()
+                if not MainModule.SpikesKillFeature.ActiveAnimation then
+                    MainModule.SpikesKillFeature.ActiveAnimation = true
+                    MainModule.SpikesKillFeature.AnimationStartTime = tick()
                     
-                    -- Сохраняем позицию
-                    MainModule.SpikesKill.SavedCFrame = char:GetPrimaryPartCFrame()
+                    MainModule.SpikesKillFeature.SavedCFrame = char:GetPrimaryPartCFrame()
                     
-                    -- Находим позицию шипов
-                    local spikesPosition = MainModule.SpikesKill.SpikesPosition
+                    local spikesPosition = MainModule.SpikesKillFeature.SpikesPosition
                     if not spikesPosition then
                         local hideAndSeekMap = workspace:FindFirstChild("HideAndSeekMap")
                         local killingParts = hideAndSeekMap and hideAndSeekMap:FindFirstChild("KillingParts")
@@ -1296,83 +1365,76 @@ function MainModule.ToggleSpikesKill(enabled)
                             local firstSpike = killingParts:FindFirstChildWhichIsA("BasePart")
                             if firstSpike then
                                 spikesPosition = firstSpike.Position
-                                MainModule.SpikesKill.SpikesPosition = spikesPosition
+                                MainModule.SpikesKillFeature.SpikesPosition = spikesPosition
                             end
                         end
                     end
                     
-                    -- Телепортируем к шипам
                     if spikesPosition then
-                        local targetPosition = spikesPosition + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
+                        local targetPosition = spikesPosition + Vector3.new(0, MainModule.SpikesKillFeature.PlatformHeightOffset, 0)
                         char:SetPrimaryPartCFrame(CFrame.new(targetPosition))
                     else
                         local currentPos = char:GetPrimaryPartCFrame().Position
-                        local targetPosition = currentPos + Vector3.new(0, MainModule.SpikesKill.PlatformHeightOffset, 0)
+                        local targetPosition = currentPos + Vector3.new(0, MainModule.SpikesKillFeature.PlatformHeightOffset, 0)
                         char:SetPrimaryPartCFrame(CFrame.new(targetPosition))
                     end
                     
-                    -- Создаем соединение для возврата
                     local stoppedConn = track.Stopped:Connect(function()
-                        task.wait(MainModule.SpikesKill.ReturnDelay)
+                        task.wait(MainModule.SpikesKillFeature.ReturnDelay)
                         
-                        if MainModule.SpikesKill.SavedCFrame then
-                            char:SetPrimaryPartCFrame(MainModule.SpikesKill.SavedCFrame)
-                            MainModule.SpikesKill.SavedCFrame = nil
-                            MainModule.SpikesKill.ActiveAnimation = false
-                            MainModule.SpikesKill.TrackedAnimations = {}
+                        if MainModule.SpikesKillFeature.SavedCFrame then
+                            char:SetPrimaryPartCFrame(MainModule.SpikesKillFeature.SavedCFrame)
+                            MainModule.SpikesKillFeature.SavedCFrame = nil
+                            MainModule.SpikesKillFeature.ActiveAnimation = false
+                            MainModule.SpikesKillFeature.TrackedAnimations = {}
                         end
                     end)
-                    table.insert(MainModule.SpikesKill.AnimationStoppedConnections, stoppedConn)
+                    table.insert(MainModule.SpikesKillFeature.AnimationStoppedConnections, stoppedConn)
                 end
             end
         end)
     end
     
-    -- Настройка для текущего персонажа
     local char = LocalPlayer.Character
     if char then
         setupCharacter(char)
     end
     
-    -- Настройка для нового персонажа
-    MainModule.SpikesKill.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
+    MainModule.SpikesKillFeature.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
         task.wait(1)
         setupCharacter(newChar)
     end)
     
-    -- Проверка анимаций
-    MainModule.SpikesKill.AnimationCheckConnection = RunService.Heartbeat:Connect(function()
-        if not MainModule.SpikesKill.Enabled then return end
+    MainModule.SpikesKillFeature.AnimationCheckConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.SpikesKillFeature.Enabled then return end
         checkAnimations()
     end)
     
-    -- Проверка безопасности
-    MainModule.SpikesKill.SafetyCheckConnection = RunService.Heartbeat:Connect(function()
-        if not MainModule.SpikesKill.ActiveAnimation then return end
-        if tick() - MainModule.SpikesKill.AnimationStartTime >= 10 then
-            MainModule.SpikesKill.ActiveAnimation = false
+    MainModule.SpikesKillFeature.SafetyCheckConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.SpikesKillFeature.ActiveAnimation then return end
+        if tick() - MainModule.SpikesKillFeature.AnimationStartTime >= 10 then
+            MainModule.SpikesKillFeature.ActiveAnimation = false
         end
     end)
     
-    -- Проверка наличия ножа
-    MainModule.SpikesKill.KnifeCheckConnection = RunService.Heartbeat:Connect(function()
-        if not MainModule.SpikesKill.Enabled then return end
+    MainModule.SpikesKillFeature.KnifeCheckConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.SpikesKillFeature.Enabled then return end
         
         local currentTime = tick()
-        if currentTime - MainModule.SpikesKill.LastKnifeCheckTime < MainModule.SpikesKill.KnifeCheckCooldown then
+        if currentTime - MainModule.SpikesKillFeature.LastKnifeCheckTime < MainModule.SpikesKillFeature.KnifeCheckCooldown then
             return
         end
-        MainModule.SpikesKill.LastKnifeCheckTime = currentTime
+        MainModule.SpikesKillFeature.LastKnifeCheckTime = currentTime
         
         local hasKnife = MainModule.CheckKnifeInInventory()
         
         if hasKnife then
-            MainModule.SpikesKill.HasKnife = true
-            MainModule.SpikesKill.NoKnifeTimer = 0
+            MainModule.SpikesKillFeature.HasKnife = true
+            MainModule.SpikesKillFeature.NoKnifeTimer = 0
         else
-            MainModule.SpikesKill.NoKnifeTimer = MainModule.SpikesKill.NoKnifeTimer + MainModule.SpikesKill.KnifeCheckCooldown
+            MainModule.SpikesKillFeature.NoKnifeTimer = MainModule.SpikesKillFeature.NoKnifeTimer + MainModule.SpikesKillFeature.KnifeCheckCooldown
             
-            if MainModule.SpikesKill.NoKnifeTimer >= MainModule.SpikesKill.NoKnifeTimeout then
+            if MainModule.SpikesKillFeature.NoKnifeTimer >= MainModule.SpikesKillFeature.NoKnifeTimeout then
                 print("[CreonX] Spikes Kill: Knife lost, disabling...")
                 MainModule.ToggleSpikesKill(false)
             end
@@ -1388,18 +1450,18 @@ function MainModule.DisableSpikes(remove)
             return false
         end
         if remove then
-            MainModule.SpikesKill.OriginalSpikes = {}
-            MainModule.SpikesKill.SpikesPosition = nil
+            MainModule.SpikesKillFeature.OriginalSpikes = {}
+            MainModule.SpikesKillFeature.SpikesPosition = nil
             for _, spike in pairs(killingParts:GetChildren()) do
                 if spike:IsA("BasePart") then
-                    table.insert(MainModule.SpikesKill.OriginalSpikes, spike:Clone())
-                    if not MainModule.SpikesKill.SpikesPosition then
-                        MainModule.SpikesKill.SpikesPosition = spike.Position
+                    table.insert(MainModule.SpikesKillFeature.OriginalSpikes, spike:Clone())
+                    if not MainModule.SpikesKillFeature.SpikesPosition then
+                        MainModule.SpikesKillFeature.SpikesPosition = spike.Position
                     end
                     spike:Destroy()
                 end
             end
-            MainModule.SpikesKill.SpikesRemoved = true
+            MainModule.SpikesKillFeature.SpikesRemoved = true
             return true
         else
             return true
@@ -1408,184 +1470,207 @@ function MainModule.DisableSpikes(remove)
 end
 
 function MainModule.ToggleVoidKill(enabled)
-    MainModule.VoidKill.Enabled = enabled
-    if MainModule.VoidKill.AnimationConnection then
-        MainModule.VoidKill.AnimationConnection:Disconnect()
-        MainModule.VoidKill.AnimationConnection = nil
+    MainModule.VoidKillFeature.Enabled = enabled
+    
+    if MainModule.VoidKillFeature.AnimationConnection then
+        MainModule.VoidKillFeature.AnimationConnection:Disconnect()
+        MainModule.VoidKillFeature.AnimationConnection = nil
     end
-    if MainModule.VoidKill.CharacterAddedConnection then
-        MainModule.VoidKill.CharacterAddedConnection:Disconnect()
-        MainModule.VoidKill.CharacterAddedConnection = nil
+    if MainModule.VoidKillFeature.CharacterAddedConnection then
+        MainModule.VoidKillFeature.CharacterAddedConnection:Disconnect()
+        MainModule.VoidKillFeature.CharacterAddedConnection = nil
     end
-    if MainModule.VoidKill.AnimationCheckConnection then
-        MainModule.VoidKill.AnimationCheckConnection:Disconnect()
-        MainModule.VoidKill.AnimationCheckConnection = nil
+    if MainModule.VoidKillFeature.AnimationCheckConnection then
+        MainModule.VoidKillFeature.AnimationCheckConnection:Disconnect()
+        MainModule.VoidKillFeature.AnimationCheckConnection = nil
     end
-    for _, conn in ipairs(MainModule.VoidKill.AnimationStoppedConnections) do
+    for _, conn in ipairs(MainModule.VoidKillFeature.AnimationStoppedConnections) do
         pcall(function() conn:Disconnect() end)
     end
-    MainModule.VoidKill.AnimationStoppedConnections = {}
-    MainModule.VoidKill.SavedCFrame = nil
-    MainModule.VoidKill.ActiveAnimation = false
-    MainModule.VoidKill.AnimationStartTime = 0
-    MainModule.VoidKill.TrackedAnimations = {}
+    MainModule.VoidKillFeature.AnimationStoppedConnections = {}
+    
+    MainModule.VoidKillFeature.SavedCFrame = nil
+    MainModule.VoidKillFeature.ActiveAnimation = false
+    MainModule.VoidKillFeature.AnimationStartTime = 0
+    MainModule.VoidKillFeature.TrackedAnimations = {}
+    
     if enabled then
         MainModule.CreateSkySquidAntiFall()
-        MainModule.VoidKill.AntiFallEnabled = true
+        MainModule.VoidKillFeature.AntiFallEnabled = true
     else
-        if MainModule.VoidKill.AntiFallEnabled then
+        if MainModule.VoidKillFeature.AntiFallEnabled then
             MainModule.RemoveSkySquidAntiFall()
-            MainModule.VoidKill.AntiFallEnabled = false
+            MainModule.VoidKillFeature.AntiFallEnabled = false
         end
     end
+    
     if not enabled then
         return
     end
+    
     local function checkAnimations()
         local character = GetCharacter()
         if not character then return end
         local humanoid = GetHumanoid(character)
         if not humanoid then return end
+        
         local activeTracks = humanoid:GetPlayingAnimationTracks()
         for _, track in pairs(activeTracks) do
-            if track.Animation and track.Animation.AnimationId == MainModule.VoidKill.AnimationId then
-                if not MainModule.VoidKill.TrackedAnimations[track] then
-                    MainModule.VoidKill.TrackedAnimations[track] = true
-                    if not MainModule.VoidKill.ActiveAnimation then
-                        MainModule.VoidKill.ActiveAnimation = true
-                        MainModule.VoidKill.AnimationStartTime = tick()
-                        MainModule.VoidKill.SavedCFrame = character:GetPrimaryPartCFrame()
+            if track.Animation and track.Animation.AnimationId == MainModule.VoidKillFeature.AnimationId then
+                if not MainModule.VoidKillFeature.TrackedAnimations[track] then
+                    MainModule.VoidKillFeature.TrackedAnimations[track] = true
+                    
+                    if not MainModule.VoidKillFeature.ActiveAnimation then
+                        MainModule.VoidKillFeature.ActiveAnimation = true
+                        MainModule.VoidKillFeature.AnimationStartTime = tick()
+                        MainModule.VoidKillFeature.SavedCFrame = character:GetPrimaryPartCFrame()
+                        
                         local currentCFrame = character:GetPrimaryPartCFrame()
                         local lookVector = currentCFrame.LookVector
                         local backOffset = lookVector * -10
                         local targetPosition = currentCFrame.Position + backOffset
                         character:SetPrimaryPartCFrame(CFrame.new(targetPosition))
+                        
                         local stoppedConn = track.Stopped:Connect(function()
                             task.wait(1)
-                            if MainModule.VoidKill.SavedCFrame then
-                                character:SetPrimaryPartCFrame(MainModule.VoidKill.SavedCFrame)
-                                MainModule.VoidKill.SavedCFrame = nil
-                                MainModule.VoidKill.ActiveAnimation = false
+                            
+                            if MainModule.VoidKillFeature.SavedCFrame then
+                                character:SetPrimaryPartCFrame(MainModule.VoidKillFeature.SavedCFrame)
+                                MainModule.VoidKillFeature.SavedCFrame = nil
+                                MainModule.VoidKillFeature.ActiveAnimation = false
                             end
                         end)
-                        table.insert(MainModule.VoidKill.AnimationStoppedConnections, stoppedConn)
+                        table.insert(MainModule.VoidKillFeature.AnimationStoppedConnections, stoppedConn)
                     end
                 end
             end
         end
     end
+    
     local function setupCharacter(char)
         local humanoid = char:WaitForChild("Humanoid")
-        MainModule.VoidKill.AnimationConnection = humanoid.AnimationPlayed:Connect(function(track)
-            if track.Animation and track.Animation.AnimationId == MainModule.VoidKill.AnimationId then
-                MainModule.VoidKill.TrackedAnimations[track] = true
-                if not MainModule.VoidKill.ActiveAnimation then
-                    MainModule.VoidKill.ActiveAnimation = true
-                    MainModule.VoidKill.AnimationStartTime = tick()
-                    MainModule.VoidKill.SavedCFrame = char:GetPrimaryPartCFrame()
+        
+        MainModule.VoidKillFeature.AnimationConnection = humanoid.AnimationPlayed:Connect(function(track)
+            if not MainModule.VoidKillFeature.Enabled then return end
+            
+            if track.Animation and track.Animation.AnimationId == MainModule.VoidKillFeature.AnimationId then
+                MainModule.VoidKillFeature.TrackedAnimations[track] = true
+                
+                if not MainModule.VoidKillFeature.ActiveAnimation then
+                    MainModule.VoidKillFeature.ActiveAnimation = true
+                    MainModule.VoidKillFeature.AnimationStartTime = tick()
+                    MainModule.VoidKillFeature.SavedCFrame = char:GetPrimaryPartCFrame()
+                    
                     local currentCFrame = char:GetPrimaryPartCFrame()
                     local lookVector = currentCFrame.LookVector
                     local backOffset = lookVector * -10
                     local targetPosition = currentCFrame.Position + backOffset
                     char:SetPrimaryPartCFrame(CFrame.new(targetPosition))
+                    
                     local stoppedConn = track.Stopped:Connect(function()
                         task.wait(1)
-                        if MainModule.VoidKill.SavedCFrame then
-                            char:SetPrimaryPartCFrame(MainModule.VoidKill.SavedCFrame)
-                            MainModule.VoidKill.SavedCFrame = nil
-                            MainModule.VoidKill.ActiveAnimation = false
+                        
+                        if MainModule.VoidKillFeature.SavedCFrame then
+                            char:SetPrimaryPartCFrame(MainModule.VoidKillFeature.SavedCFrame)
+                            MainModule.VoidKillFeature.SavedCFrame = nil
+                            MainModule.VoidKillFeature.ActiveAnimation = false
                         end
                     end)
-                    table.insert(MainModule.VoidKill.AnimationStoppedConnections, stoppedConn)
+                    table.insert(MainModule.VoidKillFeature.AnimationStoppedConnections, stoppedConn)
                 end
             end
         end)
     end
+    
     local char = LocalPlayer.Character
     if char then
         setupCharacter(char)
     end
-    MainModule.VoidKill.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(char)
+    
+    MainModule.VoidKillFeature.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(char)
         task.wait(1)
         setupCharacter(char)
     end)
-    MainModule.VoidKill.AnimationCheckConnection = RunService.Heartbeat:Connect(function()
-        if not MainModule.VoidKill.Enabled then return end
+    
+    MainModule.VoidKillFeature.AnimationCheckConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.VoidKillFeature.Enabled then return end
         checkAnimations()
     end)
 end
 
 function MainModule.ToggleZoneKill(enabled)
-    MainModule.ZoneKill.Enabled = enabled
+    MainModule.ZoneKillFeature.Enabled = enabled
     
-    -- Очистка всех соединений
-    if MainModule.ZoneKill.AnimationConnection then
-        MainModule.ZoneKill.AnimationConnection:Disconnect()
-        MainModule.ZoneKill.AnimationConnection = nil
+    if MainModule.ZoneKillFeature.AnimationConnection then
+        MainModule.ZoneKillFeature.AnimationConnection:Disconnect()
+        MainModule.ZoneKillFeature.AnimationConnection = nil
     end
-    if MainModule.ZoneKill.CharacterAddedConnection then
-        MainModule.ZoneKill.CharacterAddedConnection:Disconnect()
-        MainModule.ZoneKill.CharacterAddedConnection = nil
+    if MainModule.ZoneKillFeature.CharacterAddedConnection then
+        MainModule.ZoneKillFeature.CharacterAddedConnection:Disconnect()
+        MainModule.ZoneKillFeature.CharacterAddedConnection = nil
     end
-    if MainModule.ZoneKill.AnimationCheckConnection then
-        MainModule.ZoneKill.AnimationCheckConnection:Disconnect()
-        MainModule.ZoneKill.AnimationCheckConnection = nil
+    if MainModule.ZoneKillFeature.AnimationCheckConnection then
+        MainModule.ZoneKillFeature.AnimationCheckConnection:Disconnect()
+        MainModule.ZoneKillFeature.AnimationCheckConnection = nil
     end
-    if MainModule.ZoneKill.ZoneCheckConnection then
-        MainModule.ZoneKill.ZoneCheckConnection:Disconnect()
-        MainModule.ZoneKill.ZoneCheckConnection = nil
+    if MainModule.ZoneKillFeature.ZoneCheckConnection then
+        MainModule.ZoneKillFeature.ZoneCheckConnection:Disconnect()
+        MainModule.ZoneKillFeature.ZoneCheckConnection = nil
     end
     
-    for _, conn in ipairs(MainModule.ZoneKill.AnimationStoppedConnections) do
+    for _, conn in ipairs(MainModule.ZoneKillFeature.AnimationStoppedConnections) do
         pcall(function() conn:Disconnect() end)
     end
-    MainModule.ZoneKill.AnimationStoppedConnections = {}
+    MainModule.ZoneKillFeature.AnimationStoppedConnections = {}
     
-    MainModule.ZoneKill.SavedCFrame = nil
-    MainModule.ZoneKill.ActiveAnimation = false
-    MainModule.ZoneKill.AnimationStartTime = 0
-    MainModule.ZoneKill.TrackedAnimations = {}
+    MainModule.ZoneKillFeature.SavedCFrame = nil
+    MainModule.ZoneKillFeature.ActiveAnimation = false
+    MainModule.ZoneKillFeature.AnimationStartTime = 0
+    MainModule.ZoneKillFeature.TrackedAnimations = {}
     
     if not enabled then
         return
     end
     
     local function checkAnimations()
-        if not MainModule.ZoneKill.Enabled or MainModule.SpikesKill.ActiveAnimation then return end
+        if not MainModule.ZoneKillFeature.Enabled then return end
         
         local character = GetCharacter()
         if not character then return end
         local humanoid = GetHumanoid(character)
         if not humanoid then return end
         
+        local currentTime = tick()
+        if currentTime - MainModule.ZoneKillFeature.LastAnimationCheckTime < 0.1 then
+            return
+        end
+        MainModule.ZoneKillFeature.LastAnimationCheckTime = currentTime
+        
         local activeTracks = humanoid:GetPlayingAnimationTracks()
         for _, track in pairs(activeTracks) do
-            if track.Animation and track.Animation.AnimationId == MainModule.ZoneKill.AnimationId then
-                if not MainModule.ZoneKill.TrackedAnimations[track] then
-                    MainModule.ZoneKill.TrackedAnimations[track] = true
+            if track.Animation and track.Animation.AnimationId == MainModule.ZoneKillFeature.AnimationId then
+                if not MainModule.ZoneKillFeature.TrackedAnimations[track] then
+                    MainModule.ZoneKillFeature.TrackedAnimations[track] = true
                     
-                    if not MainModule.ZoneKill.ActiveAnimation then
-                        MainModule.ZoneKill.ActiveAnimation = true
-                        MainModule.ZoneKill.AnimationStartTime = tick()
+                    if not MainModule.ZoneKillFeature.ActiveAnimation then
+                        MainModule.ZoneKillFeature.ActiveAnimation = true
+                        MainModule.ZoneKillFeature.AnimationStartTime = tick()
                         
-                        -- Сохраняем позицию
-                        MainModule.ZoneKill.SavedCFrame = character:GetPrimaryPartCFrame()
+                        MainModule.ZoneKillFeature.SavedCFrame = character:GetPrimaryPartCFrame()
                         
-                        -- Телепортируем в зону
-                        character:SetPrimaryPartCFrame(CFrame.new(MainModule.ZoneKill.ZonePosition))
+                        character:SetPrimaryPartCFrame(CFrame.new(MainModule.ZoneKillFeature.ZonePosition))
                         
-                        -- Создаем соединение для возврата
                         local stoppedConn = track.Stopped:Connect(function()
-                            task.wait(MainModule.ZoneKill.ReturnDelay)
+                            task.wait(MainModule.ZoneKillFeature.ReturnDelay)
                             
-                            if MainModule.ZoneKill.ActiveAnimation and MainModule.ZoneKill.SavedCFrame then
-                                character:SetPrimaryPartCFrame(MainModule.ZoneKill.SavedCFrame)
-                                MainModule.ZoneKill.SavedCFrame = nil
-                                MainModule.ZoneKill.ActiveAnimation = false
-                                MainModule.ZoneKill.TrackedAnimations = {}
+                            if MainModule.ZoneKillFeature.ActiveAnimation and MainModule.ZoneKillFeature.SavedCFrame then
+                                character:SetPrimaryPartCFrame(MainModule.ZoneKillFeature.SavedCFrame)
+                                MainModule.ZoneKillFeature.SavedCFrame = nil
+                                MainModule.ZoneKillFeature.ActiveAnimation = false
+                                MainModule.ZoneKillFeature.TrackedAnimations = {}
                             end
                         end)
-                        table.insert(MainModule.ZoneKill.AnimationStoppedConnections, stoppedConn)
+                        table.insert(MainModule.ZoneKillFeature.AnimationStoppedConnections, stoppedConn)
                     end
                 end
             end
@@ -1595,65 +1680,49 @@ function MainModule.ToggleZoneKill(enabled)
     local function setupCharacter(char)
         local humanoid = char:WaitForChild("Humanoid")
         
-        MainModule.ZoneKill.AnimationConnection = humanoid.AnimationPlayed:Connect(function(track)
-            if not MainModule.ZoneKill.Enabled or MainModule.SpikesKill.ActiveAnimation then return end
+        MainModule.ZoneKillFeature.AnimationConnection = humanoid.AnimationPlayed:Connect(function(track)
+            if not MainModule.ZoneKillFeature.Enabled then return end
             
-            if track.Animation and track.Animation.AnimationId == MainModule.ZoneKill.AnimationId then
-                MainModule.ZoneKill.TrackedAnimations[track] = true
+            if track.Animation and track.Animation.AnimationId == MainModule.ZoneKillFeature.AnimationId then
+                MainModule.ZoneKillFeature.TrackedAnimations[track] = true
                 
-                if not MainModule.ZoneKill.ActiveAnimation then
-                    MainModule.ZoneKill.ActiveAnimation = true
-                    MainModule.ZoneKill.AnimationStartTime = tick()
+                if not MainModule.ZoneKillFeature.ActiveAnimation then
+                    MainModule.ZoneKillFeature.ActiveAnimation = true
+                    MainModule.ZoneKillFeature.AnimationStartTime = tick()
                     
-                    -- Сохраняем позицию
-                    MainModule.ZoneKill.SavedCFrame = char:GetPrimaryPartCFrame()
+                    MainModule.ZoneKillFeature.SavedCFrame = char:GetPrimaryPartCFrame()
                     
-                    -- Телепортируем в зону
-                    char:SetPrimaryPartCFrame(CFrame.new(MainModule.ZoneKill.ZonePosition))
+                    char:SetPrimaryPartCFrame(CFrame.new(MainModule.ZoneKillFeature.ZonePosition))
                     
-                    -- Создаем соединение для возврата
                     local stoppedConn = track.Stopped:Connect(function()
-                        task.wait(MainModule.ZoneKill.ReturnDelay)
+                        task.wait(MainModule.ZoneKillFeature.ReturnDelay)
                         
-                        if MainModule.ZoneKill.SavedCFrame then
-                            char:SetPrimaryPartCFrame(MainModule.ZoneKill.SavedCFrame)
-                            MainModule.ZoneKill.SavedCFrame = nil
-                            MainModule.ZoneKill.ActiveAnimation = false
-                            MainModule.ZoneKill.TrackedAnimations = {}
+                        if MainModule.ZoneKillFeature.SavedCFrame then
+                            char:SetPrimaryPartCFrame(MainModule.ZoneKillFeature.SavedCFrame)
+                            MainModule.ZoneKillFeature.SavedCFrame = nil
+                            MainModule.ZoneKillFeature.ActiveAnimation = false
+                            MainModule.ZoneKillFeature.TrackedAnimations = {}
                         end
                     end)
-                    table.insert(MainModule.ZoneKill.AnimationStoppedConnections, stoppedConn)
+                    table.insert(MainModule.ZoneKillFeature.AnimationStoppedConnections, stoppedConn)
                 end
             end
         end)
     end
     
-    -- Настройка для текущего персонажа
     local char = LocalPlayer.Character
     if char then
         setupCharacter(char)
     end
     
-    -- Настройка для нового персонажа
-    MainModule.ZoneKill.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
+    MainModule.ZoneKillFeature.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
         task.wait(1)
         setupCharacter(newChar)
     end)
     
-    -- Проверка анимаций
-    MainModule.ZoneKill.AnimationCheckConnection = RunService.Heartbeat:Connect(function()
-        if not MainModule.ZoneKill.Enabled then return end
+    MainModule.ZoneKillFeature.AnimationCheckConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.ZoneKillFeature.Enabled then return end
         checkAnimations()
-    end)
-    
-    -- Дополнительная проверка для предотвращения конфликтов
-    MainModule.ZoneKill.ZoneCheckConnection = RunService.Heartbeat:Connect(function()
-        if MainModule.ZoneKill.ActiveAnimation and MainModule.SpikesKill.ActiveAnimation then
-            -- Если обе анимации активны, останавливаем одну из них
-            MainModule.SpikesKill.ActiveAnimation = false
-            MainModule.SpikesKill.SavedCFrame = nil
-            MainModule.SpikesKill.TrackedAnimations = {}
-        end
     end)
 end
 
@@ -2351,24 +2420,20 @@ function MainModule.RevealGlassBridge()
             if tileModel:IsA("Model") and tileModel.PrimaryPart then
                 local primaryPart = tileModel.PrimaryPart
                 
-                -- Удаляем существующие Highlight
                 for _, child in ipairs(tileModel:GetChildren()) do
                     if child:IsA("Highlight") then
                         child:Destroy()
                     end
                 end
                 
-                -- Определяем цвет на основе атрибута
                 local Color = primaryPart:GetAttribute("exploitingisevil") 
-                    and Color3.fromRGB(248, 87, 87)  -- Красный для ломающихся плиток
-                    or Color3.fromRGB(28, 235, 87)   -- Зеленый для безопасных плиток
+                    and Color3.fromRGB(248, 87, 87)
+                    or Color3.fromRGB(28, 235, 87)
                 
-                -- Применяем изменения к PrimaryPart
                 primaryPart.Color = Color
                 primaryPart.Transparency = 0
                 primaryPart.Material = Enum.Material.Neon
                 
-                -- Применяем изменения ко всем BasePart в модели
                 for _, part in pairs(tileModel:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.Color = Color
@@ -2380,7 +2445,6 @@ function MainModule.RevealGlassBridge()
         end
     end
     
-    -- Оставляем оповещение (опционально)
     local Effects = ReplicatedStorage:FindFirstChild("Modules") and 
                    ReplicatedStorage.Modules:FindFirstChild("Effects")
     if Effects then
@@ -2482,7 +2546,6 @@ function MainModule.GetPlayerPosition()
     return "Не доступно"
 end
 
--- Еще более агрессивная оптимизация
 function MainModule.ToggleNoclip(enabled)
     MainModule.Noclip.Enabled = enabled
     
@@ -2491,7 +2554,6 @@ function MainModule.ToggleNoclip(enabled)
         MainModule.Noclip.Connection = nil
     end
     
-    -- Быстрое восстановление
     for part in pairs(MainModule.Noclip.AffectedParts) do
         if part and part.Parent then
             part.CanCollide = true
@@ -2501,8 +2563,7 @@ function MainModule.ToggleNoclip(enabled)
     
     if not enabled then return end
     
-    -- Ограничиваем радиус при лагах
-    local actualRadius = math.min(MainModule.Noclip.CheckDistance, 10) -- Макс 10 вместо 20
+    local actualRadius = math.min(MainModule.Noclip.CheckDistance, 10)
     
     MainModule.Noclip.Connection = RunService.Heartbeat:Connect(function()
         if not MainModule.Noclip.Enabled then return end
@@ -2515,7 +2576,6 @@ function MainModule.ToggleNoclip(enabled)
         
         local pos = rootPart.Position
         
-        -- Только части в небольшом радиусе вокруг игрока
         local region = Region3.new(
             pos - Vector3.new(actualRadius, 3, actualRadius),
             pos + Vector3.new(actualRadius, 5, actualRadius)
@@ -2523,11 +2583,9 @@ function MainModule.ToggleNoclip(enabled)
         
         local parts = workspace:FindPartsInRegion3(region, character, 100)
         
-        -- Быстрая обработка
         for i = 1, #parts do
             local part = parts[i]
             
-            -- Пропускаем части ниже игрока (пол)
             if part.Position.Y > pos.Y - 2 then
                 if not MainModule.Noclip.AffectedParts[part] then
                     MainModule.Noclip.AffectedParts[part] = true
@@ -2543,10 +2601,29 @@ for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
 end
 
--- ГЛОБАЛЬНЫЙ ОБРАБОТЧИК АНИМАЦИЙ - работает мгновенно
+-- Функция для определения смотрит ли игрок на нас
+local function isPlayerLookingAtMe(player, myCharacter)
+    if not player or not player.Character or not myCharacter then return false end
+    
+    local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+    local myRoot = myCharacter:FindFirstChild("HumanoidRootPart")
+    
+    if not (targetRoot and myRoot) then return false end
+    
+    -- Получаем направление взгляда противника
+    local lookVector = targetRoot.CFrame.LookVector
+    local toMeVector = (myRoot.Position - targetRoot.Position).Unit
+    
+    -- Вычисляем угол между взглядом противника и направлением на нас
+    local dotProduct = lookVector:Dot(toMeVector)
+    
+    -- Если угол меньше 90 градусов (cos > 0), значит смотрит примерно в нашу сторону
+    return dotProduct > 0
+end
+
+-- Улучшенный AutoDodge
 local globalAnimationHandler = nil
 
--- Мгновенное выполнение уклона
 local function executeInstantDodge()
     if not MainModule.AutoDodge.Enabled then return false end
     
@@ -2557,11 +2634,9 @@ local function executeInstantDodge()
         return false
     end
     
-    -- Получение локального игрока
     local player = game:GetService("Players").LocalPlayer
     if not player then return false end
     
-    -- Быстрый поиск RemoteEvent
     local remote = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
     if remote then
         remote = remote:FindFirstChild("UsedTool")
@@ -2569,7 +2644,6 @@ local function executeInstantDodge()
     
     if not remote then return false end
     
-    -- Мгновенный поиск инструмента
     local tool = nil
     local character = player.Character
     
@@ -2582,7 +2656,6 @@ local function executeInstantDodge()
     
     if not tool then return false end
     
-    -- Мгновенный вызов
     local success = pcall(function() 
         remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true}) 
     end)
@@ -2595,7 +2668,6 @@ local function executeInstantDodge()
     return false
 end
 
--- Мгновенная проверка дистанции
 local function checkDistanceInstant(player)
     if not MainModule.AutoDodge.Enabled then return false end
     if not LocalPlayer or not LocalPlayer.Character then return false end
@@ -2612,16 +2684,14 @@ local function checkDistanceInstant(player)
     return distanceSquared <= MainModule.AutoDodge.RangeSquared
 end
 
--- ГЛОБАЛЬНЫЙ обработчик анимаций
 local function setupGlobalAnimationTracker()
     if globalAnimationHandler then
         globalAnimationHandler:Disconnect()
     end
     
     globalAnimationHandler = game:GetService("Players").PlayerAdded:Connect(function(player)
-        -- Подписываемся на всех игроков
         player.CharacterAdded:Connect(function(character)
-            task.wait(0.1) -- Минимальная задержка для инициализации
+            task.wait(0.1)
             
             local humanoid = character:WaitForChild("Humanoid", 1)
             if humanoid then
@@ -2629,16 +2699,32 @@ local function setupGlobalAnimationTracker()
                     if not MainModule.AutoDodge.Enabled then return end
                     if player == LocalPlayer then return end
                     
-                    -- МГНОВЕННАЯ проверка ID анимации
                     local animId = track.Animation and track.Animation.AnimationId
                     if not animId then return end
                     
-                    -- Быстрая проверка в сете
                     if not MainModule.AutoDodge.AnimationIdsSet[animId] then
                         return
                     end
                     
-                    -- МГНОВЕННАЯ проверка дистанции
+                    local currentTime = tick()
+                    local lastTime = MainModule.AutoDodge.LastAnimationTimes[player] or 0
+                    
+                    -- Проверяем, что анимация только началась (не позже 0.3 секунды)
+                    if currentTime - lastTime < 0.3 then
+                        return
+                    end
+                    
+                    MainModule.AutoDodge.LastAnimationTimes[player] = currentTime
+                    
+                    local myCharacter = LocalPlayer.Character
+                    if not myCharacter then return end
+                    
+                    -- Проверяем, смотрит ли игрок на нас
+                    if not isPlayerLookingAtMe(player, myCharacter) then
+                        return
+                    end
+                    
+                    -- Проверяем дистанцию
                     if checkDistanceInstant(player) then
                         executeInstantDodge()
                     end
@@ -2646,7 +2732,6 @@ local function setupGlobalAnimationTracker()
             end
         end)
         
-        -- Если у игрока уже есть персонаж
         if player.Character then
             task.spawn(function()
                 task.wait(0.1)
@@ -2663,6 +2748,22 @@ local function setupGlobalAnimationTracker()
                             return
                         end
                         
+                        local currentTime = tick()
+                        local lastTime = MainModule.AutoDodge.LastAnimationTimes[player] or 0
+                        
+                        if currentTime - lastTime < 0.3 then
+                            return
+                        end
+                        
+                        MainModule.AutoDodge.LastAnimationTimes[player] = currentTime
+                        
+                        local myCharacter = LocalPlayer.Character
+                        if not myCharacter then return end
+                        
+                        if not isPlayerLookingAtMe(player, myCharacter) then
+                            return
+                        end
+                        
                         if checkDistanceInstant(player) then
                             executeInstantDodge()
                         end
@@ -2672,7 +2773,6 @@ local function setupGlobalAnimationTracker()
         end
     end)
     
-    -- Подписываемся на уже существующих игроков МГНОВЕННО
     for _, player in pairs(game:GetService("Players"):GetPlayers()) do
         if player ~= LocalPlayer then
             task.spawn(function()
@@ -2690,6 +2790,22 @@ local function setupGlobalAnimationTracker()
                                 return
                             end
                             
+                            local currentTime = tick()
+                            local lastTime = MainModule.AutoDodge.LastAnimationTimes[player] or 0
+                            
+                            if currentTime - lastTime < 0.3 then
+                                return
+                            end
+                            
+                            MainModule.AutoDodge.LastAnimationTimes[player] = currentTime
+                            
+                            local myCharacter = LocalPlayer.Character
+                            if not myCharacter then return end
+                            
+                            if not isPlayerLookingAtMe(player, myCharacter) then
+                                return
+                            end
+                            
                             if checkDistanceInstant(player) then
                                 executeInstantDodge()
                             end
@@ -2697,7 +2813,6 @@ local function setupGlobalAnimationTracker()
                     end
                 end
                 
-                -- Подписка на будущие персонажи
                 player.CharacterAdded:Connect(function(character)
                     task.wait(0.1)
                     local humanoid = character:WaitForChild("Humanoid", 1)
@@ -2713,6 +2828,22 @@ local function setupGlobalAnimationTracker()
                                 return
                             end
                             
+                            local currentTime = tick()
+                            local lastTime = MainModule.AutoDodge.LastAnimationTimes[player] or 0
+                            
+                            if currentTime - lastTime < 0.3 then
+                                return
+                            end
+                            
+                            MainModule.AutoDodge.LastAnimationTimes[player] = currentTime
+                            
+                            local myCharacter = LocalPlayer.Character
+                            if not myCharacter then return end
+                            
+                            if not isPlayerLookingAtMe(player, myCharacter) then
+                                return
+                            end
+                            
                             if checkDistanceInstant(player) then
                                 executeInstantDodge()
                             end
@@ -2724,7 +2855,6 @@ local function setupGlobalAnimationTracker()
     end
 end
 
--- Быстрое обновление игроков в радиусе
 local function updatePlayersInRangeFast()
     if not MainModule.AutoDodge.Enabled then return {} end
     if not LocalPlayer or not LocalPlayer.Character then 
@@ -2765,52 +2895,60 @@ local function updatePlayersInRangeFast()
     return playersInRange
 end
 
--- Включение/выключение системы
 function MainModule.ToggleAutoDodge(enabled)
     MainModule.AutoDodge.Enabled = false
     
-    -- Отключаем глобальный обработчик
     if globalAnimationHandler then
         globalAnimationHandler:Disconnect()
         globalAnimationHandler = nil
     end
     
-    -- Очищаем соединения
     for _, conn in pairs(MainModule.AutoDodge.Connections) do
         if conn then pcall(function() conn:Disconnect() end) end
     end
     MainModule.AutoDodge.Connections = {}
     MainModule.AutoDodge.TrackedHumans = {}
+    MainModule.AutoDodge.LastAnimationTimes = {}
     
     if enabled then
         MainModule.AutoDodge.Enabled = true
         
-        -- МГНОВЕННАЯ инициализация глобального трекера
         setupGlobalAnimationTracker()
         
-        -- Быстрое обновление радиуса через Heartbeat
         local heartbeatConn = game:GetService("RunService").Heartbeat:Connect(function()
             if not MainModule.AutoDodge.Enabled then return end
             updatePlayersInRangeFast()
         end)
         table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
         
-        -- Первое обновление
         task.spawn(updatePlayersInRangeFast)
         
-        -- Дополнительный быстрый триггер через RenderStepped
         local renderConn = game:GetService("RunService").RenderStepped:Connect(function()
             if not MainModule.AutoDodge.Enabled then return end
             
-            -- Быстрая проверка всех анимаций в реальном времени
             for _, player in pairs(game:GetService("Players"):GetPlayers()) do
                 if player ~= LocalPlayer and player.Character then
                     local humanoid = player.Character:FindFirstChild("Humanoid")
                     if humanoid then
-                        -- Проверяем активные треки анимаций
                         for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do
                             local animId = track.Animation and track.Animation.AnimationId
                             if animId and MainModule.AutoDodge.AnimationIdsSet[animId] then
+                                local currentTime = tick()
+                                local lastTime = MainModule.AutoDodge.LastAnimationTimes[player] or 0
+                                
+                                if currentTime - lastTime < 0.3 then
+                                    continue
+                                end
+                                
+                                MainModule.AutoDodge.LastAnimationTimes[player] = currentTime
+                                
+                                local myCharacter = LocalPlayer.Character
+                                if not myCharacter then return end
+                                
+                                if not isPlayerLookingAtMe(player, myCharacter) then
+                                    continue
+                                end
+                                
                                 if checkDistanceInstant(player) then
                                     executeInstantDodge()
                                     break
@@ -2825,7 +2963,6 @@ function MainModule.ToggleAutoDodge(enabled)
     end
 end
 
--- Дополнительная функция для мгновенной проверки всех игроков
 function MainModule.ForceInstantCheck()
     if not MainModule.AutoDodge.Enabled then return end
     
@@ -2836,6 +2973,13 @@ function MainModule.ForceInstantCheck()
                 for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do
                     local animId = track.Animation and track.Animation.AnimationId
                     if animId and MainModule.AutoDodge.AnimationIdsSet[animId] then
+                        local myCharacter = LocalPlayer.Character
+                        if not myCharacter then return false end
+                        
+                        if not isPlayerLookingAtMe(player, myCharacter) then
+                            continue
+                        end
+                        
                         if checkDistanceInstant(player) then
                             executeInstantDodge()
                             return true
@@ -2848,7 +2992,6 @@ function MainModule.ForceInstantCheck()
     return false
 end
 
--- Инициализация при запуске
 task.spawn(function()
     task.wait(1)
     if MainModule.AutoDodge.Enabled then
@@ -2882,6 +3025,7 @@ function MainModule.TeleportToHider()
     return true
 end
 
+-- Исправленный Fly с взаимодействием с AntiRagdoll
 function MainModule.ToggleFly(enabled)
     if enabled then
         MainModule.EnableFlight()
@@ -2893,9 +3037,16 @@ end
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
+    -- Сохраняем состояние AntiRagdoll
+    MainModule.Fly.WasRagdollEnabled = MainModule.Misc.BypassRagdollEnabled
+    
+    -- Если AntiRagdoll включен, выключаем его временно
+    if MainModule.Misc.BypassRagdollEnabled then
+        MainModule.ToggleBypassRagdoll(false)
+    end
+    
     MainModule.Fly.Enabled = true
     
-    -- Очистка старых соединений
     if MainModule.Fly.Connection then
         MainModule.Fly.Connection:Disconnect()
         MainModule.Fly.Connection = nil
@@ -2913,11 +3064,9 @@ function MainModule.EnableFlight()
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
     
-    -- Удаляем старый BodyVelocity
     local oldBV = rootPart:FindFirstChild("FlightBV")
     if oldBV then oldBV:Destroy() end
     
-    -- Запускаем цикл обновления
     MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
         if not MainModule.Fly.Enabled or not character or not character.Parent then 
             if MainModule.Fly.Connection then
@@ -2937,7 +3086,6 @@ function MainModule.EnableFlight()
         local moveDirection = Vector3.new(0, 0, 0)
         local isMoving = false
         
-        -- ПК управление
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then
             moveDirection = moveDirection + lookVector
             isMoving = true
@@ -2955,7 +3103,6 @@ function MainModule.EnableFlight()
             isMoving = true
         end
         
-        -- Создаем или получаем BodyVelocity
         local bv = rootPart:FindFirstChild("FlightBV")
         if not bv then
             bv = Instance.new("BodyVelocity")
@@ -2970,10 +3117,8 @@ function MainModule.EnableFlight()
             moveDirection = moveDirection.Unit
             bv.Velocity = moveDirection * MainModule.Fly.Speed
         else
-            -- Удерживаем позицию, включая высоту
             bv.Velocity = Vector3.new(0, 0, 0)
             
-            -- Компенсируем гравитацию и другие силы
             local currentVelocity = rootPart.Velocity
             if currentVelocity.Y ~= 0 then
                 bv.Velocity = Vector3.new(0, -currentVelocity.Y, 0)
@@ -2981,7 +3126,6 @@ function MainModule.EnableFlight()
         end
     end)
     
-    -- Обработчик смерти персонажа
     if MainModule.Fly.HumanoidDiedConnection then
         MainModule.Fly.HumanoidDiedConnection:Disconnect()
     end
@@ -2989,15 +3133,13 @@ function MainModule.EnableFlight()
         MainModule.DisableFlight()
     end)
     
-    -- Переподключение при возрождении
     if MainModule.Fly.CharacterAddedConnection then
         MainModule.Fly.CharacterAddedConnection:Disconnect()
     end
     MainModule.Fly.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newCharacter)
-        task.wait(1) -- Ждем загрузки персонажа
+        task.wait(1)
         
         if MainModule.Fly.Enabled then
-            -- Если полет был активен до смерти, восстанавливаем его
             task.wait(0.5)
             MainModule.DisableFlight()
             task.wait(0.1)
@@ -3005,22 +3147,8 @@ function MainModule.EnableFlight()
         end
     end)
     
-    -- Периодическая смена скорости для избежания паттернов
     MainModule.Fly.SpeedChangeConnection = RunService.Heartbeat:Connect(function()
         if not MainModule.Fly.Enabled then return end
-        
-        -- Меняем скорость каждые 10-30 секунд
-        local currentTime = tick()
-        if not MainModule.Fly.LastSpeedChangeTime then
-            MainModule.Fly.LastSpeedChangeTime = currentTime
-            MainModule.Fly.NextSpeedChangeTime = currentTime + math.random(10, 30)
-        end
-        
-        if currentTime >= MainModule.Fly.NextSpeedChangeTime then
-            MainModule.Fly.Speed = math.random(75, 85)  -- Скорость вокруг 80
-            MainModule.Fly.LastSpeedChangeTime = currentTime
-            MainModule.Fly.NextSpeedChangeTime = currentTime + math.random(10, 30)
-        end
     end)
 end
 
@@ -3049,7 +3177,6 @@ function MainModule.DisableFlight()
         MainModule.Fly.CharacterAddedConnection = nil
     end
     
-    -- Удаляем BodyVelocity
     local character = GetCharacter()
     if character then
         local rootPart = GetRootPart(character)
@@ -3061,15 +3188,17 @@ function MainModule.DisableFlight()
             end
         end
         
-        -- Возвращаем нормальное состояние Humanoid
         local humanoid = GetHumanoid(character)
         if humanoid then
             humanoid.PlatformStand = false
         end
     end
     
-    MainModule.Fly.LastSpeedChangeTime = nil
-    MainModule.Fly.NextSpeedChangeTime = nil
+    -- Восстанавливаем состояние AntiRagdoll если он был включен
+    if MainModule.Fly.WasRagdollEnabled then
+        MainModule.ToggleBypassRagdoll(true)
+        MainModule.Fly.WasRagdollEnabled = false
+    end
 end
 
 function MainModule.SetFlySpeed(speed)
@@ -3112,80 +3241,80 @@ function MainModule.Cleanup()
         MainModule.HNS.InfinityStaminaConnection = nil
     end
     
-    if MainModule.SpikesKill.AnimationConnection then
-        MainModule.SpikesKill.AnimationConnection:Disconnect()
-        MainModule.SpikesKill.AnimationConnection = nil
+    if MainModule.SpikesKillFeature.AnimationConnection then
+        MainModule.SpikesKillFeature.AnimationConnection:Disconnect()
+        MainModule.SpikesKillFeature.AnimationConnection = nil
     end
     
-    if MainModule.SpikesKill.CharacterAddedConnection then
-        MainModule.SpikesKill.CharacterAddedConnection:Disconnect()
-        MainModule.SpikesKill.CharacterAddedConnection = nil
+    if MainModule.SpikesKillFeature.CharacterAddedConnection then
+        MainModule.SpikesKillFeature.CharacterAddedConnection:Disconnect()
+        MainModule.SpikesKillFeature.CharacterAddedConnection = nil
     end
     
-    if MainModule.SpikesKill.SafetyCheckConnection then
-        MainModule.SpikesKill.SafetyCheckConnection:Disconnect()
-        MainModule.SpikesKill.SafetyCheckConnection = nil
+    if MainModule.SpikesKillFeature.SafetyCheckConnection then
+        MainModule.SpikesKillFeature.SafetyCheckConnection:Disconnect()
+        MainModule.SpikesKillFeature.SafetyCheckConnection = nil
     end
     
-    if MainModule.SpikesKill.AnimationCheckConnection then
-        MainModule.SpikesKill.AnimationCheckConnection:Disconnect()
-        MainModule.SpikesKill.AnimationCheckConnection = nil
+    if MainModule.SpikesKillFeature.AnimationCheckConnection then
+        MainModule.SpikesKillFeature.AnimationCheckConnection:Disconnect()
+        MainModule.SpikesKillFeature.AnimationCheckConnection = nil
     end
     
-    if MainModule.SpikesKill.KnifeCheckConnection then
-        MainModule.SpikesKill.KnifeCheckConnection:Disconnect()
-        MainModule.SpikesKill.KnifeCheckConnection = nil
+    if MainModule.SpikesKillFeature.KnifeCheckConnection then
+        MainModule.SpikesKillFeature.KnifeCheckConnection:Disconnect()
+        MainModule.SpikesKillFeature.KnifeCheckConnection = nil
     end
     
-    for _, conn in ipairs(MainModule.SpikesKill.AnimationStoppedConnections) do
+    for _, conn in ipairs(MainModule.SpikesKillFeature.AnimationStoppedConnections) do
         pcall(function() conn:Disconnect() end)
     end
-    MainModule.SpikesKill.AnimationStoppedConnections = {}
+    MainModule.SpikesKillFeature.AnimationStoppedConnections = {}
     
-    if MainModule.VoidKill.AnimationConnection then
-        MainModule.VoidKill.AnimationConnection:Disconnect()
-        MainModule.VoidKill.AnimationConnection = nil
+    if MainModule.VoidKillFeature.AnimationConnection then
+        MainModule.VoidKillFeature.AnimationConnection:Disconnect()
+        MainModule.VoidKillFeature.AnimationConnection = nil
     end
     
-    if MainModule.VoidKill.CharacterAddedConnection then
-        MainModule.VoidKill.CharacterAddedConnection:Disconnect()
-        MainModule.VoidKill.CharacterAddedConnection = nil
+    if MainModule.VoidKillFeature.CharacterAddedConnection then
+        MainModule.VoidKillFeature.CharacterAddedConnection:Disconnect()
+        MainModule.VoidKillFeature.CharacterAddedConnection = nil
     end
     
-    if MainModule.VoidKill.AnimationCheckConnection then
-        MainModule.VoidKill.AnimationCheckConnection:Disconnect()
-        MainModule.VoidKill.AnimationCheckConnection = nil
+    if MainModule.VoidKillFeature.AnimationCheckConnection then
+        MainModule.VoidKillFeature.AnimationCheckConnection:Disconnect()
+        MainModule.VoidKillFeature.AnimationCheckConnection = nil
     end
     
-    for _, conn in ipairs(MainModule.VoidKill.AnimationStoppedConnections) do
+    for _, conn in ipairs(MainModule.VoidKillFeature.AnimationStoppedConnections) do
         pcall(function() conn:Disconnect() end)
     end
-    MainModule.VoidKill.AnimationStoppedConnections = {}
+    MainModule.VoidKillFeature.AnimationStoppedConnections = {}
     
-    if MainModule.ZoneKill.AnimationConnection then
-        MainModule.ZoneKill.AnimationConnection:Disconnect()
-        MainModule.ZoneKill.AnimationConnection = nil
+    if MainModule.ZoneKillFeature.AnimationConnection then
+        MainModule.ZoneKillFeature.AnimationConnection:Disconnect()
+        MainModule.ZoneKillFeature.AnimationConnection = nil
     end
     
-    if MainModule.ZoneKill.CharacterAddedConnection then
-        MainModule.ZoneKill.CharacterAddedConnection:Disconnect()
-        MainModule.ZoneKill.CharacterAddedConnection = nil
+    if MainModule.ZoneKillFeature.CharacterAddedConnection then
+        MainModule.ZoneKillFeature.CharacterAddedConnection:Disconnect()
+        MainModule.ZoneKillFeature.CharacterAddedConnection = nil
     end
     
-    if MainModule.ZoneKill.AnimationCheckConnection then
-        MainModule.ZoneKill.AnimationCheckConnection:Disconnect()
-        MainModule.ZoneKill.AnimationCheckConnection = nil
+    if MainModule.ZoneKillFeature.AnimationCheckConnection then
+        MainModule.ZoneKillFeature.AnimationCheckConnection:Disconnect()
+        MainModule.ZoneKillFeature.AnimationCheckConnection = nil
     end
     
-    if MainModule.ZoneKill.ZoneCheckConnection then
-        MainModule.ZoneKill.ZoneCheckConnection:Disconnect()
-        MainModule.ZoneKill.ZoneCheckConnection = nil
+    if MainModule.ZoneKillFeature.ZoneCheckConnection then
+        MainModule.ZoneKillFeature.ZoneCheckConnection:Disconnect()
+        MainModule.ZoneKillFeature.ZoneCheckConnection = nil
     end
     
-    for _, conn in ipairs(MainModule.ZoneKill.AnimationStoppedConnections) do
+    for _, conn in ipairs(MainModule.ZoneKillFeature.AnimationStoppedConnections) do
         pcall(function() conn:Disconnect() end)
     end
-    MainModule.ZoneKill.AnimationStoppedConnections = {}
+    MainModule.ZoneKillFeature.AnimationStoppedConnections = {}
     
     if MainModule.GlassBridge.AntiBreakConnection then
         MainModule.GlassBridge.AntiBreakConnection:Disconnect()
@@ -3222,22 +3351,20 @@ function MainModule.Cleanup()
         MainModule.AntiTimeStop.Connection = nil
     end
     
-    if MainModule.AutoDodge.Connection then
-        MainModule.AutoDodge.Connection:Disconnect()
-        MainModule.AutoDodge.Connection = nil
+    if globalAnimationHandler then
+        globalAnimationHandler:Disconnect()
+        globalAnimationHandler = nil
     end
-
+    
     MainModule.DisableFlight()
     
     MainModule.Fly.Enabled = false
-    MainModule.Fly.Speed = 65
+    MainModule.Fly.Speed = 39
     MainModule.Fly.Connection = nil
     MainModule.Fly.BodyVelocity = nil
     MainModule.Fly.HumanoidDiedConnection = nil
     MainModule.Fly.CharacterAddedConnection = nil
     MainModule.Fly.SpeedChangeConnection = nil
-    MainModule.Fly.LastSpeedChangeTime = nil
-    MainModule.Fly.NextSpeedChangeTime = nil
     
     if MainModule.Noclip.Connection then
         MainModule.Noclip.Connection:Disconnect()
@@ -3247,7 +3374,6 @@ function MainModule.Cleanup()
     MainModule.StopEnhancedProtection()
     MainModule.StopJointCleaning()
     
-    -- Восстанавливаем Noclip
     for part, properties in pairs(MainModule.Noclip.OriginalTransparency) do
         if part and part.Parent then
             pcall(function()
@@ -3311,9 +3437,9 @@ function MainModule.Cleanup()
         MainModule.RemoveJumpRopeAntiFall()
     end
     
-    if MainModule.VoidKill.AntiFallEnabled then
+    if MainModule.VoidKillFeature.AntiFallEnabled then
         MainModule.RemoveSkySquidAntiFall()
-        MainModule.VoidKill.AntiFallEnabled = false
+        MainModule.VoidKillFeature.AntiFallEnabled = false
     end
     
     if MainModule.SpeedHack.Enabled then
@@ -3348,16 +3474,18 @@ function MainModule.Cleanup()
     MainModule.GlassBridge.AntiBreakEnabled = false
     MainModule.GlassBridge.AntiFallEnabled = false
     MainModule.GlassBridge.GlassESPEnabled = false
-    MainModule.SpikesKill.Enabled = false
-    MainModule.SpikesKill.TrackedAnimations = {}
-    MainModule.SpikesKill.SpikesRemoved = false
-    MainModule.SpikesKill.OriginalSpikes = {}
-    MainModule.SpikesKill.SpikesPosition = nil
-    MainModule.SpikesKill.HasKnife = false
-    MainModule.VoidKill.Enabled = false
-    MainModule.VoidKill.TrackedAnimations = {}
-    MainModule.ZoneKill.Enabled = false
-    MainModule.ZoneKill.TrackedAnimations = {}
+    MainModule.SpikesKillFeature.Enabled = false
+    MainModule.SpikesKillFeature.TrackedAnimations = {}
+    MainModule.SpikesKillFeature.SpikesRemoved = false
+    MainModule.SpikesKillFeature.OriginalSpikes = {}
+    MainModule.SpikesKillFeature.SpikesPosition = nil
+    MainModule.SpikesKillFeature.HasKnife = false
+    MainModule.VoidKillFeature.Enabled = false
+    MainModule.VoidKillFeature.TrackedAnimations = {}
+    MainModule.ZoneKillFeature.Enabled = false
+    MainModule.ZoneKillFeature.TrackedAnimations = {}
+    MainModule.FreeDash.Enabled = false
+    MainModule.FreeDashGuards.Enabled = false
 end
 
 LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
@@ -3367,13 +3495,3 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
-
-
-
-
-
-
-
-
-
-
