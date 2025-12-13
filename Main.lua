@@ -48,10 +48,7 @@ MainModule.AutoDodge = {
     Range = 5,
     RangeSquared = 5 * 5,
     AnimationIdsSet = {},
-    PlayersInRange = {},
-    ActiveAttacks = {},
-    TrackedHumans = {},
-    LastAnimationTimes = {}
+    PlayersInRange = {}
 }
 
 MainModule.Fly = {
@@ -2610,19 +2607,19 @@ local function isPlayerLookingAtMe(player, myCharacter)
     
     if not (targetRoot and myRoot) then return false end
     
-    -- Получаем направление взгляда противника
     local lookVector = targetRoot.CFrame.LookVector
     local toMeVector = (myRoot.Position - targetRoot.Position).Unit
     
-    -- Вычисляем угол между взглядом противника и направлением на нас
     local dotProduct = lookVector:Dot(toMeVector)
     
-    -- Если угол меньше 90 градусов (cos > 0), значит смотрит примерно в нашу сторону
     return dotProduct > 0
 end
 
 -- Улучшенный AutoDodge
 local globalAnimationHandler = nil
+local LocalPlayer = game:GetService("Players").LocalPlayer
+
+local processedAnimations = {}
 
 local function executeInstantDodge()
     if not MainModule.AutoDodge.Enabled then return false end
@@ -2634,7 +2631,7 @@ local function executeInstantDodge()
         return false
     end
     
-    local player = game:GetService("Players").LocalPlayer
+    local player = LocalPlayer
     if not player then return false end
     
     local remote = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
@@ -2684,6 +2681,41 @@ local function checkDistanceInstant(player)
     return distanceSquared <= MainModule.AutoDodge.RangeSquared
 end
 
+local function handleAnimationPlayed(player, track)
+    if not MainModule.AutoDodge.Enabled then return end
+    if player == LocalPlayer then return end
+    
+    local animId = track.Animation and track.Animation.AnimationId
+    if not animId then return end
+    
+    if not MainModule.AutoDodge.AnimationIdsSet[animId] then
+        return
+    end
+    
+    local animationKey = player.Name .. "_" .. animId
+    
+    if processedAnimations[animationKey] then
+        return
+    end
+    
+    processedAnimations[animationKey] = true
+    
+    task.delay(5, function()
+        processedAnimations[animationKey] = nil
+    end)
+    
+    local myCharacter = LocalPlayer.Character
+    if not myCharacter then return end
+    
+    if not isPlayerLookingAtMe(player, myCharacter) then
+        return
+    end
+    
+    if checkDistanceInstant(player) then
+        executeInstantDodge()
+    end
+end
+
 local function setupGlobalAnimationTracker()
     if globalAnimationHandler then
         globalAnimationHandler:Disconnect()
@@ -2696,38 +2728,7 @@ local function setupGlobalAnimationTracker()
             local humanoid = character:WaitForChild("Humanoid", 1)
             if humanoid then
                 humanoid.AnimationPlayed:Connect(function(track)
-                    if not MainModule.AutoDodge.Enabled then return end
-                    if player == LocalPlayer then return end
-                    
-                    local animId = track.Animation and track.Animation.AnimationId
-                    if not animId then return end
-                    
-                    if not MainModule.AutoDodge.AnimationIdsSet[animId] then
-                        return
-                    end
-                    
-                    local currentTime = tick()
-                    local lastTime = MainModule.AutoDodge.LastAnimationTimes[player] or 0
-                    
-                    -- Проверяем, что анимация только началась (не позже 0.3 секунды)
-                    if currentTime - lastTime < 0.3 then
-                        return
-                    end
-                    
-                    MainModule.AutoDodge.LastAnimationTimes[player] = currentTime
-                    
-                    local myCharacter = LocalPlayer.Character
-                    if not myCharacter then return end
-                    
-                    -- Проверяем, смотрит ли игрок на нас
-                    if not isPlayerLookingAtMe(player, myCharacter) then
-                        return
-                    end
-                    
-                    -- Проверяем дистанцию
-                    if checkDistanceInstant(player) then
-                        executeInstantDodge()
-                    end
+                    handleAnimationPlayed(player, track)
                 end)
             end
         end)
@@ -2738,35 +2739,7 @@ local function setupGlobalAnimationTracker()
                 local humanoid = player.Character:FindFirstChild("Humanoid")
                 if humanoid then
                     humanoid.AnimationPlayed:Connect(function(track)
-                        if not MainModule.AutoDodge.Enabled then return end
-                        if player == LocalPlayer then return end
-                        
-                        local animId = track.Animation and track.Animation.AnimationId
-                        if not animId then return end
-                        
-                        if not MainModule.AutoDodge.AnimationIdsSet[animId] then
-                            return
-                        end
-                        
-                        local currentTime = tick()
-                        local lastTime = MainModule.AutoDodge.LastAnimationTimes[player] or 0
-                        
-                        if currentTime - lastTime < 0.3 then
-                            return
-                        end
-                        
-                        MainModule.AutoDodge.LastAnimationTimes[player] = currentTime
-                        
-                        local myCharacter = LocalPlayer.Character
-                        if not myCharacter then return end
-                        
-                        if not isPlayerLookingAtMe(player, myCharacter) then
-                            return
-                        end
-                        
-                        if checkDistanceInstant(player) then
-                            executeInstantDodge()
-                        end
+                        handleAnimationPlayed(player, track)
                     end)
                 end
             end)
@@ -2780,35 +2753,7 @@ local function setupGlobalAnimationTracker()
                     local humanoid = player.Character:FindFirstChild("Humanoid")
                     if humanoid then
                         humanoid.AnimationPlayed:Connect(function(track)
-                            if not MainModule.AutoDodge.Enabled then return end
-                            if player == LocalPlayer then return end
-                            
-                            local animId = track.Animation and track.Animation.AnimationId
-                            if not animId then return end
-                            
-                            if not MainModule.AutoDodge.AnimationIdsSet[animId] then
-                                return
-                            end
-                            
-                            local currentTime = tick()
-                            local lastTime = MainModule.AutoDodge.LastAnimationTimes[player] or 0
-                            
-                            if currentTime - lastTime < 0.3 then
-                                return
-                            end
-                            
-                            MainModule.AutoDodge.LastAnimationTimes[player] = currentTime
-                            
-                            local myCharacter = LocalPlayer.Character
-                            if not myCharacter then return end
-                            
-                            if not isPlayerLookingAtMe(player, myCharacter) then
-                                return
-                            end
-                            
-                            if checkDistanceInstant(player) then
-                                executeInstantDodge()
-                            end
+                            handleAnimationPlayed(player, track)
                         end)
                     end
                 end
@@ -2818,35 +2763,7 @@ local function setupGlobalAnimationTracker()
                     local humanoid = character:WaitForChild("Humanoid", 1)
                     if humanoid then
                         humanoid.AnimationPlayed:Connect(function(track)
-                            if not MainModule.AutoDodge.Enabled then return end
-                            if player == LocalPlayer then return end
-                            
-                            local animId = track.Animation and track.Animation.AnimationId
-                            if not animId then return end
-                            
-                            if not MainModule.AutoDodge.AnimationIdsSet[animId] then
-                                return
-                            end
-                            
-                            local currentTime = tick()
-                            local lastTime = MainModule.AutoDodge.LastAnimationTimes[player] or 0
-                            
-                            if currentTime - lastTime < 0.3 then
-                                return
-                            end
-                            
-                            MainModule.AutoDodge.LastAnimationTimes[player] = currentTime
-                            
-                            local myCharacter = LocalPlayer.Character
-                            if not myCharacter then return end
-                            
-                            if not isPlayerLookingAtMe(player, myCharacter) then
-                                return
-                            end
-                            
-                            if checkDistanceInstant(player) then
-                                executeInstantDodge()
-                            end
+                            handleAnimationPlayed(player, track)
                         end)
                     end
                 end)
@@ -2903,12 +2820,12 @@ function MainModule.ToggleAutoDodge(enabled)
         globalAnimationHandler = nil
     end
     
+    processedAnimations = {}
+    
     for _, conn in pairs(MainModule.AutoDodge.Connections) do
         if conn then pcall(function() conn:Disconnect() end) end
     end
     MainModule.AutoDodge.Connections = {}
-    MainModule.AutoDodge.TrackedHumans = {}
-    MainModule.AutoDodge.LastAnimationTimes = {}
     
     if enabled then
         MainModule.AutoDodge.Enabled = true
@@ -2922,73 +2839,12 @@ function MainModule.ToggleAutoDodge(enabled)
         table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
         
         task.spawn(updatePlayersInRangeFast)
-        
-        local renderConn = game:GetService("RunService").RenderStepped:Connect(function()
-            if not MainModule.AutoDodge.Enabled then return end
-            
-            for _, player in pairs(game:GetService("Players"):GetPlayers()) do
-                if player ~= LocalPlayer and player.Character then
-                    local humanoid = player.Character:FindFirstChild("Humanoid")
-                    if humanoid then
-                        for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do
-                            local animId = track.Animation and track.Animation.AnimationId
-                            if animId and MainModule.AutoDodge.AnimationIdsSet[animId] then
-                                local currentTime = tick()
-                                local lastTime = MainModule.AutoDodge.LastAnimationTimes[player] or 0
-                                
-                                if currentTime - lastTime < 0.3 then
-                                    continue
-                                end
-                                
-                                MainModule.AutoDodge.LastAnimationTimes[player] = currentTime
-                                
-                                local myCharacter = LocalPlayer.Character
-                                if not myCharacter then return end
-                                
-                                if not isPlayerLookingAtMe(player, myCharacter) then
-                                    continue
-                                end
-                                
-                                if checkDistanceInstant(player) then
-                                    executeInstantDodge()
-                                    break
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end)
-        table.insert(MainModule.AutoDodge.Connections, renderConn)
     end
 end
 
 function MainModule.ForceInstantCheck()
-    if not MainModule.AutoDodge.Enabled then return end
+    if not MainModule.AutoDodge.Enabled then return false end
     
-    for _, player in pairs(game:GetService("Players"):GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local humanoid = player.Character:FindFirstChild("Humanoid")
-            if humanoid then
-                for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do
-                    local animId = track.Animation and track.Animation.AnimationId
-                    if animId and MainModule.AutoDodge.AnimationIdsSet[animId] then
-                        local myCharacter = LocalPlayer.Character
-                        if not myCharacter then return false end
-                        
-                        if not isPlayerLookingAtMe(player, myCharacter) then
-                            continue
-                        end
-                        
-                        if checkDistanceInstant(player) then
-                            executeInstantDodge()
-                            return true
-                        end
-                    end
-                end
-            end
-        end
-    end
     return false
 end
 
@@ -3495,3 +3351,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
