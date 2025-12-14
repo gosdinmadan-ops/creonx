@@ -28,7 +28,9 @@ MainModule.Noclip = {
     OriginalCanCollide = {},
     AffectedParts = {},
     CheckDistance = 20,
-    CheckInterval = 0.1
+    CheckInterval = 0.1,
+    LastTouchTime = {}, -- Трекер времени последнего касания
+    TouchThreshold = 0.5 -- Порог в секундах
 }
 
 MainModule.AutoDodge = {
@@ -53,9 +55,44 @@ MainModule.AutoDodge = {
     RangeUpdateInterval = 0.5
 }
 
+-- Новая Killaura система
+MainModule.Killaura = {
+    Enabled = false,
+    Radius = 15,
+    MaxRadius = 100,
+    MinRadius = 15,
+    CurrentTarget = nil,
+    TargetAnimations = {
+        "85623602463927",
+        "87978085217719", 
+        "99157505926076"
+    },
+    AnimationIdsSet = {},
+    Connection = nil,
+    BodyPosition = nil,
+    BodyGyro = nil,
+    LastTargetCheck = 0,
+    TargetCheckInterval = 0.2,
+    FollowingTarget = false,
+    OriginalCFrame = nil,
+    OriginalAnchored = nil,
+    OriginalGravity = nil,
+    AnimationTracking = {},
+    LastAnimationCheck = 0,
+    AnimationCheckInterval = 0.1,
+    TargetPlayer = nil,
+    IsLyingDown = false,
+    HeadOffset = Vector3.new(0, 1, 0)
+}
+
+-- Инициализируем набор анимаций для Killaura
+for _, id in ipairs(MainModule.Killaura.TargetAnimations) do
+    MainModule.Killaura.AnimationIdsSet["rbxassetid://" .. id] = true
+end
+
 MainModule.Fly = {
     Enabled = false,
-    Speed = 50,
+    Speed = 65, -- Увеличена скорость до 65
     Connection = nil,
     BodyVelocity = nil,
     HumanoidDiedConnection = nil,
@@ -68,7 +105,11 @@ MainModule.Fly = {
     FakeParts = {},
     LastGroundCheck = 0,
     GroundCheckInterval = 2,
-    FakeFloorSize = Vector3.new(10, 1, 10)
+    FakeFloorSize = Vector3.new(10, 1, 10),
+    BodyPosition = nil,
+    BodyGyro = nil,
+    MoveDirection = Vector3.new(0, 0, 0),
+    IsMoving = false
 }
 
 MainModule.AutoQTE = {
@@ -128,7 +169,8 @@ MainModule.GlassBridge = {
     GlassESPConnection = nil,
     EndPosition = Vector3.new(-196.372467, 522.192139, -1534.20984),
     BridgeHeight = 520.4,
-    PlatformSize = Vector3.new(10000, 1, 10000)
+    PlatformSize = Vector3.new(10000, 1, 10000),
+    OriginalGlassColors = {} -- Хранит оригинальные цвета стекол
 }
 
 MainModule.TugOfWar = {
@@ -318,6 +360,62 @@ end
 local function GetRootPart(character)
     if not character then return nil end
     return character:FindFirstChild("HumanoidRootPart")
+end
+
+-- НОВАЯ ФУНКЦИЯ: Получить части, которые касаются земли (ноги)
+local function GetGroundContactParts(character)
+    if not character then return {} end
+    
+    local contactParts = {}
+    local rootPart = GetRootPart(character)
+    
+    if not rootPart then return contactParts end
+    
+    -- Получаем все части персонажа
+    for _, part in pairs(character:GetChildren()) do
+        if part:IsA("BasePart") then
+            -- Проверяем, находится ли часть близко к земле
+            local rayOrigin = part.Position
+            local rayDirection = Vector3.new(0, -2, 0)
+            local raycastParams = RaycastParams.new()
+            raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+            raycastParams.FilterDescendantsInstances = {character}
+            
+            local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+            if result and result.Position then
+                local distance = (rayOrigin - result.Position).Magnitude
+                if distance < 1.5 then -- Часть касается или почти касается земли
+                    table.insert(contactParts, part)
+                end
+            end
+        end
+    end
+    
+    return contactParts
+end
+
+-- НОВАЯ ФУНКЦИЯ: Проверить, является ли часть лестницей
+local function IsPartStair(part)
+    if not part then return false end
+    
+    local nameLower = part.Name:lower()
+    if nameLower:find("stair") or nameLower:find("step") or nameLower:find("ladder") then
+        return true
+    end
+    
+    if part:GetAttribute("IsStair") or part:GetAttribute("IsLadder") then
+        return true
+    end
+    
+    -- Проверяем по углу наклона
+    local surfaceNormal = part.CFrame.UpVector
+    local angle = math.deg(math.acos(surfaceNormal:Dot(Vector3.new(0, 1, 0))))
+    
+    if angle > 20 and angle < 70 then -- Наклонная поверхность (возможно лестница)
+        return true
+    end
+    
+    return false
 end
 
 local function playerHasKnife(player)
@@ -2124,8 +2222,7 @@ function MainModule.ToggleAntiStunQTE(enabled)
                             end
                         end
                     end
-                end
-            end)
+                end)
         end)
     end
 end
@@ -2665,6 +2762,7 @@ function MainModule.ToggleJumpRopeAntiFall(enabled)
     end
 end
 
+-- ИСПРАВЛЕННАЯ ФУНКЦИЯ: Glass Bridge AntiBreak с правильным порядком Glass ESP
 function MainModule.ToggleGlassBridgeAntiBreak(enabled)
     MainModule.GlassBridge.AntiBreakEnabled = enabled
     
@@ -2683,6 +2781,48 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
         return
     end
     
+    -- ШАГ 1: Сначала передаем значения Glass ESP
+    local GlassBridge = workspace:FindFirstChild("GlassBridge")
+    if GlassBridge and GlassBridge:FindFirstChild("GlassHolder") then
+        local GlassHolder = GlassBridge.GlassHolder
+        
+        -- Сохраняем оригинальные цвета стекол
+        MainModule.GlassBridge.OriginalGlassColors = {}
+        
+        for _, tilePair in pairs(GlassHolder:GetChildren()) do
+            for _, tileModel in pairs(tilePair:GetChildren()) do
+                if tileModel:IsA("Model") and tileModel.PrimaryPart then
+                    local primaryPart = tileModel.PrimaryPart
+                    
+                    -- Сохраняем оригинальный цвет
+                    MainModule.GlassBridge.OriginalGlassColors[tileModel] = {
+                        Color = primaryPart.Color,
+                        Transparency = primaryPart.Transparency,
+                        Material = primaryPart.Material
+                    }
+                    
+                    -- Устанавливаем цвет в зависимости от атрибута
+                    local Color = primaryPart:GetAttribute("exploitingisevil") 
+                        and Color3.fromRGB(248, 87, 87) -- Красный для ломающихся
+                        or Color3.fromRGB(28, 235, 87)   -- Зеленый для безопасных
+                    
+                    primaryPart.Color = Color
+                    primaryPart.Transparency = 0
+                    primaryPart.Material = Enum.Material.Neon
+                    
+                    for _, part in pairs(tileModel:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            part.Color = Color
+                            part.Transparency = 0
+                            part.Material = Enum.Material.Neon
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- ШАГ 2: Затем делаем стекла неломаемыми
     local function createPlatformUnderGlass(glassModel)
         if not glassModel or not glassModel.PrimaryPart then return end
         
@@ -2725,6 +2865,7 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
         for _, rowFolder in pairs(GlassHolder:GetChildren()) do
             for _, glassModel in pairs(rowFolder:GetChildren()) do
                 if glassModel:IsA("Model") and glassModel.PrimaryPart then
+                    -- Убираем атрибут ломаемости
                     if glassModel.PrimaryPart:GetAttribute("exploitingisevil") ~= nil then
                         glassModel.PrimaryPart:SetAttribute("exploitingisevil", nil)
                     end
@@ -2780,19 +2921,38 @@ function MainModule.RevealGlassBridge()
                     end
                 end
                 
-                local Color = primaryPart:GetAttribute("exploitingisevil") 
-                    and Color3.fromRGB(248, 87, 87)
-                    or Color3.fromRGB(28, 235, 87)
-                
-                primaryPart.Color = Color
-                primaryPart.Transparency = 0
-                primaryPart.Material = Enum.Material.Neon
+                -- Восстанавливаем оригинальный цвет если есть
+                local originalColor = MainModule.GlassBridge.OriginalGlassColors[tileModel]
+                if originalColor and not MainModule.GlassBridge.AntiBreakEnabled then
+                    primaryPart.Color = originalColor.Color
+                    primaryPart.Transparency = originalColor.Transparency
+                    primaryPart.Material = originalColor.Material
+                else
+                    -- Устанавливаем цвет в зависимости от атрибута
+                    local Color = primaryPart:GetAttribute("exploitingisevil") 
+                        and Color3.fromRGB(248, 87, 87) -- Красный для ломающихся
+                        or Color3.fromRGB(28, 235, 87)   -- Зеленый для безопасных
+                    
+                    primaryPart.Color = Color
+                    primaryPart.Transparency = 0
+                    primaryPart.Material = Enum.Material.Neon
+                end
                 
                 for _, part in pairs(tileModel:GetDescendants()) do
                     if part:IsA("BasePart") then
-                        part.Color = Color
-                        part.Transparency = 0
-                        part.Material = Enum.Material.Neon
+                        if originalColor and not MainModule.GlassBridge.AntiBreakEnabled then
+                            part.Color = originalColor.Color
+                            part.Transparency = originalColor.Transparency
+                            part.Material = originalColor.Material
+                        else
+                            local Color = primaryPart:GetAttribute("exploitingisevil") 
+                                and Color3.fromRGB(248, 87, 87)
+                                or Color3.fromRGB(28, 235, 87)
+                            
+                            part.Color = Color
+                            part.Transparency = 0
+                            part.Material = Enum.Material.Neon
+                        end
                     end
                 end
             end
@@ -2910,6 +3070,7 @@ function MainModule.GetPlayerPosition()
     return "Не доступно"
 end
 
+-- ИСПРАВЛЕННАЯ ФУНКЦИЯ: Noclip с проверкой лестниц и времени касания
 function MainModule.ToggleNoclip(enabled)
     MainModule.Noclip.Enabled = enabled
     
@@ -2918,13 +3079,23 @@ function MainModule.ToggleNoclip(enabled)
         MainModule.Noclip.Connection = nil
     end
     
+    -- Очищаем данные о касаниях
+    MainModule.Noclip.LastTouchTime = {}
+    
+    -- Восстанавливаем все затронутые части
     for part in pairs(MainModule.Noclip.AffectedParts) do
         if part and part.Parent then
-            part.CanCollide = true
+            if MainModule.Noclip.OriginalTransparency[part] then
+                part.Transparency = MainModule.Noclip.OriginalTransparency[part].Transparency
+                part.CanCollide = MainModule.Noclip.OriginalTransparency[part].CanCollide
+            else
+                part.CanCollide = true
+            end
         end
     end
     
     MainModule.Noclip.AffectedParts = {}
+    MainModule.Noclip.OriginalTransparency = {}
     
     if not enabled then return end
     
@@ -2940,6 +3111,11 @@ function MainModule.ToggleNoclip(enabled)
         if not rootPart then return end
         
         local pos = rootPart.Position
+        local currentTime = tick()
+        
+        -- Получаем части, которые касаются земли (ноги)
+        local contactParts = GetGroundContactParts(character)
+        local isTouchingGround = #contactParts > 0
         
         local region = Region3.new(
             pos - Vector3.new(actualRadius, 3, actualRadius),
@@ -2951,14 +3127,373 @@ function MainModule.ToggleNoclip(enabled)
         for i = 1, #parts do
             local part = parts[i]
             
+            -- Пропускаем части, которые касаются земли
+            local isContactPart = false
+            for _, contactPart in ipairs(contactParts) do
+                if part == contactPart or (part.Position - contactPart.Position).Magnitude < 1 then
+                    isContactPart = true
+                    break
+                end
+            end
+            
+            if isContactPart then
+                -- Обновляем время последнего касания
+                MainModule.Noclip.LastTouchTime[part] = currentTime
+                continue
+            end
+            
+            -- Проверяем, является ли часть лестницей
+            if IsPartStair(part) then
+                -- Для лестниц проверяем время последнего касания
+                local lastTouch = MainModule.Noclip.LastTouchTime[part] or 0
+                local timeSinceTouch = currentTime - lastTouch
+                
+                if timeSinceTouch < MainModule.Noclip.TouchThreshold then
+                    -- Недавно касались лестницы, не делаем прозрачной
+                    continue
+                end
+            end
+            
+            -- Проверяем вертикальную позицию
             if part.Position.Y > pos.Y - 2 then
                 if not MainModule.Noclip.AffectedParts[part] then
                     MainModule.Noclip.AffectedParts[part] = true
+                    
+                    -- Сохраняем оригинальные свойства
+                    if not MainModule.Noclip.OriginalTransparency[part] then
+                        MainModule.Noclip.OriginalTransparency[part] = {
+                            Transparency = part.Transparency,
+                            CanCollide = part.CanCollide
+                        }
+                    end
+                    
                     part.CanCollide = false
+                    part.Transparency = math.max(part.Transparency, 0.5)
                 end
             end
         end
+        
+        -- Очищаем старые записи о касаниях
+        for part, touchTime in pairs(MainModule.Noclip.LastTouchTime) do
+            if currentTime - touchTime > MainModule.Noclip.TouchThreshold + 5 then
+                MainModule.Noclip.LastTouchTime[part] = nil
+            end
+        end
     end)
+end
+
+-- НОВАЯ ФУНКЦИЯ: Killaura с улучшенной логикой
+local function getNearestPlayerInRadius()
+    if not MainModule.Killaura.Enabled then return nil end
+    
+    local character = GetCharacter()
+    if not character then return nil end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return nil end
+    
+    local nearestPlayer = nil
+    local nearestDistance = MainModule.Killaura.Radius + 1
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if not player.Character then continue end
+        
+        local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+        local targetHumanoid = player.Character:FindFirstChild("Humanoid")
+        
+        if not targetRoot or not targetHumanoid or targetHumanoid.Health <= 0 then continue end
+        
+        local distance = GetDistance(rootPart.Position, targetRoot.Position)
+        if distance <= MainModule.Killaura.Radius and distance < nearestDistance then
+            nearestDistance = distance
+            nearestPlayer = player
+        end
+    end
+    
+    return nearestPlayer, nearestDistance
+end
+
+local function checkTargetAnimations(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return false end
+    
+    local humanoid = targetPlayer.Character:FindFirstChild("Humanoid")
+    if not humanoid then return false end
+    
+    local currentTime = tick()
+    if currentTime - MainModule.Killaura.LastAnimationCheck < MainModule.Killaura.AnimationCheckInterval then
+        return MainModule.Killaura.AnimationTracking[targetPlayer] or false
+    end
+    
+    MainModule.Killaura.LastAnimationCheck = currentTime
+    
+    local activeTracks = humanoid:GetPlayingAnimationTracks()
+    local hasTargetAnimation = false
+    
+    for _, track in pairs(activeTracks) do
+        if track and track.Animation then
+            local animId = track.Animation.AnimationId
+            if MainModule.Killaura.AnimationIdsSet[animId] then
+                hasTargetAnimation = true
+                break
+            end
+        end
+    end
+    
+    MainModule.Killaura.AnimationTracking[targetPlayer] = hasTargetAnimation
+    return hasTargetAnimation
+end
+
+local function setupKillauraLyingPosition(character, targetCharacter)
+    if not character or not targetCharacter then return end
+    
+    local rootPart = GetRootPart(character)
+    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+    local targetHead = targetCharacter:FindFirstChild("Head")
+    
+    if not rootPart or not targetRoot then return end
+    
+    -- Сохраняем оригинальные параметры
+    if not MainModule.Killaura.OriginalCFrame then
+        MainModule.Killaura.OriginalCFrame = rootPart.CFrame
+    end
+    
+    if not MainModule.Killaura.OriginalAnchored then
+        MainModule.Killaura.OriginalAnchored = rootPart.Anchored
+    end
+    
+    -- Отключаем гравитацию
+    for _, part in pairs(character:GetChildren()) do
+        if part:IsA("BasePart") then
+            part.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0)
+            part:SetAttribute("OriginalMass", part.Mass)
+            part.Mass = 0
+        end
+    end
+    
+    -- Ложимся головой вниз
+    local targetPosition = targetRoot.Position
+    if targetHead then
+        targetPosition = targetHead.Position
+    end
+    
+    -- Позиция над головой цели
+    local headOffsetPosition = targetPosition + Vector3.new(0, 1.5, 0)
+    
+    -- Ориентация лицом к цели
+    local lookVector = (targetPosition - headOffsetPosition).Unit
+    local cframe = CFrame.new(headOffsetPosition, headOffsetPosition + lookVector)
+    
+    -- Поворачиваем на 90 градусов (ложимся)
+    cframe = cframe * CFrame.Angles(math.rad(90), 0, 0)
+    
+    rootPart.CFrame = cframe
+    rootPart.Anchored = true
+    MainModule.Killaura.IsLyingDown = true
+    
+    -- Создаем BodyPosition для следования за целью
+    if not MainModule.Killaura.BodyPosition then
+        MainModule.Killaura.BodyPosition = Instance.new("BodyPosition")
+        MainModule.Killaura.BodyPosition.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        MainModule.Killaura.BodyPosition.P = 10000
+        MainModule.Killaura.BodyPosition.D = 1000
+        MainModule.Killaura.BodyPosition.Parent = rootPart
+    end
+    
+    -- Создаем BodyGyro для удержания ориентации
+    if not MainModule.Killaura.BodyGyro then
+        MainModule.Killaura.BodyGyro = Instance.new("BodyGyro")
+        MainModule.Killaura.BodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        MainModule.Killaura.BodyGyro.P = 10000
+        MainModule.Killaura.BodyGyro.D = 1000
+        MainModule.Killaura.BodyGyro.Parent = rootPart
+    end
+    
+    MainModule.Killaura.FollowingTarget = true
+end
+
+local function restoreKillauraPosition(character)
+    if not character then return end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return end
+    
+    -- Удаляем BodyPosition и BodyGyro
+    if MainModule.Killaura.BodyPosition then
+        MainModule.Killaura.BodyPosition:Destroy()
+        MainModule.Killaura.BodyPosition = nil
+    end
+    
+    if MainModule.Killaura.BodyGyro then
+        MainModule.Killaura.BodyGyro:Destroy()
+        MainModule.Killaura.BodyGyro = nil
+    end
+    
+    -- Восстанавливаем гравитацию
+    for _, part in pairs(character:GetChildren()) do
+        if part:IsA("BasePart") then
+            local originalMass = part:GetAttribute("OriginalMass")
+            if originalMass then
+                part.Mass = originalMass
+            end
+            part.CustomPhysicalProperties = nil
+        end
+    end
+    
+    -- Восстанавливаем позицию
+    if MainModule.Killaura.OriginalCFrame then
+        rootPart.CFrame = MainModule.Killaura.OriginalCFrame
+    end
+    
+    -- Восстанавливаем anchored
+    if MainModule.Killaura.OriginalAnchored ~= nil then
+        rootPart.Anchored = MainModule.Killaura.OriginalAnchored
+    end
+    
+    MainModule.Killaura.IsLyingDown = false
+    MainModule.Killaura.FollowingTarget = false
+    MainModule.Killaura.OriginalCFrame = nil
+    MainModule.Killaura.OriginalAnchored = nil
+end
+
+local function updateKillauraFollowing()
+    if not MainModule.Killaura.FollowingTarget or not MainModule.Killaura.TargetPlayer then return end
+    
+    local character = GetCharacter()
+    if not character then return end
+    
+    local targetCharacter = MainModule.Killaura.TargetPlayer.Character
+    if not targetCharacter then return end
+    
+    local rootPart = GetRootPart(character)
+    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+    local targetHead = targetCharacter:FindFirstChild("Head")
+    
+    if not rootPart or not targetRoot then return end
+    
+    local targetPosition = targetRoot.Position
+    if targetHead then
+        targetPosition = targetHead.Position
+    end
+    
+    -- Позиция над головой цели
+    local headOffsetPosition = targetPosition + Vector3.new(0, 1.5, 0)
+    
+    -- Проверяем анимации цели
+    local hasAnimation = checkTargetAnimations(MainModule.Killaura.TargetPlayer)
+    
+    if hasAnimation then
+        -- Если есть анимация, поднимаем выше
+        headOffsetPosition = targetPosition + Vector3.new(0, 5, 0)
+    end
+    
+    -- Ориентация лицом к цели
+    local lookVector = (targetPosition - headOffsetPosition).Unit
+    local cframe = CFrame.new(headOffsetPosition, headOffsetPosition + lookVector)
+    
+    -- Поворачиваем на 90 градусов (ложимся)
+    cframe = cframe * CFrame.Angles(math.rad(90), 0, 0)
+    
+    -- Обновляем BodyPosition
+    if MainModule.Killaura.BodyPosition then
+        MainModule.Killaura.BodyPosition.Position = headOffsetPosition
+    end
+    
+    -- Обновляем BodyGyro
+    if MainModule.Killaura.BodyGyro then
+        MainModule.Killaura.BodyGyro.CFrame = cframe
+    end
+end
+
+function MainModule.ToggleKillaura(enabled)
+    MainModule.Killaura.Enabled = enabled
+    
+    if MainModule.Killaura.Connection then
+        MainModule.Killaura.Connection:Disconnect()
+        MainModule.Killaura.Connection = nil
+    end
+    
+    -- Сбрасываем все параметры
+    MainModule.Killaura.CurrentTarget = nil
+    MainModule.Killaura.TargetPlayer = nil
+    MainModule.Killaura.FollowingTarget = false
+    MainModule.Killaura.AnimationTracking = {}
+    
+    if not enabled then
+        local character = GetCharacter()
+        if character then
+            restoreKillauraPosition(character)
+        end
+        return
+    end
+    
+    MainModule.Killaura.Connection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Killaura.Enabled then return end
+        
+        local currentTime = tick()
+        if currentTime - MainModule.Killaura.LastTargetCheck < MainModule.Killaura.TargetCheckInterval then
+            if MainModule.Killaura.FollowingTarget then
+                updateKillauraFollowing()
+            end
+            return
+        end
+        
+        MainModule.Killaura.LastTargetCheck = currentTime
+        
+        -- Если уже следуем за целью
+        if MainModule.Killaura.FollowingTarget and MainModule.Killaura.TargetPlayer then
+            local targetCharacter = MainModule.Killaura.TargetPlayer.Character
+            if not targetCharacter then
+                -- Цель потеряна, сбрасываем
+                local character = GetCharacter()
+                if character then
+                    restoreKillauraPosition(character)
+                end
+                MainModule.Killaura.TargetPlayer = nil
+                MainModule.Killaura.FollowingTarget = false
+                return
+            end
+            
+            local targetHumanoid = targetCharacter:FindFirstChild("Humanoid")
+            if targetHumanoid and targetHumanoid.Health <= 0 then
+                -- Цель умерла, сбрасываем
+                local character = GetCharacter()
+                if character then
+                    restoreKillauraPosition(character)
+                end
+                MainModule.Killaura.TargetPlayer = nil
+                MainModule.Killaura.FollowingTarget = false
+                return
+            end
+            
+            updateKillauraFollowing()
+            return
+        end
+        
+        -- Ищем новую цель
+        local nearestPlayer, distance = getNearestPlayerInRadius()
+        if nearestPlayer and distance <= MainModule.Killaura.Radius then
+            MainModule.Killaura.TargetPlayer = nearestPlayer
+            
+            local character = GetCharacter()
+            local targetCharacter = nearestPlayer.Character
+            
+            if character and targetCharacter then
+                setupKillauraLyingPosition(character, targetCharacter)
+            end
+        end
+    end)
+end
+
+function MainModule.SetKillauraRadius(value)
+    if value < MainModule.Killaura.MinRadius then
+        value = MainModule.Killaura.MinRadius
+    elseif value > MainModule.Killaura.MaxRadius then
+        value = MainModule.Killaura.MaxRadius
+    end
+    
+    MainModule.Killaura.Radius = value
+    return value
 end
 
 for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
@@ -3191,6 +3726,7 @@ function MainModule.TeleportToHider()
     return true
 end
 
+-- ИСПРАВЛЕННАЯ ФУНКЦИЯ: Fly с улучшенным управлением
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
@@ -3240,8 +3776,35 @@ function MainModule.EnableFlight()
         return part
     end
     
+    -- Создаем BodyPosition для плавного полета
+    if MainModule.Fly.BodyPosition then
+        MainModule.Fly.BodyPosition:Destroy()
+        MainModule.Fly.BodyPosition = nil
+    end
+    
+    if MainModule.Fly.BodyGyro then
+        MainModule.Fly.BodyGyro:Destroy()
+        MainModule.Fly.BodyGyro = nil
+    end
+    
+    MainModule.Fly.BodyPosition = Instance.new("BodyPosition")
+    MainModule.Fly.BodyPosition.MaxForce = Vector3.new(4000, 4000, 4000)
+    MainModule.Fly.BodyPosition.P = 1250
+    MainModule.Fly.BodyPosition.D = 500
+    MainModule.Fly.BodyPosition.Position = rootPart.Position
+    MainModule.Fly.BodyPosition.Parent = rootPart
+    
+    MainModule.Fly.BodyGyro = Instance.new("BodyGyro")
+    MainModule.Fly.BodyGyro.MaxTorque = Vector3.new(4000, 4000, 4000)
+    MainModule.Fly.BodyGyro.P = 1000
+    MainModule.Fly.BodyGyro.D = 500
+    MainModule.Fly.BodyGyro.CFrame = rootPart.CFrame
+    MainModule.Fly.BodyGyro.Parent = rootPart
+    
     MainModule.Fly.LastUpdate = tick()
     MainModule.Fly.LastPosition = rootPart.Position
+    MainModule.Fly.MoveDirection = Vector3.new(0, 0, 0)
+    MainModule.Fly.IsMoving = false
     
     MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
         if not MainModule.Fly.Enabled or not character or not character.Parent then 
@@ -3258,6 +3821,7 @@ function MainModule.EnableFlight()
         local Camera = workspace.CurrentCamera
         if not Camera then return end
         
+        -- Получаем направление движения от пользователя
         local moveDirection = Vector3.new(0, 0, 0)
         local isMoving = false
         
@@ -3291,44 +3855,46 @@ function MainModule.EnableFlight()
             isMoving = true
         end
         
+        MainModule.Fly.IsMoving = isMoving
+        
         if isMoving then
             if moveDirection.Magnitude > 0 then
                 moveDirection = moveDirection.Unit
             end
             
-            local targetVelocity = moveDirection * 50
+            -- Сохраняем направление движения
+            MainModule.Fly.MoveDirection = moveDirection
             
-            local currentVelocity = rootPart.Velocity
-            local newVelocity = Vector3.new(
-                (currentVelocity.X * 0.3 + targetVelocity.X * 0.7),
-                (currentVelocity.Y * 0.3 + targetVelocity.Y * 0.7),
-                (currentVelocity.Z * 0.3 + targetVelocity.Z * 0.7)
-            )
+            -- Вычисляем целевую позицию
+            local targetVelocity = moveDirection * MainModule.Fly.Speed
+            local targetPosition = rootPart.Position + targetVelocity * 0.016 -- 60 FPS
             
-            local bv = rootPart:FindFirstChild("FlightBV")
-            if not bv then
-                bv = Instance.new("BodyVelocity")
-                bv.Name = "FlightBV"
-                bv.MaxForce = Vector3.new(4000, 4000, 4000)
-                bv.P = 1250
-                bv.Velocity = Vector3.new(0, 0, 0)
-                bv.Parent = rootPart
+            -- Плавно перемещаемся к целевой позиции
+            local currentPosition = rootPart.Position
+            local newPosition = currentPosition:Lerp(targetPosition, 0.5)
+            
+            -- Обновляем BodyPosition
+            if MainModule.Fly.BodyPosition then
+                MainModule.Fly.BodyPosition.Position = newPosition
             end
             
-            bv.Velocity = newVelocity
+            -- Обновляем BodyGyro для сохранения ориентации
+            if MainModule.Fly.BodyGyro then
+                MainModule.Fly.BodyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + Camera.CFrame.LookVector)
+            end
+            
+            -- Убираем гравитацию
             rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            
+            -- Убираем вертикальную скорость от гравитации
+            local currentVelocity = rootPart.Velocity
+            rootPart.Velocity = Vector3.new(currentVelocity.X, 0, currentVelocity.Z)
         else
-            local bv = rootPart:FindFirstChild("FlightBV")
-            if bv then
-                local currentVelocity = rootPart.Velocity
-                local deceleratedVelocity = Vector3.new(
-                    currentVelocity.X * 0.8,
-                    currentVelocity.Y * 0.8,
-                    currentVelocity.Z * 0.8
-                )
-                
-                bv.Velocity = deceleratedVelocity
-                rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            -- Если не двигаемся, просто удерживаем позицию
+            MainModule.Fly.MoveDirection = Vector3.new(0, 0, 0)
+            
+            if MainModule.Fly.BodyPosition then
+                MainModule.Fly.BodyPosition.Position = rootPart.Position
             end
         end
         
@@ -3343,11 +3909,6 @@ function MainModule.EnableFlight()
             
             createFakePart(rootPart.Position)
             
-            local delta = rootPart.Position - MainModule.Fly.LastPosition
-            if delta.Magnitude < 10 then
-                rootPart.CFrame = CFrame.new(rootPart.Position) * CFrame.new(0, 0.1, 0)
-            end
-            
             MainModule.Fly.LastPosition = rootPart.Position
             
             if humanoid then
@@ -3355,12 +3916,6 @@ function MainModule.EnableFlight()
                 humanoid.PlatformStand = false
                 humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
                 humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
-                
-                for _, child in ipairs(character:GetChildren()) do
-                    if child:IsA("BodyVelocity") and child ~= rootPart:FindFirstChild("FlightBV") then
-                        child:Destroy()
-                    end
-                end
             end
         end
     end)
@@ -3447,9 +4002,15 @@ function MainModule.DisableFlight()
     if character then
         local rootPart = GetRootPart(character)
         if rootPart then
-            local bv = rootPart:FindFirstChild("FlightBV")
-            if bv then
-                bv:Destroy()
+            -- Удаляем BodyPosition и BodyGyro
+            if MainModule.Fly.BodyPosition then
+                MainModule.Fly.BodyPosition:Destroy()
+                MainModule.Fly.BodyPosition = nil
+            end
+            
+            if MainModule.Fly.BodyGyro then
+                MainModule.Fly.BodyGyro:Destroy()
+                MainModule.Fly.BodyGyro = nil
             end
             
             rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
@@ -3479,6 +4040,8 @@ function MainModule.DisableFlight()
     end
     
     MainModule.Fly.OriginalStates = nil
+    MainModule.Fly.MoveDirection = Vector3.new(0, 0, 0)
+    MainModule.Fly.IsMoving = false
     
     if MainModule.Fly.WasRagdollEnabled then
         MainModule.ToggleBypassRagdoll(true)
@@ -3495,7 +4058,8 @@ function MainModule.ToggleFly(enabled)
 end
 
 function MainModule.SetFlySpeed(speed)
-    return 50
+    MainModule.Fly.Speed = speed
+    return speed
 end
 
 function MainModule.Cleanup()
@@ -3661,13 +4225,35 @@ function MainModule.Cleanup()
     
     MainModule.DisableFlight()
     
+    -- Отключаем Killaura
+    if MainModule.Killaura.Connection then
+        MainModule.Killaura.Connection:Disconnect()
+        MainModule.Killaura.Connection = nil
+    end
+    
+    local character = GetCharacter()
+    if character then
+        restoreKillauraPosition(character)
+    end
+    
+    MainModule.Killaura.Enabled = false
+    MainModule.Killaura.CurrentTarget = nil
+    MainModule.Killaura.TargetPlayer = nil
+    MainModule.Killaura.FollowingTarget = false
+    MainModule.Killaura.AnimationTracking = {}
+    MainModule.Killaura.IsLyingDown = false
+    
     MainModule.Fly.Enabled = false
-    MainModule.Fly.Speed = 39
+    MainModule.Fly.Speed = 65
     MainModule.Fly.Connection = nil
     MainModule.Fly.BodyVelocity = nil
     MainModule.Fly.HumanoidDiedConnection = nil
     MainModule.Fly.CharacterAddedConnection = nil
     MainModule.Fly.SpeedChangeConnection = nil
+    MainModule.Fly.BodyPosition = nil
+    MainModule.Fly.BodyGyro = nil
+    MainModule.Fly.MoveDirection = Vector3.new(0, 0, 0)
+    MainModule.Fly.IsMoving = false
     
     if MainModule.Noclip.Connection then
         MainModule.Noclip.Connection:Disconnect()
@@ -3688,6 +4274,7 @@ function MainModule.Cleanup()
     
     MainModule.Noclip.OriginalTransparency = {}
     MainModule.Noclip.AffectedParts = {}
+    MainModule.Noclip.LastTouchTime = {}
     
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
@@ -3733,6 +4320,7 @@ function MainModule.Cleanup()
     end
     
     MainModule.GlassBridge.GlassPlatforms = {}
+    MainModule.GlassBridge.OriginalGlassColors = {}
     
     if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
         MainModule.RemoveGlassBridgeAntiFall()
