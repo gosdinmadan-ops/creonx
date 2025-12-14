@@ -1,6 +1,5 @@
 local MainModule = {}
 
--- Получаем сервисы
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -12,42 +11,7 @@ local CoreGui = game:GetService("CoreGui")
 local Debris = game:GetService("Debris")
 local TeleportService = game:GetService("TeleportService")
 
--- Безопасное получение LocalPlayer с проверкой
-local LocalPlayer
-local function getLocalPlayer()
-    local success, result = pcall(function()
-        return Players.LocalPlayer
-    end)
-    
-    if success and result then
-        return result
-    end
-    
-    -- Альтернативный способ получения LocalPlayer
-    for _, player in pairs(Players:GetPlayers()) do
-        if player:IsA("Player") then
-            return player
-        end
-    end
-    
-    return nil
-end
-
--- Инициализируем LocalPlayer с проверкой
-LocalPlayer = getLocalPlayer()
-
--- Если LocalPlayer все еще nil, ждем его появления
-if not LocalPlayer then
-    LocalPlayer = Players.PlayerAdded:Wait()
-end
-
--- Дополнительная проверка и ожидание, если нужно
-while not LocalPlayer do
-    task.wait(0.1)
-    LocalPlayer = getLocalPlayer()
-end
-
-print("[MainModule] LocalPlayer инициализирован:", LocalPlayer.Name)
+local LocalPlayer = Players.LocalPlayer
 
 MainModule.SpeedHack = {
     Enabled = false,
@@ -64,9 +28,7 @@ MainModule.Noclip = {
     OriginalCanCollide = {},
     AffectedParts = {},
     CheckDistance = 20,
-    CheckInterval = 0.1,
-    LastContactTime = {},
-    ContactCooldown = 0.5
+    CheckInterval = 0.1
 }
 
 MainModule.AutoDodge = {
@@ -84,7 +46,7 @@ MainModule.AutoDodge = {
     LastDodgeTime = 0,
     DodgeCooldown = 0.4,
     Range = 4.8,
-    RangeSquared = 7 * 7,
+    RangeSquared = 23.04, -- 4.8 * 4.8 = 23.04 (ИСПРАВЛЕННАЯ СТРОКА 39)
     AnimationIdsSet = {},
     PlayersInRange = {},
     LastRangeUpdate = 0,
@@ -101,19 +63,13 @@ MainModule.Fly = {
     SpeedChangeConnection = nil,
     WasRagdollEnabled = false,
     
-    -- Улучшенные поля для плавного полета
     LastUpdate = 0,
     LastPosition = Vector3.new(0, 0, 0),
     OriginalStates = nil,
     FakeParts = {},
     LastGroundCheck = 0,
     GroundCheckInterval = 2,
-    FakeFloorSize = Vector3.new(10, 1, 10),
-    CurrentVelocity = Vector3.new(0, 0, 0),
-    Acceleration = 25,
-    Deceleration = 15,
-    MaxSpeed = 50,
-    Smoothness = 0.8
+    FakeFloorSize = Vector3.new(10, 1, 10)
 }
 
 MainModule.AutoQTE = {
@@ -4021,3 +3977,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
