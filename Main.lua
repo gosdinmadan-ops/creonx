@@ -28,7 +28,9 @@ MainModule.Noclip = {
     OriginalCanCollide = {},
     AffectedParts = {},
     CheckDistance = 20,
-    CheckInterval = 0.1
+    CheckInterval = 0.1,
+    LastContactTime = {},
+    ContactCooldown = 0.5
 }
 
 MainModule.AutoDodge = {
@@ -55,7 +57,7 @@ MainModule.AutoDodge = {
 
 MainModule.Fly = {
     Enabled = false,
-    Speed = 50, -- Фиксированная скорость 50
+    Speed = 50,
     Connection = nil,
     BodyVelocity = nil,
     HumanoidDiedConnection = nil,
@@ -63,14 +65,19 @@ MainModule.Fly = {
     SpeedChangeConnection = nil,
     WasRagdollEnabled = false,
     
-    -- НОВЫЕ ПОЛЯ ДЛЯ ИСПРАВЛЕННОГО КОДА:
+    -- Улучшенные поля для плавного полета
     LastUpdate = 0,
     LastPosition = Vector3.new(0, 0, 0),
     OriginalStates = nil,
     FakeParts = {},
     LastGroundCheck = 0,
-    GroundCheckInterval = 2, -- Интервал проверки земли для античита
-    FakeFloorSize = Vector3.new(10, 1, 10) -- Размер fake floor
+    GroundCheckInterval = 2,
+    FakeFloorSize = Vector3.new(10, 1, 10),
+    CurrentVelocity = Vector3.new(0, 0, 0),
+    Acceleration = 25,
+    Deceleration = 15,
+    MaxSpeed = 50,
+    Smoothness = 0.8
 }
 
 MainModule.AutoQTE = {
@@ -130,7 +137,8 @@ MainModule.GlassBridge = {
     GlassESPConnection = nil,
     EndPosition = Vector3.new(-196.372467, 522.192139, -1534.20984),
     BridgeHeight = 520.4,
-    PlatformSize = Vector3.new(10000, 1, 10000)
+    PlatformSize = Vector3.new(10000, 1, 10000),
+    OriginalGlassProperties = {}
 }
 
 MainModule.TugOfWar = {
@@ -152,7 +160,6 @@ MainModule.SkySquid = {
     PlatformSize = Vector3.new(10000, 1, 10000)
 }
 
--- Изменены названия переменных для устранения конфликтов
 MainModule.SpikesKillFeature = {
     Enabled = false,
     AnimationId = "rbxassetid://105341857343164",
@@ -219,7 +226,6 @@ MainModule.ZoneKillFeature = {
     AnimationCheckConnection = nil,
     TrackedAnimations = {},
     AntiFallPlatform = nil,
-    
     AnimationIdsSet = {}
 }
 
@@ -236,7 +242,32 @@ MainModule.Hitbox = {
     ModifiedParts = {}
 }
 
--- Новые функции
+MainModule.Killaura = {
+    Enabled = false,
+    Radius = 15,
+    MaxRadius = 100,
+    Connection = nil,
+    CurrentTarget = nil,
+    TargetAnimationIds = {
+        "85623602463927",
+        "87978085217719", 
+        "99157505926076"
+    },
+    TargetAnimationIdsSet = {},
+    TargetAnimations = {},
+    TargetAnimationConnections = {},
+    IsLyingDown = false,
+    OriginalCFrame = nil,
+    OriginalGravity = workspace.Gravity,
+    FlyConnection = nil,
+    TargetTrackedAnimations = {},
+    TargetRootPart = nil,
+    PositionOffset = Vector3.new(0, 5, 0),
+    ReturnDelay = 0.5,
+    FaceTargetConnection = nil,
+    TargetHumanoid = nil
+}
+
 MainModule.FreeDash = {
     Enabled = false,
     OriginalSprintValue = 4,
@@ -482,12 +513,275 @@ local function KillEnemy(enemyName)
     end)
 end
 
--- Новые функции FreeDash и FreeDashGuards
+for _, id in ipairs(MainModule.Killaura.TargetAnimationIds) do
+    MainModule.Killaura.TargetAnimationIdsSet[id] = true
+end
+
+function MainModule.SetKillauraRadius(radius)
+    if radius < 5 then radius = 5 end
+    if radius > MainModule.Killaura.MaxRadius then radius = MainModule.Killaura.MaxRadius end
+    MainModule.Killaura.Radius = radius
+end
+
+function MainModule.ToggleKillaura(enabled)
+    MainModule.Killaura.Enabled = enabled
+    
+    if MainModule.Killaura.Connection then
+        MainModule.Killaura.Connection:Disconnect()
+        MainModule.Killaura.Connection = nil
+    end
+    
+    if MainModule.Killaura.FlyConnection then
+        MainModule.Killaura.FlyConnection:Disconnect()
+        MainModule.Killaura.FlyConnection = nil
+    end
+    
+    if MainModule.Killaura.FaceTargetConnection then
+        MainModule.Killaura.FaceTargetConnection:Disconnect()
+        MainModule.Killaura.FaceTargetConnection = nil
+    end
+    
+    for _, conn in pairs(MainModule.Killaura.TargetAnimationConnections) do
+        if conn then
+            conn:Disconnect()
+        end
+    end
+    MainModule.Killaura.TargetAnimationConnections = {}
+    
+    MainModule.Killaura.CurrentTarget = nil
+    MainModule.Killaura.TargetAnimations = {}
+    MainModule.Killaura.TargetTrackedAnimations = {}
+    MainModule.Killaura.TargetRootPart = nil
+    MainModule.Killaura.TargetHumanoid = nil
+    
+    if MainModule.Killaura.IsLyingDown then
+        local character = GetCharacter()
+        if character then
+            local humanoid = GetHumanoid(character)
+            if humanoid then
+                humanoid.PlatformStand = false
+            end
+            local rootPart = GetRootPart(character)
+            if rootPart then
+                rootPart.Anchored = false
+            end
+        end
+        MainModule.Killaura.IsLyingDown = false
+    end
+    
+    if not enabled then
+        if MainModule.Killaura.OriginalCFrame then
+            local character = GetCharacter()
+            if character then
+                character:SetPrimaryPartCFrame(MainModule.Killaura.OriginalCFrame)
+            end
+            MainModule.Killaura.OriginalCFrame = nil
+        end
+        return
+    end
+    
+    local function findNearestTarget()
+        local character = GetCharacter()
+        if not character then return nil end
+        local rootPart = GetRootPart(character)
+        if not rootPart then return nil end
+        
+        local nearestPlayer = nil
+        local nearestDistance = math.huge
+        
+        for _, player in pairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+            if not player.Character then continue end
+            if player.Character:FindFirstChild("HumanoidRootPart") then
+                local targetRoot = player.Character.HumanoidRootPart
+                local distance = GetDistance(rootPart.Position, targetRoot.Position)
+                if distance <= MainModule.Killaura.Radius and distance < nearestDistance then
+                    nearestPlayer = player
+                    nearestDistance = distance
+                end
+            end
+        end
+        
+        return nearestPlayer
+    end
+    
+    local function setupTargetTracking(targetPlayer)
+        if not targetPlayer or not targetPlayer.Character then return end
+        
+        local character = targetPlayer.Character
+        local humanoid = GetHumanoid(character)
+        if not humanoid then return end
+        
+        local connection = humanoid.AnimationPlayed:Connect(function(track)
+            if track and track.Animation then
+                local animId = tostring(track.Animation.AnimationId)
+                if MainModule.Killaura.TargetAnimationIdsSet[animId] then
+                    if not MainModule.Killaura.TargetTrackedAnimations[track] then
+                        MainModule.Killaura.TargetTrackedAnimations[track] = true
+                        
+                        MainModule.Killaura.TargetAnimations[track] = {
+                            StartTime = tick(),
+                            IsActive = true
+                        }
+                        
+                        track.Stopped:Connect(function()
+                            MainModule.Killaura.TargetAnimations[track] = nil
+                            MainModule.Killaura.TargetTrackedAnimations[track] = nil
+                            
+                            task.wait(MainModule.Killaura.ReturnDelay)
+                            
+                            if MainModule.Killaura.IsLyingDown and MainModule.Killaura.CurrentTarget == targetPlayer then
+                                local myCharacter = GetCharacter()
+                                if myCharacter then
+                                    local myRootPart = GetRootPart(myCharacter)
+                                    if myRootPart then
+                                        if MainModule.Killaura.TargetRootPart and MainModule.Killaura.TargetRootPart.Parent then
+                                            local targetHeadPos = MainModule.Killaura.TargetRootPart.Position + Vector3.new(0, 2.5, 0)
+                                            myRootPart.CFrame = CFrame.new(targetHeadPos + MainModule.Killaura.PositionOffset)
+                                        end
+                                    end
+                                end
+                            end
+                        end)
+                    end
+                end
+            end
+        end)
+        
+        MainModule.Killaura.TargetAnimationConnections[targetPlayer] = connection
+    end
+    
+    MainModule.Killaura.Connection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Killaura.Enabled then return end
+        
+        local character = GetCharacter()
+        if not character then return end
+        local rootPart = GetRootPart(character)
+        if not rootPart then return end
+        local humanoid = GetHumanoid(character)
+        if not humanoid then return end
+        
+        if not MainModule.Killaura.CurrentTarget or not MainModule.Killaura.CurrentTarget.Character then
+            local nearestTarget = findNearestTarget()
+            if nearestTarget then
+                MainModule.Killaura.CurrentTarget = nearestTarget
+                MainModule.Killaura.TargetRootPart = nearestTarget.Character:FindFirstChild("HumanoidRootPart")
+                MainModule.Killaura.TargetHumanoid = GetHumanoid(nearestTarget.Character)
+                setupTargetTracking(nearestTarget)
+            end
+        end
+        
+        if MainModule.Killaura.CurrentTarget and MainModule.Killaura.CurrentTarget.Character then
+            local targetCharacter = MainModule.Killaura.CurrentTarget.Character
+            local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+            local targetHumanoid = GetHumanoid(targetCharacter)
+            
+            if not targetRoot or not targetHumanoid or targetHumanoid.Health <= 0 then
+                MainModule.Killaura.CurrentTarget = nil
+                MainModule.Killaura.TargetRootPart = nil
+                MainModule.Killaura.TargetHumanoid = nil
+                
+                if MainModule.Killaura.IsLyingDown then
+                    humanoid.PlatformStand = false
+                    rootPart.Anchored = false
+                    MainModule.Killaura.IsLyingDown = false
+                end
+                return
+            end
+            
+            local distance = GetDistance(rootPart.Position, targetRoot.Position)
+            if distance > MainModule.Killaura.Radius then
+                MainModule.Killaura.CurrentTarget = nil
+                MainModule.Killaura.TargetRootPart = nil
+                MainModule.Killaura.TargetHumanoid = nil
+                
+                if MainModule.Killaura.IsLyingDown then
+                    humanoid.PlatformStand = false
+                    rootPart.Anchored = false
+                    MainModule.Killaura.IsLyingDown = false
+                end
+                return
+            end
+            
+            if not MainModule.Killaura.IsLyingDown then
+                MainModule.Killaura.IsLyingDown = true
+                MainModule.Killaura.OriginalCFrame = character:GetPrimaryPartCFrame()
+                
+                humanoid.PlatformStand = true
+                rootPart.Anchored = true
+            end
+            
+            local targetHeadPosition = targetRoot.Position + Vector3.new(0, 2.5, 0)
+            local targetPosition = targetHeadPosition + MainModule.Killaura.PositionOffset
+            
+            local targetCFrame = CFrame.new(targetPosition, targetRoot.Position)
+            
+            rootPart.CFrame = targetCFrame
+            rootPart.Anchored = true
+            rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            
+            if not MainModule.Killaura.FlyConnection then
+                MainModule.Killaura.FlyConnection = RunService.Heartbeat:Connect(function()
+                    if not MainModule.Killaura.Enabled or not MainModule.Killaura.CurrentTarget then return end
+                    
+                    local currentCharacter = GetCharacter()
+                    if not currentCharacter then return end
+                    local currentRootPart = GetRootPart(currentCharacter)
+                    if not currentRootPart then return end
+                    
+                    if MainModule.Killaura.TargetRootPart and MainModule.Killaura.TargetRootPart.Parent then
+                        local currentTargetHead = MainModule.Killaura.TargetRootPart.Position + Vector3.new(0, 2.5, 0)
+                        local currentTargetPos = currentTargetHead + MainModule.Killaura.PositionOffset
+                        
+                        currentRootPart.CFrame = CFrame.new(currentTargetPos, MainModule.Killaura.TargetRootPart.Position)
+                        currentRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    end
+                end)
+            end
+            
+            local hasActiveAnimation = false
+            for _, animData in pairs(MainModule.Killaura.TargetAnimations) do
+                if animData and animData.IsActive then
+                    hasActiveAnimation = true
+                    break
+                end
+            end
+            
+            if hasActiveAnimation then
+                local raisedPosition = targetHeadPosition + Vector3.new(0, 10, 0)
+                rootPart.CFrame = CFrame.new(raisedPosition, targetRoot.Position)
+            end
+        else
+            if MainModule.Killaura.IsLyingDown then
+                humanoid.PlatformStand = false
+                rootPart.Anchored = false
+                MainModule.Killaura.IsLyingDown = false
+            end
+        end
+    end)
+    
+    MainModule.Killaura.FaceTargetConnection = RunService.RenderStepped:Connect(function()
+        if not MainModule.Killaura.Enabled or not MainModule.Killaura.CurrentTarget then return end
+        
+        local character = GetCharacter()
+        if not character then return end
+        local rootPart = GetRootPart(character)
+        if not rootPart then return end
+        
+        if MainModule.Killaura.TargetRootPart and MainModule.Killaura.TargetRootPart.Parent then
+            local lookAtPos = MainModule.Killaura.TargetRootPart.Position
+            local currentPos = rootPart.Position
+            local direction = (lookAtPos - currentPos).Unit
+            
+            rootPart.CFrame = CFrame.new(currentPos, currentPos + direction)
+        end
+    end)
+end
+
 function MainModule.ToggleFreeDash(enabled)
     MainModule.FreeDash.Enabled = enabled
     
     if enabled then
-        -- Сохраняем оригинальное значение
         local boosts = LocalPlayer:FindFirstChild("Boosts")
         if boosts then
             local fasterSprint = boosts:FindFirstChild("Faster Sprint")
@@ -497,7 +791,6 @@ function MainModule.ToggleFreeDash(enabled)
             end
         end
         
-        -- Уничтожаем Remote если существует
         local remote = ReplicatedStorage:FindFirstChild("Remotes")
         if remote then
             remote = remote:FindFirstChild("DashRequest")
@@ -507,7 +800,6 @@ function MainModule.ToggleFreeDash(enabled)
             end
         end
     else
-        -- Восстанавливаем оригинальное значение
         local boosts = LocalPlayer:FindFirstChild("Boosts")
         if boosts then
             local fasterSprint = boosts:FindFirstChild("Faster Sprint")
@@ -522,7 +814,6 @@ function MainModule.ToggleFreeDashGuards(enabled)
     MainModule.FreeDashGuards.Enabled = enabled
     
     if enabled then
-        -- Сохраняем оригинальное значение
         local boosts = LocalPlayer:FindFirstChild("Boosts")
         if boosts then
             local fasterSprint = boosts:FindFirstChild("Faster Sprint")
@@ -532,7 +823,6 @@ function MainModule.ToggleFreeDashGuards(enabled)
             end
         end
     else
-        -- Восстанавливаем оригинальное значение
         local boosts = LocalPlayer:FindFirstChild("Boosts")
         if boosts then
             local fasterSprint = boosts:FindFirstChild("Faster Sprint")
@@ -1489,7 +1779,6 @@ function MainModule.DisableSpikes(remove)
     end)
 end
 
--- Инициализируем set
 for _, id in ipairs(MainModule.VoidKillFeature.AnimationIds) do
     MainModule.VoidKillFeature.AnimationIdsSet[id] = true
 end
@@ -1854,7 +2143,6 @@ function MainModule.ToggleZoneKill(enabled)
         checkAnimations()
     end)
 end
-
 
 function MainModule.ToggleSpeedHack(enabled)
     MainModule.SpeedHack.Enabled = enabled
@@ -2460,11 +2748,17 @@ function MainModule.ToggleJumpRopeAntiFall(enabled)
 end
 
 function MainModule.ToggleGlassBridgeAntiBreak(enabled)
+    if enabled and MainModule.GlassBridge.GlassESPEnabled then
+        MainModule.RevealGlassBridge()
+        task.wait(0.1)
+    end
+    
     MainModule.GlassBridge.AntiBreakEnabled = enabled
     if MainModule.GlassBridge.AntiBreakConnection then
         MainModule.GlassBridge.AntiBreakConnection:Disconnect()
         MainModule.GlassBridge.AntiBreakConnection = nil
     end
+    
     if not enabled then
         for _, platform in pairs(MainModule.GlassBridge.GlassPlatforms) do
             if platform and platform.Parent then
@@ -2472,8 +2766,35 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
             end
         end
         MainModule.GlassBridge.GlassPlatforms = {}
+        
+        for glassModel, properties in pairs(MainModule.GlassBridge.OriginalGlassProperties) do
+            if glassModel and glassModel.Parent then
+                for partName, partProperties in pairs(properties) do
+                    local part = glassModel:FindFirstChild(partName)
+                    if part and part:IsA("BasePart") then
+                        part.CanCollide = partProperties.CanCollide
+                        part.Anchored = partProperties.Anchored
+                    end
+                end
+            end
+        end
+        MainModule.GlassBridge.OriginalGlassProperties = {}
         return
     end
+    
+    local function saveOriginalProperties(glassModel)
+        if not glassModel then return end
+        MainModule.GlassBridge.OriginalGlassProperties[glassModel] = {}
+        for _, part in pairs(glassModel:GetDescendants()) do
+            if part:IsA("BasePart") then
+                MainModule.GlassBridge.OriginalGlassProperties[glassModel][part.Name] = {
+                    CanCollide = part.CanCollide,
+                    Anchored = part.Anchored
+                }
+            end
+        end
+    end
+    
     local function createPlatformUnderGlass(glassModel)
         if not glassModel or not glassModel.PrimaryPart then return end
         local platformName = "AntiFallPlatform_" .. glassModel.Name
@@ -2500,17 +2821,24 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
         table.insert(MainModule.GlassBridge.GlassPlatforms, platform)
         return platform
     end
+    
     MainModule.GlassBridge.AntiBreakConnection = RunService.Heartbeat:Connect(function()
         local GlassBridge = workspace:FindFirstChild("GlassBridge")
         if not GlassBridge then return end
         local GlassHolder = GlassBridge:FindFirstChild("GlassHolder")
         if not GlassHolder then return end
+        
         for _, rowFolder in pairs(GlassHolder:GetChildren()) do
             for _, glassModel in pairs(rowFolder:GetChildren()) do
                 if glassModel:IsA("Model") and glassModel.PrimaryPart then
+                    if not MainModule.GlassBridge.OriginalGlassProperties[glassModel] then
+                        saveOriginalProperties(glassModel)
+                    end
+                    
                     if glassModel.PrimaryPart:GetAttribute("exploitingisevil") ~= nil then
                         glassModel.PrimaryPart:SetAttribute("exploitingisevil", nil)
                     end
+                    
                     if glassModel.PrimaryPart:IsA("BasePart") then
                         glassModel.PrimaryPart.CanCollide = true
                         glassModel.PrimaryPart.Anchored = true
@@ -2522,10 +2850,13 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
                             end
                         end
                     end
+                    
+                    createPlatformUnderGlass(glassModel)
                 end
             end
         end
     end)
+    
     task.spawn(function()
         task.wait(1)
         local GlassBridge = workspace:FindFirstChild("GlassBridge")
@@ -2534,6 +2865,7 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
             for _, rowFolder in pairs(GlassHolder:GetChildren()) do
                 for _, glassModel in pairs(rowFolder:GetChildren()) do
                     if glassModel:IsA("Model") and glassModel.PrimaryPart then
+                        saveOriginalProperties(glassModel)
                         createPlatformUnderGlass(glassModel)
                     end
                 end
@@ -2543,7 +2875,10 @@ function MainModule.ToggleGlassBridgeAntiBreak(enabled)
 end
 
 function MainModule.RevealGlassBridge()
-    local GlassHolder = Workspace:WaitForChild("GlassBridge"):WaitForChild("GlassHolder")
+    if not workspace:FindFirstChild("GlassBridge") then return end
+    
+    local GlassHolder = workspace.GlassBridge:FindFirstChild("GlassHolder")
+    if not GlassHolder then return end
     
     for _, tilePair in pairs(GlassHolder:GetChildren()) do
         for _, tileModel in pairs(tilePair:GetChildren()) do
@@ -2556,9 +2891,15 @@ function MainModule.RevealGlassBridge()
                     end
                 end
                 
-                local Color = primaryPart:GetAttribute("exploitingisevil") 
-                    and Color3.fromRGB(248, 87, 87)
-                    or Color3.fromRGB(28, 235, 87)
+                local Color = nil
+                if MainModule.GlassBridge.AntiBreakEnabled then
+                    local isBreakable = primaryPart:GetAttribute("exploitingisevil")
+                    Color = isBreakable and Color3.fromRGB(248, 87, 87) or Color3.fromRGB(28, 235, 87)
+                else
+                    Color = primaryPart:GetAttribute("exploitingisevil") 
+                        and Color3.fromRGB(248, 87, 87)
+                        or Color3.fromRGB(28, 235, 87)
+                end
                 
                 primaryPart.Color = Color
                 primaryPart.Transparency = 0
@@ -2588,6 +2929,42 @@ function MainModule.RevealGlassBridge()
                 DisplayTime = 10,
                 AnnouncementDisplayText = "[CreonHub]: Glass ESP Activated! Red = Breakable, Green = Safe"
             })
+        end
+    end
+end
+
+function MainModule.ToggleGlassBridgeESP(enabled)
+    MainModule.GlassBridge.GlassESPEnabled = enabled
+    if MainModule.GlassBridge.GlassESPConnection then
+        MainModule.GlassBridge.GlassESPConnection:Disconnect()
+        MainModule.GlassBridge.GlassESPConnection = nil
+    end
+    
+    if enabled then
+        MainModule.RevealGlassBridge()
+        
+        MainModule.GlassBridge.GlassESPConnection = RunService.Heartbeat:Connect(function()
+            if not MainModule.GlassBridge.GlassESPEnabled then return end
+            MainModule.RevealGlassBridge()
+        end)
+    else
+        local GlassBridge = workspace:FindFirstChild("GlassBridge")
+        if GlassBridge then
+            local GlassHolder = GlassBridge:FindFirstChild("GlassHolder")
+            if GlassHolder then
+                for _, tilePair in pairs(GlassHolder:GetChildren()) do
+                    for _, tileModel in pairs(tilePair:GetChildren()) do
+                        if tileModel:IsA("Model") then
+                            for _, part in pairs(tileModel:GetDescendants()) do
+                                if part:IsA("BasePart") then
+                                    part.Transparency = 0
+                                    part.Material = Enum.Material.Glass
+                                end
+                            end
+                        end
+                    end
+                end
+            end
         end
     end
 end
@@ -2690,6 +3067,7 @@ function MainModule.ToggleNoclip(enabled)
         end
     end
     MainModule.Noclip.AffectedParts = {}
+    MainModule.Noclip.LastContactTime = {}
     
     if not enabled then return end
     
@@ -2713,14 +3091,38 @@ function MainModule.ToggleNoclip(enabled)
         
         local parts = workspace:FindPartsInRegion3(region, character, 100)
         
+        local currentTime = tick()
+        
         for i = 1, #parts do
             local part = parts[i]
             
-            if part.Position.Y > pos.Y - 2 then
+            local partPos = part.Position
+            local isFootLevel = partPos.Y < pos.Y + 1 and partPos.Y > pos.Y - 2
+            
+            if isFootLevel then
+                MainModule.Noclip.LastContactTime[part] = currentTime
+            end
+            
+            local lastContact = MainModule.Noclip.LastContactTime[part] or 0
+            local timeSinceContact = currentTime - lastContact
+            
+            if timeSinceContact > MainModule.Noclip.ContactCooldown then
                 if not MainModule.Noclip.AffectedParts[part] then
                     MainModule.Noclip.AffectedParts[part] = true
                     part.CanCollide = false
                 end
+            else
+                if MainModule.Noclip.AffectedParts[part] then
+                    MainModule.Noclip.AffectedParts[part] = nil
+                    part.CanCollide = true
+                end
+            end
+        end
+        
+        for part in pairs(MainModule.Noclip.AffectedParts) do
+            if not part or not part.Parent then
+                MainModule.Noclip.AffectedParts[part] = nil
+                MainModule.Noclip.LastContactTime[part] = nil
             end
         end
     end)
@@ -2740,7 +3142,6 @@ local function executeInstantDodge()
         return false
     end
     
-    -- Получение игрока
     local player = nil
     if game:GetService("Players").LocalPlayer then
         player = game:GetService("Players").LocalPlayer
@@ -2750,7 +3151,6 @@ local function executeInstantDodge()
         return false
     end
     
-    -- Поиск RemoteEvent
     local remote = nil
     local remoteContainer = game:GetService("ReplicatedStorage")
     
@@ -2765,18 +3165,14 @@ local function executeInstantDodge()
         return false
     end
     
-    -- Поиск инструмента DODGE!
     local tool = nil
     
-    -- Сначала проверяем Character
     if player.Character then
         tool = player.Character:FindFirstChild("DODGE!")
         if tool then
-            -- Инструмент найден в Character
         end
     end
     
-    -- Если не нашли, проверяем Backpack
     if not tool and player:FindFirstChild("Backpack") then
         local backpack = player:FindFirstChild("Backpack")
         tool = backpack:FindFirstChild("DODGE!")
@@ -2786,7 +3182,6 @@ local function executeInstantDodge()
         return false 
     end
     
-    -- ТОЛЬКО 2-й способ вызова: UsingMoveCustom без имени (как в примере с Push)
     local success = pcall(function() 
         remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true}) 
     end)
@@ -2972,7 +3367,6 @@ function MainModule.TeleportToHider()
     return true
 end
 
--- Fly функция с улучшенной защитой и исправленным движением
 function MainModule.ToggleFly(enabled)
     if enabled then
         MainModule.EnableFlight()
@@ -2984,10 +3378,8 @@ end
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
-    -- Сохраняем состояние AntiRagdoll
     MainModule.Fly.WasRagdollEnabled = MainModule.Misc.BypassRagdollEnabled
     
-    -- Если AntiRagdoll включен, выключаем его временно
     if MainModule.Misc.BypassRagdollEnabled then
         MainModule.ToggleBypassRagdoll(false)
     end
@@ -3011,14 +3403,12 @@ function MainModule.EnableFlight()
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
     
-    -- Сохраняем оригинальное состояние для античита
     MainModule.Fly.OriginalStates = {
         WalkSpeed = humanoid.WalkSpeed,
         JumpPower = humanoid.JumpPower,
         PlatformStand = false
     }
     
-    -- Создаем скрытые части для обмана античита
     MainModule.Fly.FakeParts = {}
     local function createFakePart(position)
         local part = Instance.new("Part")
@@ -3035,6 +3425,7 @@ function MainModule.EnableFlight()
     
     MainModule.Fly.LastUpdate = tick()
     MainModule.Fly.LastPosition = rootPart.Position
+    MainModule.Fly.CurrentVelocity = Vector3.new(0, 0, 0)
     
     MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
         if not MainModule.Fly.Enabled or not character or not character.Parent then 
@@ -3051,12 +3442,9 @@ function MainModule.EnableFlight()
         local Camera = workspace.CurrentCamera
         if not Camera then return end
         
-        -- Улучшенное управление движением (без плавания)
         local moveDirection = Vector3.new(0, 0, 0)
         local isMoving = false
-        local speedMultiplier = 1.0
         
-        -- Движение вперед/назад
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then
             moveDirection = moveDirection + Camera.CFrame.LookVector
             isMoving = true
@@ -3066,7 +3454,6 @@ function MainModule.EnableFlight()
             isMoving = true
         end
         
-        -- Движение влево/вправо
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then
             moveDirection = moveDirection - Camera.CFrame.RightVector
             isMoving = true
@@ -3076,7 +3463,6 @@ function MainModule.EnableFlight()
             isMoving = true
         end
         
-        -- Движение вверх/вниз
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
             moveDirection = moveDirection + Vector3.new(0, 1, 0)
             isMoving = true
@@ -3086,24 +3472,19 @@ function MainModule.EnableFlight()
             isMoving = true
         end
         
-        -- Нормализуем направление и применяем скорость 50
         if isMoving then
             if moveDirection.Magnitude > 0 then
                 moveDirection = moveDirection.Unit
             end
             
-            -- Прямое движение без "плавания"
-            local targetVelocity = moveDirection * 50 -- Исправленная скорость 50
+            local targetSpeed = MainModule.Fly.MaxSpeed
+            local targetVelocity = moveDirection * targetSpeed
             
-            -- Плавное применение скорости
-            local currentVelocity = rootPart.Velocity
-            local newVelocity = Vector3.new(
-                (currentVelocity.X * 0.3 + targetVelocity.X * 0.7),
-                (currentVelocity.Y * 0.3 + targetVelocity.Y * 0.7),
-                (currentVelocity.Z * 0.3 + targetVelocity.Z * 0.7)
+            MainModule.Fly.CurrentVelocity = MainModule.Fly.CurrentVelocity:Lerp(
+                targetVelocity,
+                MainModule.Fly.Smoothness * RunService.Heartbeat:Wait()
             )
             
-            -- Используем BodyVelocity для более контролируемого движения
             local bv = rootPart:FindFirstChild("FlightBV")
             if not bv then
                 bv = Instance.new("BodyVelocity")
@@ -3114,57 +3495,48 @@ function MainModule.EnableFlight()
                 bv.Parent = rootPart
             end
             
-            bv.Velocity = newVelocity
+            bv.Velocity = MainModule.Fly.CurrentVelocity
             
-            -- Античит защита: обнуляем реальную velocity rootPart
+            local gravityCorrection = Vector3.new(0, workspace.Gravity * 0.05, 0)
             rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             
         else
-            -- Если не двигаемся, останавливаемся плавно
+            MainModule.Fly.CurrentVelocity = MainModule.Fly.CurrentVelocity:Lerp(
+                Vector3.new(0, 0, 0),
+                MainModule.Fly.Deceleration * RunService.Heartbeat:Wait()
+            )
+            
             local bv = rootPart:FindFirstChild("FlightBV")
             if bv then
-                local currentVelocity = rootPart.Velocity
-                local deceleratedVelocity = Vector3.new(
-                    currentVelocity.X * 0.8,
-                    currentVelocity.Y * 0.8,
-                    currentVelocity.Z * 0.8
-                )
-                
-                bv.Velocity = deceleratedVelocity
+                bv.Velocity = MainModule.Fly.CurrentVelocity
                 rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             end
         end
         
-        -- Античит защита: обманываем проверки
         local currentTime = tick()
         if currentTime - MainModule.Fly.LastUpdate > 0.1 then
             MainModule.Fly.LastUpdate = currentTime
             
-            -- Обновляем fake floor под нами
             for _, part in ipairs(MainModule.Fly.FakeParts) do
                 part:Destroy()
             end
-            MainModule.Fly.FakeParts = {}
+            MainModule.Fly.FakeParts = []
             
-            -- Создаем невидимый пол под нами
             createFakePart(rootPart.Position)
             
-            -- Обманываем физику: устанавливаем небольшое смещение вместо полета
             local delta = rootPart.Position - MainModule.Fly.LastPosition
-            if delta.Magnitude < 10 then  -- Ограничиваем скорость для античита
-                rootPart.CFrame = CFrame.new(rootPart.Position) * CFrame.new(0, 0.1, 0)
+            if delta.Magnitude < 50 then
+                rootPart.CFrame = CFrame.new(rootPart.Position) * CFrame.new(0, 0.05, 0)
             end
             
             MainModule.Fly.LastPosition = rootPart.Position
             
-            -- Обманываем гуманода
             if humanoid then
                 humanoid:ChangeState(Enum.HumanoidStateType.Running)
                 humanoid.PlatformStand = false
                 humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
                 humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
                 
-                -- Скрываем эффекты полета
                 for _, child in ipairs(character:GetChildren()) do
                     if child:IsA("BodyVelocity") and child ~= rootPart:FindFirstChild("FlightBV") then
                         child:Destroy()
@@ -3174,19 +3546,16 @@ function MainModule.EnableFlight()
         end
     end)
     
-    -- Античит: периодически имитируем приземление
     MainModule.Fly.SpeedChangeConnection = RunService.Heartbeat:Connect(function()
         if not MainModule.Fly.Enabled then return end
         
         local rootPart = GetRootPart(character)
         if not rootPart then return end
         
-        -- Имитация приземления каждые 2 секунды
         local currentTime = tick()
         if currentTime - MainModule.Fly.LastGroundCheck > 2 then
             MainModule.Fly.LastGroundCheck = currentTime
             
-            -- Создаем невидимый пол
             local fakeGround = Instance.new("Part")
             fakeGround.Name = "FlyGround"
             fakeGround.Size = Vector3.new(10, 1, 10)
@@ -3262,7 +3631,6 @@ function MainModule.DisableFlight()
                 bv:Destroy()
             end
             
-            -- Удаляем AssemblyLinearVelocity
             rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         end
         
@@ -3272,7 +3640,6 @@ function MainModule.DisableFlight()
         end
     end
     
-    -- Удаляем fake parts
     if MainModule.Fly.FakeParts then
         for _, part in ipairs(MainModule.Fly.FakeParts) do
             if part and part.Parent then
@@ -3282,7 +3649,6 @@ function MainModule.DisableFlight()
         MainModule.Fly.FakeParts = {}
     end
     
-    -- Восстанавливаем оригинальные состояния
     if MainModule.Fly.OriginalStates and character then
         local humanoid = GetHumanoid(character)
         if humanoid then
@@ -3292,7 +3658,6 @@ function MainModule.DisableFlight()
     end
     MainModule.Fly.OriginalStates = nil
     
-    -- Восстанавливаем состояние AntiRagdoll если он был включен
     if MainModule.Fly.WasRagdollEnabled then
         MainModule.ToggleBypassRagdoll(true)
         MainModule.Fly.WasRagdollEnabled = false
@@ -3300,8 +3665,8 @@ function MainModule.DisableFlight()
 end
 
 function MainModule.SetFlySpeed(speed)
-    -- Для совместимости оставляем, но используем фиксированную скорость 50
-    return 50
+    MainModule.Fly.MaxSpeed = speed
+    return speed
 end
 
 function MainModule.Cleanup()
@@ -3449,6 +3814,28 @@ function MainModule.Cleanup()
         MainModule.AntiTimeStop.Connection = nil
     end
     
+    if MainModule.Killaura.Connection then
+        MainModule.Killaura.Connection:Disconnect()
+        MainModule.Killaura.Connection = nil
+    end
+    
+    if MainModule.Killaura.FlyConnection then
+        MainModule.Killaura.FlyConnection:Disconnect()
+        MainModule.Killaura.FlyConnection = nil
+    end
+    
+    if MainModule.Killaura.FaceTargetConnection then
+        MainModule.Killaura.FaceTargetConnection:Disconnect()
+        MainModule.Killaura.FaceTargetConnection = nil
+    end
+    
+    for _, conn in pairs(MainModule.Killaura.TargetAnimationConnections) do
+        if conn then
+            conn:Disconnect()
+        end
+    end
+    MainModule.Killaura.TargetAnimationConnections = {}
+    
     if globalAnimationHandler then
         globalAnimationHandler:Disconnect()
         globalAnimationHandler = nil
@@ -3548,10 +3935,15 @@ function MainModule.Cleanup()
         MainModule.ToggleNoclip(false)
     end
     
+    if MainModule.Killaura.Enabled then
+        MainModule.ToggleKillaura(false)
+    end
+    
     MainModule.SpeedHack.Enabled = false
     MainModule.SpeedHack.CurrentSpeed = 16
     MainModule.Noclip.Enabled = false
     MainModule.AutoDodge.Enabled = false
+    MainModule.Killaura.Enabled = false
     MainModule.AutoQTE.AntiStunEnabled = false
     MainModule.Rebel.Enabled = false
     MainModule.RLGL.GodMode = false
@@ -3593,15 +3985,3 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
-
-
-
-
-
-
-
-
-
-
-
-
