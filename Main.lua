@@ -264,13 +264,18 @@ MainModule.Killaura = {
     AnimationCheckConnection = nil,
     CharacterAddedConnection = nil,
     IsAttached = false,
-    AttachOffset = Vector3.new(0, 5, 0),
+    AttachOffset = Vector3.new(0, 1.5, 0), -- Уменьшил отступ
     OriginalGravity = 196.2,
     AnimationStartTime = 0,
     IsLifted = false,
-    LiftHeight = 5,
+    LiftHeight = 2, -- Уменьшил высоту подъема
     OriginalCFrame = nil,
-    TargetAnimationsSet = {}
+    TargetAnimationsSet = {},
+    LastPositionUpdate = 0,
+    PositionUpdateInterval = 0.05,
+    AttachConnection = nil,
+    IsFacingDown = false,
+    AttachHeightOffset = 1.8 -- Оптимальная высота для положения лежа
 }
 
 MainModule.Misc = {
@@ -4141,4 +4146,5 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
