@@ -38,12 +38,13 @@ if not success then
     return
 end
 
--- Автоматически включаем Bypass при запуске скрипта
+-- Важно: Отключаем Bypass Ragdoll при запуске
 task.spawn(function()
-    task.wait(1)
-    if MainModule.ToggleBypassRagdoll then
-        MainModule.ToggleBypassRagdoll(true)
-        print("Bypass включен автоматически")
+    task.wait(0.5) -- Даем время для инициализации
+    if MainModule and MainModule.ToggleBypassRagdoll then
+        -- Явно отключаем Bypass Ragdoll при старте
+        MainModule.ToggleBypassRagdoll(false)
+        print("Bypass Ragdoll отключен при запуске")
     end
 end)
 
@@ -67,6 +68,9 @@ local KillauraHotkey = nil
 local isChoosingFlyKey = false
 local isChoosingNoclipKey = false
 local isChoosingKillauraKey = false
+
+-- Флаг для предотвращения автоматического включения Bypass
+local initializing = true
 
 -- GUI Creon X v2.5
 local ScreenGui = Instance.new("ScreenGui")
@@ -384,7 +388,7 @@ end
 
 -- Улучшенная функция для создания переключателей с защитой от ошибок
 local toggleElements = {}
-local function CreateToggle(text, getEnabledFunction, callback, layoutOrder)
+local function CreateToggle(text, getEnabledFunction, callback, layoutOrder, bypassInitialization)
     local toggleContainer = Instance.new("Frame")
     toggleContainer.Size = UDim2.new(1, -10, 0, 32)
     toggleContainer.BackgroundTransparency = 1
@@ -396,7 +400,8 @@ local function CreateToggle(text, getEnabledFunction, callback, layoutOrder)
         container = toggleContainer,
         getEnabled = getEnabledFunction,
         callback = callback,
-        text = text
+        text = text,
+        bypassInitialization = bypassInitialization or false
     })
     
     -- Текст
@@ -466,6 +471,12 @@ local function CreateToggle(text, getEnabledFunction, callback, layoutOrder)
     end
     
     local function toggleFunction()
+        -- Если идет инициализация и это Bypass Ragdoll - пропускаем
+        if initializing and text:find("Anti Stun %+ Anti Ragdoll") then
+            print("Пропускаем автоматическое включение Bypass Ragdoll во время инициализации")
+            return
+        end
+        
         local success, currentState = pcall(getEnabledFunction)
         if not success then
             currentState = false
@@ -1129,16 +1140,22 @@ local function CreateMainContent()
         end
     end, 7)
     
-    -- Anti Stun + Anti Ragdoll
+    -- Anti Stun + Anti Ragdoll - ВАЖНО: предотвращаем автоматическое включение
     CreateToggle("Anti Stun + Anti Ragdoll", function() 
         return MainModule and MainModule.Misc and MainModule.Misc.BypassRagdollEnabled or false
     end, function(enabled)
+        -- Явно отключаем при вызове во время инициализации
+        if initializing then
+            enabled = false
+            print("Bypass Ragdoll принудительно отключен при инициализации")
+        end
+        
         if MainModule and MainModule.ToggleBypassRagdoll then
             MainModule.ToggleBypassRagdoll(enabled)
         elseif MainModule and MainModule.Misc then
             MainModule.Misc.BypassRagdollEnabled = enabled
         end
-    end, 8)
+    end, 8, true) -- Последний параметр: bypassInitialization = true
     
     -- Instance Interact
     CreateToggle("Instance Interact", function() 
@@ -2013,7 +2030,16 @@ if tabButtons["Main"] then
     tabButtons["Main"].BackgroundColor3 = Color3.fromRGB(0, 100, 200)
     tabButtons["Main"].TextColor3 = Color3.fromRGB(255, 255, 255)
 end
+
+-- Создаем Main контент и сразу отключаем инициализацию
 CreateMainContent()
+
+-- Завершаем инициализацию после создания GUI
+task.spawn(function()
+    task.wait(2) -- Даем время на полную инициализацию
+    initializing = false
+    print("Инициализация завершена")
+end)
 
 -- Очистка при удалении GUI
 ScreenGui.AncestryChanged:Connect(function()
