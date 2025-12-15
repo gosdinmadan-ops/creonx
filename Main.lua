@@ -293,7 +293,6 @@ MainModule.Killaura = {
         Velocity = 50000,
         AntiGravity = 1.2
     },
-    -- НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ ИСПРАВЛЕНИЙ
     OriginalHumanoidState = nil,
     OriginalPlatformStand = nil,
     IsSearching = false,
@@ -308,7 +307,16 @@ MainModule.Killaura = {
         WalkCycle = 0,
         LegMovement = 0,
         ArmMovement = 0
-    }
+    },
+    -- НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ ПОЗИЦИОНИРОВАНИЯ СЗАДИ
+    BehindOffset = 3, -- Расстояние сзади цели
+    SideOffset = 0,   -- Смещение вбок
+    HeightOffset = 1.8, -- Высота относительно цели
+    SmoothFollowFactor = 0.3, -- Плавность следования
+    SmoothLookFactor = 0.4, -- Плавность поворота взгляда
+    LastTargetCFrame = nil,
+    TargetVelocity = Vector3.new(0, 0, 0),
+    PredictionStrength = 0.1 -- Предсказание движения цели
 }
 
 
@@ -3583,39 +3591,68 @@ local function findTargetAnywhere()
     return bestTarget
 end
 
--- ФУНКЦИЯ ДЛЯ ПРЯМОГО ВЗГЛЯДА НА ЖЕРТВУ
-local function lookDirectlyAtTarget(character, targetPos, deltaTime)
+-- ФУНКЦИЯ РАСЧЕТА ПОЗИЦИИ СЗАДИ ЦЕЛИ
+local function calculatePositionBehindTarget(targetRoot, deltaTime)
+    if not targetRoot then return nil end
+    
+    -- Получаем направление взгляда цели
+    local targetLookVector = targetRoot.CFrame.LookVector
+    
+    -- Рассчитываем позицию сзади цели
+    local behindPosition = targetRoot.Position - (targetLookVector * MainModule.Killaura.BehindOffset)
+    
+    -- Добавляем смещение вбок (если нужно)
+    if MainModule.Killaura.SideOffset ~= 0 then
+        local rightVector = targetRoot.CFrame.RightVector
+        behindPosition = behindPosition + (rightVector * MainModule.Killaura.SideOffset)
+    end
+    
+    -- Добавляем высоту
+    behindPosition = behindPosition + Vector3.new(0, MainModule.Killaura.HeightOffset, 0)
+    
+    -- Предсказываем движение цели
+    if MainModule.Killaura.TargetVelocity.Magnitude > 0.1 then
+        behindPosition = behindPosition + (MainModule.Killaura.TargetVelocity * MainModule.Killaura.PredictionStrength)
+    end
+    
+    return behindPosition
+end
+
+-- ФУНКЦИЯ ДЛЯ ПЛАВНОГО ПОВОРОТА ВЗГЛЯДА НА ЖЕРТВУ
+local function lookAtTargetSmoothly(character, targetPos, deltaTime)
     if not character or not targetPos then return end
     
     local rootPart = GetRootPart(character)
     if not rootPart then return end
     
-    -- ТЕПЕРЬ СМОТРИМ ПРЯМО НА ЖЕРТВУ, А НЕ СВЕРХУ
     local currentPos = rootPart.Position
+    local currentCFrame = rootPart.CFrame
+    
+    -- Вычисляем направление к цели
     local direction = (targetPos - currentPos).Unit
     
-    -- Вычисляем плавный поворот
-    local currentLook = rootPart.CFrame.LookVector
-    local targetLook = direction
+    -- Текущий вектор взгляда
+    local currentLook = currentCFrame.LookVector
     
-    -- Используем более агрессивный фактор для быстрого поворота
-    local lookFactor = MainModule.Killaura.SmoothLookFactor
-    local smoothedLook = currentLook:Lerp(targetLook, lookFactor * deltaTime * 30) -- Ускоренный поворот
+    -- Плавно интерполируем вектор взгляда
+    local lookFactor = MainModule.Killaura.SmoothLookFactor * deltaTime * 60
+    local smoothedLook = currentLook:Lerp(direction, math.min(lookFactor, 1))
     
-    -- Создаем новый CFrame смотрящий ПРЯМО на цель
+    -- Создаем новый CFrame, смотрящий на цель
     local newCFrame = CFrame.new(currentPos, currentPos + smoothedLook)
     
-    -- Наклон для позы на животе
+    -- Наклон для позы на животе (если нужно)
     newCFrame = newCFrame * CFrame.Angles(math.rad(75), 0, 0)
     
-    -- Применяем CFrame
-    rootPart.CFrame = newCFrame
+    -- Применяем плавно
+    local smoothCFrame = currentCFrame:Lerp(newCFrame, MainModule.Killaura.SmoothFollowFactor)
+    rootPart.CFrame = smoothCFrame
     
     -- Сохраняем для плавности
-    MainModule.Killaura.LastValidCFrame = newCFrame
+    MainModule.Killaura.LastValidCFrame = smoothCFrame
 end
 
--- ФУНКЦИЯ СИМУЛЯЦИИ ДВИЖЕНИЙ (ЧТОБЫ НЕ БЫЛО СТАТИЧНОСТИ)
+-- ФУНКЦИЯ СИМУЛЯЦИИ ДВИЖЕНИЙ
 local function simulateNaturalMovement(character, deltaTime)
     if not MainModule.Killaura.MovementSimulation.Enabled then return end
     
@@ -3681,9 +3718,14 @@ local function simpleAttachToTarget(targetPlayer)
     humanoid.PlatformStand = true
     rootPart.CanCollide = false
     
-    -- Устанавливаем начальную позицию
-    local targetPosition = targetRoot.Position + Vector3.new(0, MainModule.Killaura.AttachYOffset, 0)
+    -- Рассчитываем позицию сзади цели
+    local targetPosition = calculatePositionBehindTarget(targetRoot, 0)
+    
+    -- Устанавливаем начальную позицию сзади цели
     rootPart.CFrame = CFrame.new(targetPosition, targetRoot.Position) * CFrame.Angles(math.rad(75), 0, 0)
+    
+    -- Сохраняем CFrame цели для предсказания
+    MainModule.Killaura.LastTargetCFrame = targetRoot.CFrame
     
     MainModule.Killaura.IsAttached = true
     MainModule.Killaura.LastPositionUpdate = tick()
@@ -3693,7 +3735,7 @@ local function simpleAttachToTarget(targetPlayer)
     return true
 end
 
--- ФУНКЦИЯ ОБНОВЛЕНИЯ ПРИКРЕПЛЕНИЯ
+-- ФУНКЦИЯ ОБНОВЛЕНИЯ ПРИКРЕПЛЕНИЯ (С ПОЗИЦИОНИРОВАНИЕМ СЗАДИ)
 local function updateSimpleAttachment(deltaTime)
     if not MainModule.Killaura.CurrentTarget then return end
     
@@ -3709,25 +3751,37 @@ local function updateSimpleAttachment(deltaTime)
     local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not targetRoot then return end
     
-    -- Позиция над целью
-    local baseYOffset = MainModule.Killaura.AttachYOffset
-    if MainModule.Killaura.IsLifted then
-        baseYOffset = baseYOffset + MainModule.Killaura.LiftHeight
+    -- Обновляем скорость цели для предсказания
+    if MainModule.Killaura.LastTargetCFrame then
+        local currentPos = targetRoot.Position
+        local lastPos = MainModule.Killaura.LastTargetCFrame.Position
+        MainModule.Killaura.TargetVelocity = (currentPos - lastPos) / deltaTime
     end
     
-    local targetPosition = targetRoot.Position + Vector3.new(0, baseYOffset, 0)
+    -- Рассчитываем целевую позицию сзади цели
+    local targetPosition = calculatePositionBehindTarget(targetRoot, deltaTime)
+    
+    -- Если цель поднята в анимации
+    if MainModule.Killaura.IsLifted then
+        targetPosition = targetPosition + Vector3.new(0, MainModule.Killaura.LiftHeight, 0)
+    end
     
     -- Плавное движение к цели
     local currentPos = rootPart.Position
-    local smoothPosition = currentPos:Lerp(targetPosition, 0.7)
+    local smoothFactor = MainModule.Killaura.SmoothFollowFactor * deltaTime * 60
+    local smoothPosition = currentPos:Lerp(targetPosition, math.min(smoothFactor, 1))
     
     -- Применяем позицию
     rootPart.CFrame = CFrame.new(smoothPosition, targetRoot.Position) * CFrame.Angles(math.rad(75), 0, 0)
+    
+    -- Смотрим на цель плавно
+    lookAtTargetSmoothly(character, targetRoot.Position, deltaTime)
     
     -- СИМУЛИРУЕМ ЕСТЕСТВЕННЫЕ ДВИЖЕНИЯ
     simulateNaturalMovement(character, deltaTime)
     
     -- Сохраняем информацию о цели
+    MainModule.Killaura.LastTargetCFrame = targetRoot.CFrame
     MainModule.Killaura.LastValidTargetPos = targetRoot.Position
     MainModule.Killaura.LastTargetDistance = GetDistance(rootPart.Position, targetRoot.Position)
 end
@@ -3789,6 +3843,8 @@ function MainModule.ToggleKillaura(enabled)
     MainModule.Killaura.IsSearching = false
     MainModule.Killaura.SearchAttempts = 0
     MainModule.Killaura.SearchRadius = 50
+    MainModule.Killaura.TargetVelocity = Vector3.new(0, 0, 0)
+    MainModule.Killaura.LastTargetCFrame = nil
     
     -- Если выключаем - ВОССТАНАВЛИВАЕМ ВСЁ СРАЗУ
     if not enabled then
@@ -3865,6 +3921,8 @@ function MainModule.ToggleKillaura(enabled)
                 MainModule.Killaura.IsAttached = false
                 MainModule.Killaura.IsSearching = true
                 MainModule.Killaura.SearchAttempts = 0
+                MainModule.Killaura.TargetVelocity = Vector3.new(0, 0, 0)
+                MainModule.Killaura.LastTargetCFrame = nil
                 print("Цель потеряна, ищем новую...")
                 
                 -- Восстанавливаем контроль пока ищем
@@ -3874,20 +3932,16 @@ function MainModule.ToggleKillaura(enabled)
                     humanoid:ChangeState(Enum.HumanoidStateType.Running)
                 end
             else
-                -- Обновляем прикрепление
+                -- Обновляем прикрепление (всегда с позицией сзади)
                 updateSimpleAttachment(deltaTime)
-                
-                -- Смотрим прямо на цель
-                local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if targetRoot then
-                    lookDirectlyAtTarget(character, targetRoot.Position, deltaTime)
-                end
             end
         end
         
         -- Если мы прикреплены, но нет цели - сбрасываем
         if MainModule.Killaura.IsAttached and not MainModule.Killaura.CurrentTarget then
             MainModule.Killaura.IsAttached = false
+            MainModule.Killaura.TargetVelocity = Vector3.new(0, 0, 0)
+            MainModule.Killaura.LastTargetCFrame = nil
             
             local humanoid = GetHumanoid(character)
             if humanoid then
@@ -3933,6 +3987,8 @@ function MainModule.ToggleKillaura(enabled)
             MainModule.Killaura.CurrentTarget = nil
             MainModule.Killaura.IsAttached = false
             MainModule.Killaura.IsActive = false
+            MainModule.Killaura.TargetVelocity = Vector3.new(0, 0, 0)
+            MainModule.Killaura.LastTargetCFrame = nil
             
             -- Даем время на загрузку
             task.wait(0.5)
@@ -3946,6 +4002,23 @@ function MainModule.SetKillauraRadius(radius)
     radius = math.clamp(radius, 15, MainModule.Killaura.MaxRadius)
     MainModule.Killaura.Radius = radius
     return radius
+end
+
+-- Функция для настройки позиционирования сзади
+function MainModule.SetKillauraBehindOffset(offset)
+    MainModule.Killaura.BehindOffset = math.max(1, offset or 3)
+    return MainModule.Killaura.BehindOffset
+end
+
+function MainModule.SetKillauraHeightOffset(offset)
+    MainModule.Killaura.HeightOffset = offset or 1.8
+    return MainModule.Killaura.HeightOffset
+end
+
+function MainModule.SetKillauraSmoothness(followFactor, lookFactor)
+    MainModule.Killaura.SmoothFollowFactor = math.clamp(followFactor or 0.3, 0.1, 1)
+    MainModule.Killaura.SmoothLookFactor = math.clamp(lookFactor or 0.4, 0.1, 1)
+    return MainModule.Killaura.SmoothFollowFactor, MainModule.Killaura.SmoothLookFactor
 end
 
 -- Вспомогательные функции
@@ -4289,3 +4362,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
