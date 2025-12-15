@@ -3761,7 +3761,7 @@ function MainModule.ToggleKillaura(enabled)
         bodyGyro.P = 1000000
         bodyGyro.D = 50000
         bodyGyro.CFrame = CFrame.new(targetPosition, targetPosition + Vector3.new(0, -1, 0)) * 
-                         CFrame.Angles(math.rad(180), 0, 0)
+                         CFrame.Angles(math.rad(230), 0, 0)
         bodyGyro.Parent = rootPart
         
         -- BodyForce для компенсации гравитации
@@ -4496,6 +4496,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
