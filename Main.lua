@@ -268,7 +268,7 @@ MainModule.Killaura = {
     OriginalGravity = 196.2,
     AnimationStartTime = 0,
     IsLifted = false,
-    LiftHeight = 20, -- Увеличил подъем до 20 Y
+    LiftHeight = 15,  -- ПОДНИМАЕМ НА 15 Y
     OriginalCFrame = nil,
     TargetAnimationsSet = {},
     LastPositionUpdate = 0,
@@ -286,7 +286,8 @@ MainModule.Killaura = {
     AntiPushForce = nil,
     BodyAngularVelocity = nil,
     CustomMassForce = nil,
-    LyingAngle = 85
+    LastValidTargetPos = nil,
+    ReturnAfterAnimation = false
 }
 
 
@@ -3434,7 +3435,6 @@ end
 function MainModule.SetFlySpeed(speed)
     return 50
 end
-
 function MainModule.ToggleKillaura(enabled)
     MainModule.Killaura.Enabled = enabled
     
@@ -3469,71 +3469,12 @@ function MainModule.ToggleKillaura(enabled)
     MainModule.Killaura.IsGravityDisabled = false
     MainModule.Killaura.SearchCooldown = 0
     MainModule.Killaura.LastTargetSwitch = 0
+    MainModule.Killaura.LastValidTargetPos = nil
+    MainModule.Killaura.ReturnAfterAnimation = false
     
     if not enabled then
         -- ВОЗВРАЩАЕМ ВСЁ НАЗАД ПРАВИЛЬНО
-        local character = GetCharacter()
-        if character then
-            local rootPart = GetRootPart(character)
-            if rootPart then
-                rootPart.Anchored = MainModule.Killaura.OriginalAnchored or false
-                
-                -- Удаляем ВСЕ созданные физические объекты
-                local force = rootPart:FindFirstChild("KillauraAntiPush")
-                if force then force:Destroy() end
-                
-                local force2 = rootPart:FindFirstChild("KillauraForce")
-                if force2 then force2:Destroy() end
-                
-                local position = rootPart:FindFirstChild("KillauraPosition")
-                if position then position:Destroy() end
-                
-                local gyro = rootPart:FindFirstChild("KillauraGyro")
-                if gyro then gyro:Destroy() end
-                
-                local velocity = rootPart:FindFirstChild("KillauraVelocity")
-                if velocity then velocity:Destroy() end
-                
-                local align = rootPart:FindFirstChild("KillauraAlign")
-                if align then align:Destroy() end
-                
-                local attachment = rootPart:FindFirstChild("KillauraAttachment")
-                if attachment then attachment:Destroy() end
-                
-                local angular = rootPart:FindFirstChild("KillauraAngular")
-                if angular then angular:Destroy() end
-                
-                local thrust = rootPart:FindFirstChild("KillauraThrust")
-                if thrust then thrust:Destroy() end
-                
-                local customMass = rootPart:FindFirstChild("KillauraCustomMass")
-                if customMass then customMass:Destroy() end
-                
-                -- Включаем CanCollide
-                rootPart.CanCollide = true
-                
-                -- Сбрасываем скорости чтобы не летать
-                rootPart.Velocity = Vector3.new(0, 0, 0)
-                rootPart.RotVelocity = Vector3.new(0, 0, 0)
-            end
-            
-            local humanoid = GetHumanoid(character)
-            if humanoid then
-                humanoid.PlatformStand = MainModule.Killaura.OriginalPlatformStand or false
-                
-                -- Сбрасываем все анимации
-                if humanoid:FindFirstChild("Animator") then
-                    for _, jointName in ipairs({"Torso", "Left Hip", "Right Hip", "Neck", "Left Shoulder", "Right Shoulder", "Waist"}) do
-                        pcall(function()
-                            humanoid.Animator:ApplyJointTransform(jointName, CFrame.new())
-                        end)
-                    end
-                end
-                
-                -- Восстанавливаем контроль НЕМЕДЛЕННО
-                humanoid:ChangeState(Enum.HumanoidStateType.Running)
-            end
-        end
+        resetToNormalState(true)
         return
     end
     
@@ -3595,29 +3536,27 @@ function MainModule.ToggleKillaura(enabled)
         return bestTarget
     end
     
-    local function applyLyingPose(character, targetPosition)
-        if not character then return end
+    local function applyLookAtTarget(character, targetPosition)
+        if not character or not targetPosition then return end
         
         local humanoid = GetHumanoid(character)
         if not humanoid then return end
         
+        -- ГЛАВНОЕ: ВЗГЛЯД ВСЕГДА НА ЖЕРТВЕ
         if humanoid:FindFirstChild("Animator") then
-            local torsoAngle = CFrame.Angles(math.rad(30), 0, 0)
-            humanoid.Animator:ApplyJointTransform("Torso", torsoAngle)
-            
-            local hipAngle = CFrame.Angles(math.rad(10), 0, 0)
-            humanoid.Animator:ApplyJointTransform("Left Hip", hipAngle)
-            humanoid.Animator:ApplyJointTransform("Right Hip", hipAngle)
-            
-            local neckAngle = CFrame.Angles(math.rad(15), 0, 0)
-            humanoid.Animator:ApplyJointTransform("Neck", neckAngle)
-            
-            local shoulderAngle = CFrame.Angles(math.rad(25), 0, 0)
-            humanoid.Animator:ApplyJointTransform("Left Shoulder", shoulderAngle)
-            humanoid.Animator:ApplyJointTransform("Right Shoulder", shoulderAngle)
-            
-            local spineAngle = CFrame.Angles(math.rad(5), 0, 0)
-            humanoid.Animator:ApplyJointTransform("Waist", spineAngle)
+            -- Вычисляем направление к цели
+            local rootPart = GetRootPart(character)
+            if rootPart then
+                local direction = (targetPosition - rootPart.Position).Unit
+                local lookCFrame = CFrame.new(Vector3.new(), direction)
+                local x, y, z = lookCFrame:ToEulerAnglesYXZ()
+                
+                -- Шея смотрит на цель
+                humanoid.Animator:ApplyJointTransform("Neck", CFrame.Angles(y, x, z))
+                
+                -- Тело наклонено вперед (поза на животе)
+                humanoid.Animator:ApplyJointTransform("Torso", CFrame.Angles(math.rad(80), 0, 0))
+            end
         end
     end
     
@@ -3627,8 +3566,9 @@ function MainModule.ToggleKillaura(enabled)
         local humanoid = GetHumanoid(character)
         if not humanoid then return end
         
+        -- Сбрасываем позу в нормальное состояние
         if humanoid:FindFirstChild("Animator") then
-            for _, jointName in ipairs({"Torso", "Left Hip", "Right Hip", "Neck", "Left Shoulder", "Right Shoulder", "Waist"}) do
+            for _, jointName in ipairs({"Torso", "Left Hip", "Right Hip", "Neck", "Left Shoulder", "Right Shoulder"}) do
                 pcall(function()
                     humanoid.Animator:ApplyJointTransform(jointName, CFrame.new())
                 end)
@@ -3636,64 +3576,126 @@ function MainModule.ToggleKillaura(enabled)
         end
     end
     
-    local function createAntiPushField(rootPart)
-        if not rootPart then return end
+    local function resetToNormalState(fullReset)
+        local character = GetCharacter()
+        if character then
+            local rootPart = GetRootPart(character)
+            if rootPart then
+                -- Убираем ВСЕ созданные физические объекты
+                local forcesToRemove = {
+                    "KillauraAntiPush", "KillauraForce", "KillauraPosition", 
+                    "KillauraGyro", "KillauraVelocity", "KillauraAlign",
+                    "KillauraAttachment", "KillauraAngular", "KillauraThrust",
+                    "KillauraCustomMass", "KillauraLookAt"
+                }
+                
+                for _, name in ipairs(forcesToRemove) do
+                    local obj = rootPart:FindFirstChild(name)
+                    if obj then obj:Destroy() end
+                end
+                
+                -- Восстанавливаем свойства
+                rootPart.Anchored = MainModule.Killaura.OriginalAnchored or false
+                rootPart.CanCollide = true
+                
+                -- Сбрасываем скорости
+                rootPart.Velocity = Vector3.new(0, 0, 0)
+                rootPart.RotVelocity = Vector3.new(0, 0, 0)
+            end
+            
+            local humanoid = GetHumanoid(character)
+            if humanoid then
+                -- Возвращаем контроль ТОЛЬКО при полном сбросе
+                if fullReset then
+                    humanoid.PlatformStand = MainModule.Killaura.OriginalPlatformStand or false
+                    resetCharacterPose(character)
+                    humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                end
+            end
+        end
         
-        local oldForce = rootPart:FindFirstChild("KillauraAntiPush")
-        if oldForce then oldForce:Destroy() end
+        if fullReset then
+            MainModule.Killaura.IsAttached = false
+            MainModule.Killaura.IsLifted = false
+            MainModule.Killaura.IsFacingDown = false
+            MainModule.Killaura.CurrentTarget = nil
+            MainModule.Killaura.AnimationStartTime = 0
+            MainModule.Killaura.ReturnAfterAnimation = false
+        end
+    end
+    
+    local function createKillauraForces(rootPart, targetRoot)
+        if not rootPart or not targetRoot then return nil end
         
-        local antiPushForce = Instance.new("BodyForce")
-        antiPushForce.Name = "KillauraAntiPush"
-        antiPushForce.Force = Vector3.new(0, 0, 0)
-        antiPushForce.Parent = rootPart
+        -- Сохраняем позицию цели
+        MainModule.Killaura.LastValidTargetPos = targetRoot.Position
         
-        local angularVelocity = Instance.new("BodyAngularVelocity")
-        angularVelocity.Name = "KillauraAngular"
-        angularVelocity.MaxTorque = Vector3.new(1000000, 1000000, 1000000)
-        angularVelocity.AngularVelocity = Vector3.new(0, 0, 0)
-        angularVelocity.P = 1000000
-        angularVelocity.Parent = rootPart
+        -- Позиция над целью
+        local baseYOffset = MainModule.Killaura.AttachYOffset
+        if MainModule.Killaura.IsLifted then
+            baseYOffset = baseYOffset + MainModule.Killaura.LiftHeight
+        end
         
+        local targetPosition = targetRoot.Position + Vector3.new(0, baseYOffset, 0)
+        
+        -- Отключаем коллизии
+        rootPart.CanCollide = false
+        
+        -- Создаем BodyPosition
+        local bodyPosition = Instance.new("BodyPosition")
+        bodyPosition.Name = "KillauraPosition"
+        bodyPosition.MaxForce = Vector3.new(1000000, 1000000, 1000000)
+        bodyPosition.P = 100000
+        bodyPosition.D = 50000
+        bodyPosition.Position = targetPosition
+        bodyPosition.Parent = rootPart
+        
+        -- BodyGyro для ВЗГЛЯДА НА ЖЕРТВУ
+        local bodyGyro = Instance.new("BodyGyro")
+        bodyGyro.Name = "KillauraGyro"
+        bodyGyro.MaxTorque = Vector3.new(1000000, 1000000, 1000000)
+        bodyGyro.P = 100000
+        bodyGyro.D = 50000
+        bodyGyro.CFrame = CFrame.new(targetPosition, targetRoot.Position) * CFrame.Angles(math.rad(80), 0, 0)
+        bodyGyro.Parent = rootPart
+        
+        -- BodyForce для компенсации гравитации
+        local bodyForce = Instance.new("BodyForce")
+        bodyForce.Name = "KillauraForce"
+        bodyForce.Force = Vector3.new(0, workspace.Gravity * 1000, 0)
+        bodyForce.Parent = rootPart
+        
+        -- BodyVelocity для следования
+        local bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.Name = "KillauraVelocity"
+        bodyVelocity.MaxForce = Vector3.new(1000000, 1000000, 1000000)
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        bodyVelocity.P = 100000
+        bodyVelocity.Parent = rootPart
+        
+        -- BodyAngularVelocity для стабильности
+        local bodyAngular = Instance.new("BodyAngularVelocity")
+        bodyAngular.Name = "KillauraAngular"
+        bodyAngular.MaxTorque = Vector3.new(1000000, 1000000, 1000000)
+        bodyAngular.AngularVelocity = Vector3.new(0, 0, 0)
+        bodyAngular.P = 100000
+        bodyAngular.Parent = rootPart
+        
+        -- BodyThrust против отталкивания
         local bodyThrust = Instance.new("BodyThrust")
         bodyThrust.Name = "KillauraThrust"
         bodyThrust.Force = Vector3.new(0, 0, 0)
         bodyThrust.Location = Vector3.new(0, 0, 0)
         bodyThrust.Parent = rootPart
         
-        local customMassForce = Instance.new("BodyForce")
-        customMassForce.Name = "KillauraCustomMass"
-        customMassForce.Force = Vector3.new(0, 0, 0)
-        customMassForce.Parent = rootPart
-        
-        return antiPushForce, angularVelocity, bodyThrust, customMassForce
-    end
-    
-    local function getTargetLookDirection(targetRoot)
-        -- Получаем направление взгляда цели
-        if not targetRoot then return Vector3.new(0, 0, 1) end
-        
-        -- Если у цели есть Humanoid, используем его LookVector
-        local targetHumanoid = targetRoot.Parent:FindFirstChild("Humanoid")
-        if targetHumanoid then
-            return targetHumanoid.MoveDirection ~= Vector3.new(0, 0, 0) and targetHumanoid.MoveDirection or targetRoot.CFrame.LookVector
-        end
-        
-        -- Иначе используем LookVector корневой части
-        return targetRoot.CFrame.LookVector
-    end
-    
-    local function getProperLyingCFrame(position, targetRoot)
-        -- Получаем направление взгляда цели
-        local lookDirection = getTargetLookDirection(targetRoot)
-        
-        -- Позиция, куда смотрит цель (немного впереди нее)
-        local lookAtPosition = targetRoot.Position + lookDirection * 10
-        
-        -- Создаем CFrame, который смотрит в ту же сторону, что и цель
-        local baseCFrame = CFrame.new(position, lookAtPosition)
-        
-        -- Наклоняем вперед на 85 градусов
-        return baseCFrame * CFrame.Angles(math.rad(MainModule.Killaura.LyingAngle), 0, math.rad(-2))
+        return {
+            Position = bodyPosition,
+            Gyro = bodyGyro,
+            Force = bodyForce,
+            Velocity = bodyVelocity,
+            Angular = bodyAngular,
+            Thrust = bodyThrust
+        }
     end
     
     local function setupCharacterForKillaura(character, targetRoot)
@@ -3705,170 +3707,41 @@ function MainModule.ToggleKillaura(enabled)
         local humanoid = GetHumanoid(character)
         if not humanoid then return false end
         
+        -- Сохраняем оригинальные значения
         MainModule.Killaura.OriginalAnchored = rootPart.Anchored
         MainModule.Killaura.OriginalPlatformStand = humanoid.PlatformStand
-        MainModule.Killaura.OriginalHumanoidState = humanoid:GetState()
         
-        rootPart.CanCollide = false
-        
+        -- Берем контроль
         humanoid.PlatformStand = true
-        humanoid:ChangeState(Enum.HumanoidStateType.PlatformStanding)
-        
         rootPart.Anchored = false
         
-        local force = rootPart:FindFirstChild("KillauraForce")
-        if force then force:Destroy() end
+        -- Создаем силы
+        local forces = createKillauraForces(rootPart, targetRoot)
+        if not forces then return false end
         
-        local position = rootPart:FindFirstChild("KillauraPosition")
-        if position then position:Destroy() end
+        -- Телепортируем к цели
+        local baseYOffset = MainModule.Killaura.AttachYOffset
+        if MainModule.Killaura.IsLifted then
+            baseYOffset = baseYOffset + MainModule.Killaura.LiftHeight
+        end
         
-        local gyro = rootPart:FindFirstChild("KillauraGyro")
-        if gyro then gyro:Destroy() end
-        
-        local velocity = rootPart:FindFirstChild("KillauraVelocity")
-        if velocity then velocity:Destroy() end
-        
-        local align = rootPart:FindFirstChild("KillauraAlign")
-        if align then align:Destroy() end
-        
-        local attachment = rootPart:FindFirstChild("KillauraAttachment")
-        if attachment then attachment:Destroy() end
-        
-        local angular = rootPart:FindFirstChild("KillauraAngular")
-        if angular then angular:Destroy() end
-        
-        local thrust = rootPart:FindFirstChild("KillauraThrust")
-        if thrust then thrust:Destroy() end
-        
-        local customMass = rootPart:FindFirstChild("KillauraCustomMass")
-        if customMass then customMass:Destroy() end
-        
-        local targetPosition = targetRoot.Position + Vector3.new(0, MainModule.Killaura.AttachYOffset, 0)
-        
-        -- Телепортируемся с ориентацией, соответствующей взгляду цели
-        local properCFrame = getProperLyingCFrame(targetPosition, targetRoot)
-        rootPart.CFrame = properCFrame
-        
-        applyLyingPose(character, targetPosition)
-        
-        local antiPushForce, angularVelocity, bodyThrust, customMassForce = createAntiPushField(rootPart)
-        
-        local bodyVelocity = Instance.new("BodyVelocity")
-        bodyVelocity.Name = "KillauraVelocity"
-        bodyVelocity.MaxForce = Vector3.new(1000000, 1000000, 1000000)
-        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-        bodyVelocity.P = 1000000
-        bodyVelocity.Parent = rootPart
-        
-        local bodyPosition = Instance.new("BodyPosition")
-        bodyPosition.Name = "KillauraPosition"
-        bodyPosition.MaxForce = Vector3.new(1000000, 1000000, 1000000)
-        bodyPosition.P = 1000000
-        bodyPosition.D = 50000
-        bodyPosition.Position = targetPosition
-        bodyPosition.Parent = rootPart
-        
-        local bodyGyro = Instance.new("BodyGyro")
-        bodyGyro.Name = "KillauraGyro"
-        bodyGyro.MaxTorque = Vector3.new(1000000, 1000000, 1000000)
-        bodyGyro.P = 1000000
-        bodyGyro.D = 50000
-        
-        -- Устанавливаем BodyGyro чтобы смотреть в ту же сторону, что и цель
-        local lookDirection = getTargetLookDirection(targetRoot)
-        local lookAtPos = targetRoot.Position + lookDirection * 10
-        local gyroCFrame = CFrame.new(targetPosition, lookAtPos) * 
-                          CFrame.Angles(math.rad(MainModule.Killaura.LyingAngle), 0, math.rad(-2))
-        bodyGyro.CFrame = gyroCFrame
-        bodyGyro.Parent = rootPart
-        
-        local bodyForce = Instance.new("BodyForce")
-        bodyForce.Name = "KillauraForce"
-        bodyForce.Force = Vector3.new(0, workspace.Gravity * 1000, 0)
-        bodyForce.Parent = rootPart
-        
-        local alignPosition = Instance.new("AlignPosition")
-        alignPosition.Name = "KillauraAlign"
-        alignPosition.MaxForce = 5000000
-        alignPosition.Responsiveness = 2000
-        local attachment0 = Instance.new("Attachment")
-        attachment0.Name = "KillauraAttachment"
-        attachment0.Parent = rootPart
-        alignPosition.Attachment0 = attachment0
-        alignPosition.Parent = rootPart
+        local targetPosition = targetRoot.Position + Vector3.new(0, baseYOffset, 0)
+        rootPart.CFrame = CFrame.new(targetPosition, targetRoot.Position) * CFrame.Angles(math.rad(80), 0, 0)
         
         MainModule.Killaura.IsAttached = true
-        MainModule.Killaura.IsFacingDown = true
         MainModule.Killaura.LastPositionUpdate = tick()
         
         return true
     end
     
-    local function detachFromTarget(keepPose)
-        local character = GetCharacter()
-        if not character then return end
-        
-        local rootPart = GetRootPart(character)
-        if rootPart then
-            local force = rootPart:FindFirstChild("KillauraAntiPush")
-            if force then force:Destroy() end
-            
-            local force2 = rootPart:FindFirstChild("KillauraForce")
-            if force2 then force2:Destroy() end
-            
-            local position = rootPart:FindFirstChild("KillauraPosition")
-            if position then position:Destroy() end
-            
-            local gyro = rootPart:FindFirstChild("KillauraGyro")
-            if gyro then gyro:Destroy() end
-            
-            local velocity = rootPart:FindFirstChild("KillauraVelocity")
-            if velocity then velocity:Destroy() end
-            
-            local align = rootPart:FindFirstChild("KillauraAlign")
-            if align then align:Destroy() end
-            
-            local attachment = rootPart:FindFirstChild("KillauraAttachment")
-            if attachment then attachment:Destroy() end
-            
-            local angular = rootPart:FindFirstChild("KillauraAngular")
-            if angular then angular:Destroy() end
-            
-            local thrust = rootPart:FindFirstChild("KillauraThrust")
-            if thrust then thrust:Destroy() end
-            
-            local customMass = rootPart:FindFirstChild("KillauraCustomMass")
-            if customMass then customMass:Destroy() end
-            
-            rootPart.CanCollide = true
-            
-            rootPart.Velocity = Vector3.new(0, 0, 0)
-            rootPart.RotVelocity = Vector3.new(0, 0, 0)
-            
-            rootPart.Anchored = MainModule.Killaura.OriginalAnchored or false
-        end
-        
-        local humanoid = GetHumanoid(character)
-        if humanoid then
-            humanoid.PlatformStand = MainModule.Killaura.OriginalPlatformStand or false
-            
-            if not keepPose then
-                resetCharacterPose(character)
-            end
-            
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
-        end
-        
-        MainModule.Killaura.IsAttached = false
-        MainModule.Killaura.IsLifted = false
-        MainModule.Killaura.IsFacingDown = false
-        MainModule.Killaura.CurrentTarget = nil
-        MainModule.Killaura.OriginalCFrame = nil
-        MainModule.Killaura.LastPositionUpdate = 0
-    end
-    
     local function checkTargetValid()
-        if not MainModule.Killaura.CurrentTarget then return false end
+        if not MainModule.Killaura.CurrentTarget then 
+            -- Если нет цели, но мы были подняты, пытаемся вернуться
+            if MainModule.Killaura.ReturnAfterAnimation and MainModule.Killaura.LastValidTargetPos then
+                return "return_to_position"
+            end
+            return false 
+        end
         
         local targetPlayer = MainModule.Killaura.CurrentTarget
         if not targetPlayer or not targetPlayer.Character then return false end
@@ -3885,6 +3758,11 @@ function MainModule.ToggleKillaura(enabled)
         local rootPart = GetRootPart(character)
         if not rootPart then return false end
         
+        -- Даже если радиус не достает, если мы были подняты, ВСЁ РАВНО ВОЗВРАЩАЕМСЯ
+        if MainModule.Killaura.ReturnAfterAnimation then
+            return true
+        end
+        
         local distance = GetDistance(rootPart.Position, targetRoot.Position)
         if distance > MainModule.Killaura.Radius then return false end
         
@@ -3892,20 +3770,9 @@ function MainModule.ToggleKillaura(enabled)
     end
     
     local function updateAttachedPosition()
-        if not MainModule.Killaura.Enabled or not MainModule.Killaura.CurrentTarget then return end
-        
-        local targetPlayer = MainModule.Killaura.CurrentTarget
-        if not targetPlayer or not targetPlayer.Character then
-            detachFromTarget(false)
-            return
-        end
-        
-        local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-        local targetHumanoid = targetPlayer.Character:FindFirstChild("Humanoid")
-        
-        if not (targetRoot and targetHumanoid) or targetHumanoid.Health <= 0 then
-            detachFromTarget(false)
-            return
+        if not MainModule.Killaura.Enabled then 
+            resetToNormalState(true)
+            return 
         end
         
         local character = GetCharacter()
@@ -3921,38 +3788,70 @@ function MainModule.ToggleKillaura(enabled)
         
         MainModule.Killaura.LastPositionUpdate = currentTime
         
-        local distance = GetDistance(rootPart.Position, targetRoot.Position)
+        local targetValid = checkTargetValid()
         
-        if distance > MainModule.Killaura.Radius then
-            detachFromTarget(false)
+        if targetValid == false then
+            -- Нет цели в радиусе, возвращаем всё
+            resetToNormalState(true)
+            return
+        elseif targetValid == "return_to_position" then
+            -- Возвращаемся к последней позиции после подъема
+            if MainModule.Killaura.LastValidTargetPos then
+                local targetPosition = MainModule.Killaura.LastValidTargetPos + Vector3.new(0, MainModule.Killaura.AttachYOffset, 0)
+                
+                local bodyPosition = rootPart:FindFirstChild("KillauraPosition")
+                if bodyPosition then
+                    bodyPosition.Position = targetPosition
+                end
+                
+                local bodyGyro = rootPart:FindFirstChild("KillauraGyro")
+                if bodyGyro then
+                    bodyGyro.CFrame = CFrame.new(targetPosition, MainModule.Killaura.LastValidTargetPos) * CFrame.Angles(math.rad(80), 0, 0)
+                end
+                
+                -- Проверяем, вернулись ли мы
+                local distance = GetDistance(rootPart.Position, targetPosition)
+                if distance < 5 then
+                    MainModule.Killaura.ReturnAfterAnimation = false
+                    MainModule.Killaura.IsLifted = false
+                end
+            end
             return
         end
         
-        local targetPosition = targetRoot.Position + Vector3.new(0, MainModule.Killaura.AttachYOffset, 0)
+        -- Есть валидная цель
+        local targetPlayer = MainModule.Killaura.CurrentTarget
+        if not targetPlayer or not targetPlayer.Character then return end
         
-        -- Обновляем позицию с учетом подъема при анимации
-        if MainModule.Killaura.IsLifted then
-            targetPosition = targetPosition + Vector3.new(0, MainModule.Killaura.LiftHeight, 0)
+        local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local targetHumanoid = targetPlayer.Character:FindFirstChild("Humanoid")
+        
+        if not (targetRoot and targetHumanoid) or targetHumanoid.Health <= 0 then
+            resetToNormalState(true)
+            return
         end
         
+        -- Обновляем позицию цели
+        MainModule.Killaura.LastValidTargetPos = targetRoot.Position
+        
+        -- Позиция над целью (с учетом подъема)
+        local baseYOffset = MainModule.Killaura.AttachYOffset
+        if MainModule.Killaura.IsLifted then
+            baseYOffset = baseYOffset + MainModule.Killaura.LiftHeight
+        end
+        
+        local targetPosition = targetRoot.Position + Vector3.new(0, baseYOffset, 0)
+        
+        -- Обновляем физические силы
         local bodyPosition = rootPart:FindFirstChild("KillauraPosition")
         if bodyPosition then
             bodyPosition.Position = targetPosition
         end
         
-        local bodyVelocity = rootPart:FindFirstChild("KillauraVelocity")
-        if bodyVelocity then
-            bodyVelocity.Velocity = targetRoot.Velocity
-        end
-        
-        -- Обновляем BodyGyro чтобы смотреть в ту же сторону, что и цель
         local bodyGyro = rootPart:FindFirstChild("KillauraGyro")
         if bodyGyro then
-            local lookDirection = getTargetLookDirection(targetRoot)
-            local lookAtPos = targetRoot.Position + lookDirection * 10
-            local gyroCFrame = CFrame.new(targetPosition, lookAtPos) * 
-                              CFrame.Angles(math.rad(MainModule.Killaura.LyingAngle), 0, math.rad(-2))
-            bodyGyro.CFrame = gyroCFrame
+            -- ВЗГЛЯД ВСЕГДА НА ЖЕРТВЕ
+            bodyGyro.CFrame = CFrame.new(targetPosition, targetRoot.Position) * CFrame.Angles(math.rad(80), 0, 0)
         end
         
         local bodyForce = rootPart:FindFirstChild("KillauraForce")
@@ -3960,56 +3859,28 @@ function MainModule.ToggleKillaura(enabled)
             bodyForce.Force = Vector3.new(0, workspace.Gravity * 1000, 0)
         end
         
-        local alignPosition = rootPart:FindFirstChild("KillauraAlign")
-        if alignPosition then
-            alignPosition.Position = targetPosition
+        local bodyVelocity = rootPart:FindFirstChild("KillauraVelocity")
+        if bodyVelocity then
+            bodyVelocity.Velocity = targetRoot.Velocity
         end
         
-        local antiPushForce = rootPart:FindFirstChild("KillauraAntiPush")
-        if antiPushForce then
-            local oppositeVelocity = -rootPart.Velocity * 5000
-            antiPushForce.Force = oppositeVelocity
-        end
-        
-        local angularVelocity = rootPart:FindFirstChild("KillauraAngular")
-        if angularVelocity then
-            angularVelocity.AngularVelocity = -rootPart.RotVelocity * 10
-        end
-        
-        local bodyThrust = rootPart:FindFirstChild("KillauraThrust")
-        if bodyThrust then
-            bodyThrust.Force = -rootPart.Velocity * 10000
-            bodyThrust.Location = rootPart.Position
-        end
-        
-        local customMassForce = rootPart:FindFirstChild("KillauraCustomMass")
-        if customMassForce then
-            local accelerationForce = -rootPart.AssemblyLinearVelocity * 5000
-            customMassForce.Force = accelerationForce
-        end
-        
-        applyLyingPose(character, targetPosition)
+        -- Применяем позу взгляда на цель
+        applyLookAtTarget(character, targetRoot.Position)
     end
     
     local function checkTargetAnimations()
         if not MainModule.Killaura.Enabled or not MainModule.Killaura.CurrentTarget then return end
         
         local targetPlayer = MainModule.Killaura.CurrentTarget
-        if not targetPlayer or not targetPlayer.Character then
-            detachFromTarget(false)
-            return
-        end
+        if not targetPlayer or not targetPlayer.Character then return end
         
         local targetHumanoid = targetPlayer.Character:FindFirstChild("Humanoid")
-        if not targetHumanoid or targetHumanoid.Health <= 0 then
-            detachFromTarget(false)
-            return
-        end
+        if not targetHumanoid or targetHumanoid.Health <= 0 then return end
         
-        -- Проверяем ТОЛЬКО анимации нашей текущей жертвы
         local activeTracks = targetHumanoid:GetPlayingAnimationTracks()
         local foundAnimation = false
         
+        -- ПРОВЕРЯЕМ ТОЛЬКО АНИМАЦИИ ОТ НАШЕЙ ЖЕРТВЫ
         for _, track in pairs(activeTracks) do
             if track and track.Animation then
                 local animId = track.Animation.AnimationId
@@ -4018,19 +3889,47 @@ function MainModule.ToggleKillaura(enabled)
                     foundAnimation = true
                     
                     if not MainModule.Killaura.IsLifted then
+                        -- ПОДНИМАЕМ НА 15 Y
                         MainModule.Killaura.IsLifted = true
                         MainModule.Killaura.AnimationStartTime = tick()
+                        MainModule.Killaura.ReturnAfterAnimation = false
+                        
+                        local character = GetCharacter()
+                        if character then
+                            local rootPart = GetRootPart(character)
+                            if rootPart then
+                                local bodyPosition = rootPart:FindFirstChild("KillauraPosition")
+                                if bodyPosition then
+                                    bodyPosition.Position = bodyPosition.Position + Vector3.new(0, MainModule.Killaura.LiftHeight, 0)
+                                end
+                            end
+                        end
                     end
                     break
                 end
             end
         end
         
-        -- Если анимация закончилась, ждем 0.3 секунды перед возвратом
         if not foundAnimation and MainModule.Killaura.IsLifted then
             local currentTime = tick()
             if currentTime - MainModule.Killaura.AnimationStartTime > 0.3 then
+                -- Анимация закончилась, ВОЗВРАЩАЕМСЯ К ЖЕРТВЕ
                 MainModule.Killaura.IsLifted = false
+                MainModule.Killaura.ReturnAfterAnimation = true
+                
+                local character = GetCharacter()
+                if character then
+                    local rootPart = GetRootPart(character)
+                    if rootPart then
+                        -- Возвращаем на нормальную высоту
+                        if MainModule.Killaura.LastValidTargetPos then
+                            local bodyPosition = rootPart:FindFirstChild("KillauraPosition")
+                            if bodyPosition then
+                                bodyPosition.Position = MainModule.Killaura.LastValidTargetPos + Vector3.new(0, MainModule.Killaura.AttachYOffset, 0)
+                            end
+                        end
+                    end
+                end
             end
         end
     end
@@ -4040,6 +3939,7 @@ function MainModule.ToggleKillaura(enabled)
         
         local currentTime = tick()
         
+        -- Если нет текущей цели, ищем новую
         if not MainModule.Killaura.CurrentTarget then
             if currentTime - MainModule.Killaura.SearchCooldown > 0.5 then
                 local nearestTarget = findNearestTarget()
@@ -4055,29 +3955,28 @@ function MainModule.ToggleKillaura(enabled)
                     end
                 end
                 MainModule.Killaura.SearchCooldown = currentTime
+            else
+                -- Если нет цели, возвращаем всё
+                resetToNormalState(true)
             end
         else
-            if not checkTargetValid() then
-                detachFromTarget(false)
+            -- Проверяем текущую цель
+            local targetValid = checkTargetValid()
+            
+            if targetValid == false then
+                -- Цель умерла или вышла из радиуса
+                resetToNormalState(true)
                 MainModule.Killaura.CurrentTarget = nil
-                
-                local nearestTarget = findNearestTarget()
-                if nearestTarget then
-                    local character = GetCharacter()
-                    if character then
-                        local targetRoot = nearestTarget.Character:FindFirstChild("HumanoidRootPart")
-                        if targetRoot then
-                            setupCharacterForKillaura(character, targetRoot)
-                            MainModule.Killaura.CurrentTarget = nearestTarget
-                            MainModule.Killaura.LastTargetSwitch = currentTime
-                        end
-                    end
-                end
+            elseif targetValid == "return_to_position" then
+                -- Возвращаемся после подъема
+                updateAttachedPosition()
             else
+                -- Проверяем есть ли лучшая цель
                 if currentTime - MainModule.Killaura.LastTargetSwitch > 1.0 then
                     local betterTarget = findBetterTarget(MainModule.Killaura.CurrentTarget)
                     if betterTarget and betterTarget ~= MainModule.Killaura.CurrentTarget then
-                        detachFromTarget(false)
+                        -- Переключаемся на лучшую цель
+                        resetToNormalState(true)
                         local character = GetCharacter()
                         if character then
                             local targetRoot = betterTarget.Character:FindFirstChild("HumanoidRootPart")
@@ -4090,6 +3989,7 @@ function MainModule.ToggleKillaura(enabled)
                     end
                 end
                 
+                -- Обновляем позицию
                 updateAttachedPosition()
             end
         end
@@ -4098,6 +3998,7 @@ function MainModule.ToggleKillaura(enabled)
     MainModule.Killaura.AnimationCheckConnection = RunService.Heartbeat:Connect(function()
         if not MainModule.Killaura.Enabled then return end
         
+        -- ПРОВЕРЯЕМ АНИМАЦИИ ТОЛЬКО ОТ ТЕКУЩЕЙ ЖЕРТВЫ
         if MainModule.Killaura.CurrentTarget then
             checkTargetAnimations()
         end
@@ -4106,13 +4007,14 @@ function MainModule.ToggleKillaura(enabled)
     MainModule.Killaura.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newCharacter)
         task.wait(1)
         if MainModule.Killaura.Enabled then
-            detachFromTarget(false)
+            resetToNormalState(true)
             MainModule.Killaura.CurrentTarget = nil
         end
     end)
     
     MainModule.Killaura.AttachConnection = RunService.Stepped:Connect(function()
         if not MainModule.Killaura.Enabled or not MainModule.Killaura.CurrentTarget then 
+            -- Если нет цели, сбрасываем позу
             local character = GetCharacter()
             if character and not MainModule.Killaura.IsAttached then
                 resetCharacterPose(character)
@@ -4120,9 +4022,16 @@ function MainModule.ToggleKillaura(enabled)
             return 
         end
         
+        -- Поддерживаем позу взгляда на цель
         local character = GetCharacter()
-        if character then
-            applyLyingPose(character, Vector3.new(0, 0, 0))
+        if character and MainModule.Killaura.CurrentTarget then
+            local targetPlayer = MainModule.Killaura.CurrentTarget
+            if targetPlayer and targetPlayer.Character then
+                local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if targetRoot then
+                    applyLookAtTarget(character, targetRoot.Position)
+                end
+            end
         end
     end)
 end
@@ -4462,6 +4371,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
