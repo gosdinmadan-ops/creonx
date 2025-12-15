@@ -265,7 +265,7 @@ MainModule.Killaura = {
     OriginalGravity = 196.2,
     AnimationStartTime = 0,
     IsLifted = false,
-    LiftHeight = 15,
+    LiftHeight = 6, -- ИЗМЕНЕНО: 6 вместо 15
     TargetAnimationsSet = {},
     LastPositionUpdate = 0,
     PositionUpdateInterval = 0.033,
@@ -308,15 +308,17 @@ MainModule.Killaura = {
         LegMovement = 0,
         ArmMovement = 0
     },
-    -- НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ ПОЗИЦИОНИРОВАНИЯ СЗАДИ
-    BehindOffset = 3, -- Расстояние сзади цели
-    SideOffset = 0,   -- Смещение вбок
-    HeightOffset = 1.8, -- Высота относительно цели
-    SmoothFollowFactor = 0.3, -- Плавность следования
-    SmoothLookFactor = 0.4, -- Плавность поворота взгляда
-    LastTargetCFrame = nil,
-    TargetVelocity = Vector3.new(0, 0, 0),
-    PredictionStrength = 0.1 -- Предсказание движения цели
+    -- НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ СОХРАНЕНИЯ ИНВЕНТАРЯ И СОСТОЯНИЯ
+    CombatItems = {"Fork", "Bottle", "Knife"},
+    PlayerHasCombatItem = false,
+    LastCombatCheck = 0,
+    CombatCheckInterval = 0.1,
+    OriginalCFrame = nil,
+    OriginalVelocity = nil,
+    OriginalAnchored = nil,
+    OriginalCanCollide = nil,
+    OriginalMassless = nil,
+    SavedProperties = {}
 }
 
 
@@ -3465,68 +3467,144 @@ function MainModule.SetFlySpeed(speed)
     return 50
 end
 
--- УНИВЕРСАЛЬНАЯ ФУНКЦИЯ ВОССТАНОВЛЕНИЯ
-local function fullyRestoreCharacter()
-    local character = GetCharacter()
+-- ФУНКЦИЯ СОХРАНЕНИЯ ОРИГИНАЛЬНОГО СОСТОЯНИЯ
+local function saveOriginalState(character)
     if not character then return end
     
-    -- 1. Восстанавливаем Humanoid
-    local humanoid = GetHumanoid(character)
-    if humanoid then
-        -- Снимаем PlatformStand
-        humanoid.PlatformStand = false
-        
-        -- Восстанавливаем состояние
-        humanoid:ChangeState(Enum.HumanoidStateType.Running)
-        
-        -- Сбрасываем все анимации
-        if humanoid:FindFirstChild("Animator") then
-            for _, track in pairs(humanoid.Animator:GetPlayingAnimationTracks()) do
-                track:Stop()
-            end
-        end
-    end
-    
-    -- 2. Восстанавливаем RootPart
     local rootPart = GetRootPart(character)
     if rootPart then
-        -- Убираем все физические объекты
-        for _, obj in pairs(rootPart:GetChildren()) do
-            if obj:IsA("BodyMover") or obj:IsA("VectorForce") or obj:IsA("Attachment") then
-                obj:Destroy()
+        MainModule.Killaura.OriginalCFrame = rootPart.CFrame
+        MainModule.Killaura.OriginalVelocity = rootPart.Velocity
+        MainModule.Killaura.OriginalAnchored = rootPart.Anchored
+        MainModule.Killaura.OriginalCanCollide = rootPart.CanCollide
+        MainModule.Killaura.OriginalMassless = rootPart.Massless
+    end
+    
+    local humanoid = GetHumanoid(character)
+    if humanoid then
+        MainModule.Killaura.OriginalHumanoidState = humanoid:GetState()
+        MainModule.Killaura.OriginalPlatformStand = humanoid.PlatformStand
+        
+        -- Сохраняем свойства всех частей
+        MainModule.Killaura.SavedProperties = {}
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                MainModule.Killaura.SavedProperties[part] = {
+                    Anchored = part.Anchored,
+                    CanCollide = part.CanCollide,
+                    Massless = part.Massless
+                }
             end
         end
-        
-        -- Восстанавливаем свойства
-        rootPart.Anchored = false
-        rootPart.CanCollide = true
-        rootPart.Massless = false
-        
-        -- Сбрасываем скорости
-        rootPart.Velocity = Vector3.new(0, 0, 0)
-        rootPart.RotVelocity = Vector3.new(0, 0, 0)
-        rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-        rootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-        
-        -- Убираем любые скрытые папки
-        local hiddenFolder = workspace:FindFirstChild("NetworkSync")
-        if hiddenFolder then
-            hiddenFolder:Destroy()
-        end
     end
     
-    -- 3. Восстанавливаем части тела
-    for _, part in pairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = true
-            part.Anchored = false
-        end
-    end
-    
-    print("Персонаж полностью восстановлен")
+    print("Состояние сохранено")
 end
 
--- ФУНКЦИЯ ПОИСКА ЖЕРТВЫ (ДАЖЕ ЕСЛИ ОНА ИСЧЕЗЛА)
+-- ФУНКЦИЯ ВОССТАНОВЛЕНИЯ ОРИГИНАЛЬНОГО СОСТОЯНИЯ
+local function restoreOriginalState(character)
+    if not character then return end
+    
+    local rootPart = GetRootPart(character)
+    if rootPart then
+        if MainModule.Killaura.OriginalCFrame then
+            rootPart.CFrame = MainModule.Killaura.OriginalCFrame
+        end
+        
+        if MainModule.Killaura.OriginalVelocity then
+            rootPart.Velocity = MainModule.Killaura.OriginalVelocity
+        end
+        
+        if MainModule.Killaura.OriginalAnchored ~= nil then
+            rootPart.Anchored = MainModule.Killaura.OriginalAnchored
+        end
+        
+        if MainModule.Killaura.OriginalCanCollide ~= nil then
+            rootPart.CanCollide = MainModule.Killaura.OriginalCanCollide
+        end
+        
+        if MainModule.Killaura.OriginalMassless ~= nil then
+            rootPart.Massless = MainModule.Killaura.OriginalMassless
+        end
+    end
+    
+    local humanoid = GetHumanoid(character)
+    if humanoid then
+        if MainModule.Killaura.OriginalPlatformStand ~= nil then
+            humanoid.PlatformStand = MainModule.Killaura.OriginalPlatformStand
+        end
+        
+        if MainModule.Killaura.OriginalHumanoidState then
+            humanoid:ChangeState(MainModule.Killaura.OriginalHumanoidState)
+        end
+    end
+    
+    -- Восстанавливаем свойства всех частей
+    for part, properties in pairs(MainModule.Killaura.SavedProperties) do
+        if part and part.Parent then
+            part.Anchored = properties.Anchored
+            part.CanCollide = properties.CanCollide
+            part.Massless = properties.Massless
+        end
+    end
+    
+    -- Убираем все физические объекты
+    for _, obj in pairs(rootPart:GetChildren()) do
+        if obj:IsA("BodyMover") or obj:IsA("VectorForce") or obj:IsA("Attachment") then
+            obj:Destroy()
+        end
+    end
+    
+    -- Убираем скрытые папки
+    local hiddenFolder = workspace:FindFirstChild("NetworkSync")
+    if hiddenFolder then
+        hiddenFolder:Destroy()
+    end
+    
+    print("Состояние восстановлено")
+end
+
+-- ФУНКЦИЯ ПРОВЕРКИ ИНВЕНТАРЯ НА БОЕВЫЕ ПРЕДМЕТЫ
+local function checkPlayerInventory()
+    local character = GetCharacter()
+    if not character then return false end
+    
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if not backpack then return false end
+    
+    local hasCombatItem = false
+    
+    -- Проверяем инструменты в бэкпаке
+    for _, tool in pairs(backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            for _, combatItem in ipairs(MainModule.Killaura.CombatItems) do
+                if string.find(tool.Name:lower(), combatItem:lower()) then
+                    hasCombatItem = true
+                    break
+                end
+            end
+        end
+        if hasCombatItem then break end
+    end
+    
+    -- Проверяем инструменты в руках
+    local humanoid = GetHumanoid(character)
+    if humanoid then
+        local equippedTool = character:FindFirstChildOfClass("Tool")
+        if equippedTool then
+            for _, combatItem in ipairs(MainModule.Killaura.CombatItems) do
+                if string.find(equippedTool.Name:lower(), combatItem:lower()) then
+                    hasCombatItem = true
+                    break
+                end
+            end
+        end
+    end
+    
+    return hasCombatItem
+end
+
+-- ФУНКЦИЯ ПОИСКА ЖЕРТВЫ
 local function findTargetAnywhere()
     local character = GetCharacter()
     if not character then return nil end
@@ -3537,7 +3615,6 @@ local function findTargetAnywhere()
     local bestTarget = nil
     local bestDistance = MainModule.Killaura.SearchRadius
     
-    -- Ищем всех живых игроков
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
@@ -3546,7 +3623,6 @@ local function findTargetAnywhere()
             if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
                 local distance = GetDistance(rootPart.Position, targetRoot.Position)
                 
-                -- Расширяем радиус поиска если нужно
                 if distance <= MainModule.Killaura.SearchRadius and distance < bestDistance then
                     bestDistance = distance
                     bestTarget = player
@@ -3555,15 +3631,12 @@ local function findTargetAnywhere()
         end
     end
     
-    -- Если не нашли в обычном радиусе, ищем дальше
     if not bestTarget and MainModule.Killaura.IsSearching then
         MainModule.Killaura.SearchAttempts = MainModule.Killaura.SearchAttempts + 1
         
         if MainModule.Killaura.SearchAttempts <= MainModule.Killaura.MaxSearchAttempts then
-            -- Увеличиваем радиус поиска
             MainModule.Killaura.SearchRadius = MainModule.Killaura.SearchRadius + 20
             
-            -- Повторяем поиск
             for _, player in pairs(Players:GetPlayers()) do
                 if player ~= LocalPlayer and player.Character then
                     local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
@@ -3591,107 +3664,8 @@ local function findTargetAnywhere()
     return bestTarget
 end
 
--- ФУНКЦИЯ РАСЧЕТА ПОЗИЦИИ СЗАДИ ЦЕЛИ
-local function calculatePositionBehindTarget(targetRoot, deltaTime)
-    if not targetRoot then return nil end
-    
-    -- Получаем направление взгляда цели
-    local targetLookVector = targetRoot.CFrame.LookVector
-    
-    -- Рассчитываем позицию сзади цели
-    local behindPosition = targetRoot.Position - (targetLookVector * MainModule.Killaura.BehindOffset)
-    
-    -- Добавляем смещение вбок (если нужно)
-    if MainModule.Killaura.SideOffset ~= 0 then
-        local rightVector = targetRoot.CFrame.RightVector
-        behindPosition = behindPosition + (rightVector * MainModule.Killaura.SideOffset)
-    end
-    
-    -- Добавляем высоту
-    behindPosition = behindPosition + Vector3.new(0, MainModule.Killaura.HeightOffset, 0)
-    
-    -- Предсказываем движение цели
-    if MainModule.Killaura.TargetVelocity.Magnitude > 0.1 then
-        behindPosition = behindPosition + (MainModule.Killaura.TargetVelocity * MainModule.Killaura.PredictionStrength)
-    end
-    
-    return behindPosition
-end
-
--- ФУНКЦИЯ ДЛЯ ПЛАВНОГО ПОВОРОТА ВЗГЛЯДА НА ЖЕРТВУ
-local function lookAtTargetSmoothly(character, targetPos, deltaTime)
-    if not character or not targetPos then return end
-    
-    local rootPart = GetRootPart(character)
-    if not rootPart then return end
-    
-    local currentPos = rootPart.Position
-    local currentCFrame = rootPart.CFrame
-    
-    -- Вычисляем направление к цели
-    local direction = (targetPos - currentPos).Unit
-    
-    -- Текущий вектор взгляда
-    local currentLook = currentCFrame.LookVector
-    
-    -- Плавно интерполируем вектор взгляда
-    local lookFactor = MainModule.Killaura.SmoothLookFactor * deltaTime * 60
-    local smoothedLook = currentLook:Lerp(direction, math.min(lookFactor, 1))
-    
-    -- Создаем новый CFrame, смотрящий на цель
-    local newCFrame = CFrame.new(currentPos, currentPos + smoothedLook)
-    
-    -- Наклон для позы на животе (если нужно)
-    newCFrame = newCFrame * CFrame.Angles(math.rad(75), 0, 0)
-    
-    -- Применяем плавно
-    local smoothCFrame = currentCFrame:Lerp(newCFrame, MainModule.Killaura.SmoothFollowFactor)
-    rootPart.CFrame = smoothCFrame
-    
-    -- Сохраняем для плавности
-    MainModule.Killaura.LastValidCFrame = smoothCFrame
-end
-
--- ФУНКЦИЯ СИМУЛЯЦИИ ДВИЖЕНИЙ
-local function simulateNaturalMovement(character, deltaTime)
-    if not MainModule.Killaura.MovementSimulation.Enabled then return end
-    
-    local humanoid = GetHumanoid(character)
-    if not humanoid then return end
-    
-    -- Обновляем цикл ходьбы
-    MainModule.Killaura.MovementSimulation.WalkCycle = 
-        (MainModule.Killaura.MovementSimulation.WalkCycle + deltaTime * 4) % (math.pi * 2)
-    
-    -- Вычисляем движение ног
-    MainModule.Killaura.MovementSimulation.LegMovement = 
-        math.sin(MainModule.Killaura.MovementSimulation.WalkCycle) * 0.1
-    
-    MainModule.Killaura.MovementSimulation.ArmMovement = 
-        math.cos(MainModule.Killaura.MovementSimulation.WalkCycle) * 0.08
-    
-    -- Применяем легкую анимацию через Humanoid
-    if humanoid:FindFirstChild("Animator") then
-        -- Легкое движение ног
-        humanoid.Animator:ApplyJointTransform("Left Hip", 
-            CFrame.Angles(MainModule.Killaura.MovementSimulation.LegMovement, 0, 0)
-        )
-        humanoid.Animator:ApplyJointTransform("Right Hip", 
-            CFrame.Angles(-MainModule.Killaura.MovementSimulation.LegMovement, 0, 0)
-        )
-        
-        -- Легкое движение рук
-        humanoid.Animator:ApplyJointTransform("Left Shoulder", 
-            CFrame.Angles(MainModule.Killaura.MovementSimulation.ArmMovement, 0, 0)
-        )
-        humanoid.Animator:ApplyJointTransform("Right Shoulder", 
-            CFrame.Angles(-MainModule.Killaura.MovementSimulation.ArmMovement, 0, 0)
-        )
-    end
-end
-
--- УПРОЩЕННАЯ ФУНКЦИЯ ПРИКРЕПЛЕНИЯ БЕЗ СЛОЖНЫХ СИЛ
-local function simpleAttachToTarget(targetPlayer)
+-- ФУНКЦИЯ ПРИКРЕПЛЕНИЯ ПЕРЕД ЖЕРТВОЙ
+local function attachInFrontOfTarget(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return false end
     
     local character = GetCharacter()
@@ -3710,33 +3684,38 @@ local function simpleAttachToTarget(targetPlayer)
     local humanoid = GetHumanoid(character)
     if not humanoid then return false end
     
-    -- Сохраняем оригинальные состояния
-    MainModule.Killaura.OriginalHumanoidState = humanoid:GetState()
-    MainModule.Killaura.OriginalPlatformStand = humanoid.PlatformStand
+    -- Сохраняем оригинальное состояние
+    saveOriginalState(character)
     
-    -- Включаем контроль, но не полностью
+    -- Настраиваем персонаж
     humanoid.PlatformStand = true
     rootPart.CanCollide = false
+    rootPart.Anchored = false
     
-    -- Рассчитываем позицию сзади цели
-    local targetPosition = calculatePositionBehindTarget(targetRoot, 0)
+    -- Получаем направление взгляда цели
+    local targetLookVector = targetRoot.CFrame.LookVector
     
-    -- Устанавливаем начальную позицию сзади цели
-    rootPart.CFrame = CFrame.new(targetPosition, targetRoot.Position) * CFrame.Angles(math.rad(75), 0, 0)
+    -- Позиция ВПЕРЕДИ цели на 6 Y
+    local targetPosition = targetRoot.Position + (targetLookVector * -2) + Vector3.new(0, 6, 0)
     
-    -- Сохраняем CFrame цели для предсказания
-    MainModule.Killaura.LastTargetCFrame = targetRoot.CFrame
+    -- Вычисляем CFrame чтобы смотреть на цель
+    local directionToTarget = (targetRoot.Position - targetPosition).Unit
+    local newCFrame = CFrame.new(targetPosition, targetPosition + directionToTarget)
+    
+    -- Применяем CFrame
+    rootPart.CFrame = newCFrame
     
     MainModule.Killaura.IsAttached = true
     MainModule.Killaura.LastPositionUpdate = tick()
     MainModule.Killaura.LastValidTargetPos = targetRoot.Position
     MainModule.Killaura.LastTargetDistance = GetDistance(rootPart.Position, targetRoot.Position)
     
+    print("Прикреплен перед целью")
     return true
 end
 
--- ФУНКЦИЯ ОБНОВЛЕНИЯ ПРИКРЕПЛЕНИЯ (С ПОЗИЦИОНИРОВАНИЕМ СЗАДИ)
-local function updateSimpleAttachment(deltaTime)
+-- ФУНКЦИЯ ОБНОВЛЕНИЯ ПОЗИЦИИ ПЕРЕД ЖЕРТВОЙ
+local function updateFrontAttachment(deltaTime)
     if not MainModule.Killaura.CurrentTarget then return end
     
     local character = GetCharacter()
@@ -3751,42 +3730,79 @@ local function updateSimpleAttachment(deltaTime)
     local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not targetRoot then return end
     
-    -- Обновляем скорость цели для предсказания
-    if MainModule.Killaura.LastTargetCFrame then
-        local currentPos = targetRoot.Position
-        local lastPos = MainModule.Killaura.LastTargetCFrame.Position
-        MainModule.Killaura.TargetVelocity = (currentPos - lastPos) / deltaTime
+    -- Получаем текущее направление взгляда цели
+    local targetLookVector = targetRoot.CFrame.LookVector
+    
+    -- Если цель движется, учитываем ее скорость
+    local targetVelocity = targetRoot.Velocity
+    local isTargetMoving = targetVelocity.Magnitude > 2
+    
+    -- Базовая позиция перед целью
+    local basePosition = targetRoot.Position + (targetLookVector * -2) + Vector3.new(0, 6, 0)
+    
+    -- Если цель движется, добавляем смещение
+    if isTargetMoving then
+        local moveDirection = targetVelocity.Unit
+        basePosition = basePosition + (moveDirection * 1.5)
     end
     
-    -- Рассчитываем целевую позицию сзади цели
-    local targetPosition = calculatePositionBehindTarget(targetRoot, deltaTime)
-    
-    -- Если цель поднята в анимации
-    if MainModule.Killaura.IsLifted then
-        targetPosition = targetPosition + Vector3.new(0, MainModule.Killaura.LiftHeight, 0)
-    end
-    
-    -- Плавное движение к цели
+    -- Плавное движение к позиции
     local currentPos = rootPart.Position
-    local smoothFactor = MainModule.Killaura.SmoothFollowFactor * deltaTime * 60
-    local smoothPosition = currentPos:Lerp(targetPosition, math.min(smoothFactor, 1))
+    local smoothFactor = 0.8
     
-    -- Применяем позицию
-    rootPart.CFrame = CFrame.new(smoothPosition, targetRoot.Position) * CFrame.Angles(math.rad(75), 0, 0)
+    -- Используем разный фактор плавности в зависимости от движения цели
+    if isTargetMoving then
+        smoothFactor = 0.9 -- Быстрее реагируем на движение
+    else
+        smoothFactor = 0.7 -- Плавнее когда цель статична
+    end
     
-    -- Смотрим на цель плавно
-    lookAtTargetSmoothly(character, targetRoot.Position, deltaTime)
+    local targetPosition = currentPos:Lerp(basePosition, smoothFactor)
     
-    -- СИМУЛИРУЕМ ЕСТЕСТВЕННЫЕ ДВИЖЕНИЯ
-    simulateNaturalMovement(character, deltaTime)
+    -- Всегда смотрим на цель
+    local directionToTarget = (targetRoot.Position - targetPosition).Unit
+    local targetCFrame = CFrame.new(targetPosition, targetPosition + directionToTarget)
     
-    -- Сохраняем информацию о цели
-    MainModule.Killaura.LastTargetCFrame = targetRoot.CFrame
+    -- Плавный поворот
+    local currentCFrame = rootPart.CFrame
+    local smoothCFrame = currentCFrame:Lerp(targetCFrame, 0.8)
+    
+    -- Применяем
+    rootPart.CFrame = smoothCFrame
+    
+    -- Сохраняем информацию
     MainModule.Killaura.LastValidTargetPos = targetRoot.Position
-    MainModule.Killaura.LastTargetDistance = GetDistance(rootPart.Position, targetRoot.Position)
+    MainModule.Killaura.LastTargetDistance = GetDistance(targetPosition, targetRoot.Position)
+    
+    -- Сбрасываем таймер возврата
+    MainModule.Killaura.ReturnToNormalTimer = 0
 end
 
--- ПРОВЕРКА АНИМАЦИЙ ЦЕЛИ
+-- ФУНКЦИЯ ПРЯМОГО ВЗГЛЯДА НА ЖЕРТВУ
+local function lookDirectlyAtTarget(character, targetPos, deltaTime)
+    if not character or not targetPos then return end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return end
+    
+    local currentPos = rootPart.Position
+    local direction = (targetPos - currentPos).Unit
+    
+    -- Вычисляем плавный поворот
+    local currentLook = rootPart.CFrame.LookVector
+    local targetLook = direction
+    local smoothedLook = currentLook:Lerp(targetLook, MainModule.Killaura.SmoothLookFactor * deltaTime * 30)
+    
+    -- Создаем CFrame смотрящий точно на цель
+    local newCFrame = CFrame.new(currentPos, currentPos + smoothedLook)
+    
+    -- Сохраняем для плавности
+    MainModule.Killaura.LastValidCFrame = newCFrame
+    
+    return newCFrame
+end
+
+-- ФУНКЦИЯ ПРОВЕРКИ АНИМАЦИЙ ЦЕЛИ
 local function checkTargetAnimations()
     if not MainModule.Killaura.Enabled or not MainModule.Killaura.CurrentTarget then return end
     
@@ -3809,6 +3825,7 @@ local function checkTargetAnimations()
                     MainModule.Killaura.IsLifted = true
                     MainModule.Killaura.AnimationStartTime = tick()
                     MainModule.Killaura.ReturnAfterAnimation = false
+                    print("Цель использует анимацию")
                 end
                 break
             end
@@ -3820,6 +3837,7 @@ local function checkTargetAnimations()
         if currentTime - MainModule.Killaura.AnimationStartTime > 0.3 then
             MainModule.Killaura.IsLifted = false
             MainModule.Killaura.ReturnAfterAnimation = true
+            print("Анимация цели завершена")
         end
     end
 end
@@ -3843,24 +3861,35 @@ function MainModule.ToggleKillaura(enabled)
     MainModule.Killaura.IsSearching = false
     MainModule.Killaura.SearchAttempts = 0
     MainModule.Killaura.SearchRadius = 50
-    MainModule.Killaura.TargetVelocity = Vector3.new(0, 0, 0)
-    MainModule.Killaura.LastTargetCFrame = nil
+    MainModule.Killaura.PlayerHasCombatItem = false
     
-    -- Если выключаем - ВОССТАНАВЛИВАЕМ ВСЁ СРАЗУ
+    -- Если выключаем - ВОССТАНАВЛИВАЕМ ВСЁ
     if not enabled then
-        fullyRestoreCharacter()
-        print("Killaura выключена, персонаж восстановлен")
+        local character = GetCharacter()
+        if character then
+            restoreOriginalState(character)
+        end
+        print("Killaura выключена, состояние восстановлено")
         return
     end
     
     print("Killaura включена")
+    
+    -- Сохраняем начальное состояние
+    local character = GetCharacter()
+    if character then
+        saveOriginalState(character)
+    end
     
     -- Основной цикл обновления
     local lastUpdateTime = tick()
     
     table.insert(MainModule.Killaura.Connections, RunService.Heartbeat:Connect(function()
         if not MainModule.Killaura.Enabled then 
-            fullyRestoreCharacter()
+            local character = GetCharacter()
+            if character then
+                restoreOriginalState(character)
+            end
             return 
         end
         
@@ -3871,20 +3900,38 @@ function MainModule.ToggleKillaura(enabled)
         local character = GetCharacter()
         if not character then return end
         
+        -- ПРОВЕРКА ИНВЕНТАРЯ НА БОЕВЫЕ ПРЕДМЕТЫ
+        if currentTime - MainModule.Killaura.LastCombatCheck > MainModule.Killaura.CombatCheckInterval then
+            local hasCombatItem = checkPlayerInventory()
+            
+            if hasCombatItem and not MainModule.Killaura.PlayerHasCombatItem then
+                MainModule.Killaura.PlayerHasCombatItem = true
+                print("Обнаружен боевой предмет, активируем Killaura")
+            end
+            
+            if not hasCombatItem and MainModule.Killaura.PlayerHasCombatItem then
+                -- Боевой предмет пропал, выключаем Killaura
+                print("Боевой предмет пропал, выключаем Killaura")
+                MainModule.ToggleKillaura(false)
+                return
+            end
+            
+            MainModule.Killaura.LastCombatCheck = currentTime
+        end
+        
         -- Поиск цели если нет текущей
         if not MainModule.Killaura.CurrentTarget then
             if currentTime - MainModule.Killaura.SearchCooldown > 0.3 then
                 local target = findTargetAnywhere()
                 
                 if target then
-                    if simpleAttachToTarget(target) then
+                    if attachInFrontOfTarget(target) then
                         MainModule.Killaura.CurrentTarget = target
                         MainModule.Killaura.LastTargetSwitch = currentTime
                         MainModule.Killaura.IsSearching = false
                         print("Найдена новая цель:", target.Name)
                     end
                 else
-                    -- Если не нашли цель, сбрасываем всё
                     if not MainModule.Killaura.IsSearching then
                         MainModule.Killaura.IsSearching = true
                         MainModule.Killaura.SearchAttempts = 0
@@ -3909,7 +3956,6 @@ function MainModule.ToggleKillaura(enabled)
                     if distance <= MainModule.Killaura.Radius then
                         isValid = true
                     elseif MainModule.Killaura.ReturnAfterAnimation then
-                        -- Даже если далеко, возвращаемся после анимации
                         isValid = true
                     end
                 end
@@ -3921,8 +3967,6 @@ function MainModule.ToggleKillaura(enabled)
                 MainModule.Killaura.IsAttached = false
                 MainModule.Killaura.IsSearching = true
                 MainModule.Killaura.SearchAttempts = 0
-                MainModule.Killaura.TargetVelocity = Vector3.new(0, 0, 0)
-                MainModule.Killaura.LastTargetCFrame = nil
                 print("Цель потеряна, ищем новую...")
                 
                 -- Восстанавливаем контроль пока ищем
@@ -3932,16 +3976,27 @@ function MainModule.ToggleKillaura(enabled)
                     humanoid:ChangeState(Enum.HumanoidStateType.Running)
                 end
             else
-                -- Обновляем прикрепление (всегда с позицией сзади)
-                updateSimpleAttachment(deltaTime)
+                -- Обновляем прикрепление ПЕРЕД целью
+                updateFrontAttachment(deltaTime)
+                
+                -- Смотрим прямо на цель
+                local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if targetRoot then
+                    local newCFrame = lookDirectlyAtTarget(character, targetRoot.Position, deltaTime)
+                    if newCFrame then
+                        local rootPart = GetRootPart(character)
+                        if rootPart then
+                            -- Плавный поворот
+                            rootPart.CFrame = rootPart.CFrame:Lerp(newCFrame, 0.6)
+                        end
+                    end
+                end
             end
         end
         
         -- Если мы прикреплены, но нет цели - сбрасываем
         if MainModule.Killaura.IsAttached and not MainModule.Killaura.CurrentTarget then
             MainModule.Killaura.IsAttached = false
-            MainModule.Killaura.TargetVelocity = Vector3.new(0, 0, 0)
-            MainModule.Killaura.LastTargetCFrame = nil
             
             local humanoid = GetHumanoid(character)
             if humanoid then
@@ -3951,7 +4006,7 @@ function MainModule.ToggleKillaura(enabled)
         end
     end))
     
-    -- Проверка анимаций
+    -- Проверка анимаций цели
     table.insert(MainModule.Killaura.Connections, RunService.Heartbeat:Connect(function()
         if MainModule.Killaura.Enabled and MainModule.Killaura.CurrentTarget then
             checkTargetAnimations()
@@ -3969,8 +4024,8 @@ function MainModule.ToggleKillaura(enabled)
         if not MainModule.Killaura.CurrentTarget and not MainModule.Killaura.IsSearching then
             MainModule.Killaura.ReturnToNormalTimer = MainModule.Killaura.ReturnToNormalTimer + 1/60
             
-            if MainModule.Killaura.ReturnToNormalTimer > 3 then -- 3 секунды
-                fullyRestoreCharacter()
+            if MainModule.Killaura.ReturnToNormalTimer > 3 then
+                restoreOriginalState(character)
                 MainModule.Killaura.ReturnToNormalTimer = 0
                 print("Автовосстановление: нет цели 3 секунды")
             end
@@ -3987,38 +4042,53 @@ function MainModule.ToggleKillaura(enabled)
             MainModule.Killaura.CurrentTarget = nil
             MainModule.Killaura.IsAttached = false
             MainModule.Killaura.IsActive = false
-            MainModule.Killaura.TargetVelocity = Vector3.new(0, 0, 0)
-            MainModule.Killaura.LastTargetCFrame = nil
+            MainModule.Killaura.PlayerHasCombatItem = false
             
-            -- Даем время на загрузку
+            -- Сохраняем новое состояние
             task.wait(0.5)
+            saveOriginalState(newCharacter)
             
             print("Персонаж сменился, ищем новую цель...")
         end
     end))
+    
+    -- Обработчик изменения инвентаря
+    table.insert(MainModule.Killaura.Connections, LocalPlayer.Backpack.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            for _, combatItem in ipairs(MainModule.Killaura.CombatItems) do
+                if string.find(child.Name:lower(), combatItem:lower()) then
+                    MainModule.Killaura.PlayerHasCombatItem = true
+                    print("Добавлен боевой предмет:", child.Name)
+                    break
+                end
+            end
+        end
+    }))
+    
+    table.insert(MainModule.Killaura.Connections, LocalPlayer.Backpack.ChildRemoved:Connect(function(child)
+        if child:IsA("Tool") then
+            for _, combatItem in ipairs(MainModule.Killaura.CombatItems) do
+                if string.find(child.Name:lower(), combatItem:lower()) then
+                    -- Проверяем остались ли еще боевые предметы
+                    local hasOtherCombatItems = checkPlayerInventory()
+                    if not hasOtherCombatItems then
+                        MainModule.Killaura.PlayerHasCombatItem = false
+                        print("Удален последний боевой предмет, выключаем Killaura")
+                        MainModule.ToggleKillaura(false)
+                    else
+                        print("Удален боевой предмет, но есть другие")
+                    end
+                    break
+                end
+            end
+        end
+    }))
 end
 
 function MainModule.SetKillauraRadius(radius)
     radius = math.clamp(radius, 15, MainModule.Killaura.MaxRadius)
     MainModule.Killaura.Radius = radius
     return radius
-end
-
--- Функция для настройки позиционирования сзади
-function MainModule.SetKillauraBehindOffset(offset)
-    MainModule.Killaura.BehindOffset = math.max(1, offset or 3)
-    return MainModule.Killaura.BehindOffset
-end
-
-function MainModule.SetKillauraHeightOffset(offset)
-    MainModule.Killaura.HeightOffset = offset or 1.8
-    return MainModule.Killaura.HeightOffset
-end
-
-function MainModule.SetKillauraSmoothness(followFactor, lookFactor)
-    MainModule.Killaura.SmoothFollowFactor = math.clamp(followFactor or 0.3, 0.1, 1)
-    MainModule.Killaura.SmoothLookFactor = math.clamp(lookFactor or 0.4, 0.1, 1)
-    return MainModule.Killaura.SmoothFollowFactor, MainModule.Killaura.SmoothLookFactor
 end
 
 -- Вспомогательные функции
@@ -4362,4 +4432,5 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
