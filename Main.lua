@@ -285,7 +285,7 @@ MainModule.Killaura = {
     LastTargetSwitch = 0,
     AntiPushForce = nil,
     BodyAngularVelocity = nil,
-    CustomMassForce = nil -- Добавляем кастомную силу вместо изменения массы
+    CustomMassForce = nil
 }
 
 MainModule.Misc = {
@@ -3600,22 +3600,24 @@ function MainModule.ToggleKillaura(enabled)
         if not humanoid then return end
         
         -- ПРИМЕНЯЕМ ПОЗУ ЛЕЖА НА ЖИВОТЕ (лицом ВНИЗ) ПРАВИЛЬНО
+        -- Используем угол 80-90 градусов для положения на животе (не 180!)
         if humanoid:FindFirstChild("Animator") then
-            -- ПОВОРАЧИВАЕМ ТОРС НА 180 ГРАДУСОВ для положения на животе
-            local torsoAngle = CFrame.Angles(math.rad(180), 0, 0)
+            -- ПОВОРАЧИВАЕМ ТОРС НА 85 ГРАДУСОВ для положения на животе
+            -- 85 градусов = почти горизонтально, лицом вниз
+            local torsoAngle = CFrame.Angles(math.rad(85), 0, 0)
             humanoid.Animator:ApplyJointTransform("Torso", torsoAngle)
             
-            -- Слегка сгибаем ноги назад
-            local hipAngle = CFrame.Angles(math.rad(-15), 0, 0)
+            -- Слегка сгибаем ноги
+            local hipAngle = CFrame.Angles(math.rad(-10), 0, 0)
             humanoid.Animator:ApplyJointTransform("Left Hip", hipAngle)
             humanoid.Animator:ApplyJointTransform("Right Hip", hipAngle)
             
-            -- Голову поднимаем немного (смотрит вперед/вниз)
-            local neckAngle = CFrame.Angles(math.rad(-10), 0, 0)
+            -- Голову немного вперед (смотрит вниз)
+            local neckAngle = CFrame.Angles(math.rad(15), 0, 0)
             humanoid.Animator:ApplyJointTransform("Neck", neckAngle)
             
-            -- Руки назад вдоль тела
-            local shoulderAngle = CFrame.Angles(math.rad(-20), 0, 0)
+            -- Руки вперед или вдоль тела
+            local shoulderAngle = CFrame.Angles(math.rad(25), 0, 0)
             humanoid.Animator:ApplyJointTransform("Left Shoulder", shoulderAngle)
             humanoid.Animator:ApplyJointTransform("Right Shoulder", shoulderAngle)
         end
@@ -3729,7 +3731,8 @@ function MainModule.ToggleKillaura(enabled)
         local targetPosition = targetRoot.Position + Vector3.new(0, MainModule.Killaura.AttachYOffset, 0)
         
         -- ТЕЛЕПОРТАЦИЯ С ПРАВИЛЬНОЙ ОРИЕНТАЦИЕЙ
-        rootPart.CFrame = CFrame.new(targetPosition) * CFrame.Angles(math.rad(180), 0, 0)
+        -- Исправлено: 85 градусов вместо 180 для положения на животе
+        rootPart.CFrame = CFrame.new(targetPosition) * CFrame.Angles(math.rad(85), 0, 0)
         
         -- Применяем позу лежа на животе
         applyLyingPose(character, targetPosition)
@@ -3760,14 +3763,15 @@ function MainModule.ToggleKillaura(enabled)
         bodyGyro.MaxTorque = Vector3.new(1000000, 1000000, 1000000)
         bodyGyro.P = 1000000
         bodyGyro.D = 50000
+        -- Исправлено: 85 градусов для положения на животе
         bodyGyro.CFrame = CFrame.new(targetPosition, targetPosition + Vector3.new(0, -1, 0)) * 
-                         CFrame.Angles(math.rad(230), 0, 0)
+                         CFrame.Angles(math.rad(85), 0, 0)
         bodyGyro.Parent = rootPart
         
         -- BodyForce для компенсации гравитации
         local bodyForce = Instance.new("BodyForce")
         bodyForce.Name = "KillauraForce"
-        bodyForce.Force = Vector3.new(0, workspace.Gravity * 1000, 0) -- УСИЛЕННАЯ КОМПЕНСАЦИЯ
+        bodyForce.Force = Vector3.new(0, workspace.Gravity * 1000, 0)
         bodyForce.Parent = rootPart
         
         -- AlignPosition для точного позиционирования
@@ -3938,8 +3942,9 @@ function MainModule.ToggleKillaura(enabled)
         -- Обновляем BodyGyro для положения на животе
         local bodyGyro = rootPart:FindFirstChild("KillauraGyro")
         if bodyGyro then
+            -- Исправлено: 85 градусов для положения на животе
             bodyGyro.CFrame = CFrame.new(targetPosition, targetPosition + Vector3.new(0, -1, 0)) * 
-                             CFrame.Angles(math.rad(180), 0, 0)
+                             CFrame.Angles(math.rad(85), 0, 0)
         end
         
         -- Обновляем BodyForce для компенсации гравитации
@@ -3957,7 +3962,6 @@ function MainModule.ToggleKillaura(enabled)
         -- Применяем СИЛЬНОЕ поле против отталкивания
         local antiPushForce = rootPart:FindFirstChild("KillauraAntiPush")
         if antiPushForce then
-            -- Сила, противоположная любому движению для стабильности
             local oppositeVelocity = -rootPart.Velocity * 5000
             antiPushForce.Force = oppositeVelocity
         end
@@ -3965,7 +3969,6 @@ function MainModule.ToggleKillaura(enabled)
         -- Обновляем BodyAngularVelocity для стабильности вращения
         local angularVelocity = rootPart:FindFirstChild("KillauraAngular")
         if angularVelocity then
-            -- Стабилизируем вращение
             angularVelocity.AngularVelocity = -rootPart.RotVelocity * 10
         end
         
@@ -3976,10 +3979,9 @@ function MainModule.ToggleKillaura(enabled)
             bodyThrust.Location = rootPart.Position
         end
         
-        -- Обновляем кастомную "массу" (имитация тяжести)
+        -- Обновляем кастомную "массу"
         local customMassForce = rootPart:FindFirstChild("KillauraCustomMass")
         if customMassForce then
-            -- Создаем эффект большой массы путем противодействия ускорению
             local accelerationForce = -rootPart.AssemblyLinearVelocity * 5000
             customMassForce.Force = accelerationForce
         end
@@ -4496,6 +4498,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
