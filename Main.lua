@@ -285,7 +285,8 @@ MainModule.Killaura = {
     LastTargetSwitch = 0,
     AntiPushForce = nil,
     BodyAngularVelocity = nil,
-    CustomMassForce = nil
+    CustomMassForce = nil,
+    LyingAngle = 85 -- Увеличил угол с 80 до 85 для лучшего наклона
 }
 
 
@@ -3600,27 +3601,30 @@ function MainModule.ToggleKillaura(enabled)
         local humanoid = GetHumanoid(character)
         if not humanoid then return end
         
-        -- ПРИМЕНЯЕМ ПОЗУ ЛЕЖА НА ЖИВОТЕ ПРАВИЛЬНО
-        -- Используем минимальные углы, чтобы не конфликтовать с BodyGyro
+        -- ПРИМЕНЯЕМ ПОЗУ ЛЕЖА НА ЖИВОТЕ С ЛУЧШИМ НАКЛОНОМ
+        -- Увеличил углы для лучшего наклона вперед
         if humanoid:FindFirstChild("Animator") then
-            -- ОЧЕНЬ МАЛЕНЬКИЙ наклон вперед (на живот)
-            -- 20 градусов достаточно для позы "на животе"
-            local torsoAngle = CFrame.Angles(math.rad(20), 0, 0)
+            -- Увеличил наклон торса до 30 градусов для лучшего наклона вперед
+            local torsoAngle = CFrame.Angles(math.rad(30), 0, 0)
             humanoid.Animator:ApplyJointTransform("Torso", torsoAngle)
             
-            -- Ноги почти прямые
-            local hipAngle = CFrame.Angles(math.rad(5), 0, 0)
+            -- Ноги немного согнуты
+            local hipAngle = CFrame.Angles(math.rad(10), 0, 0)
             humanoid.Animator:ApplyJointTransform("Left Hip", hipAngle)
             humanoid.Animator:ApplyJointTransform("Right Hip", hipAngle)
             
-            -- Шея НЕ наклоняем вперед - пусть смотрит туда же, куда и тело
-            local neckAngle = CFrame.Angles(math.rad(5), 0, 0)
+            -- Шея немного вперед, чтобы смотреть вниз
+            local neckAngle = CFrame.Angles(math.rad(15), 0, 0)
             humanoid.Animator:ApplyJointTransform("Neck", neckAngle)
             
-            -- Руки слегка вперед
-            local shoulderAngle = CFrame.Angles(math.rad(15), 0, 0)
+            -- Руки больше вперед для лучшей позы
+            local shoulderAngle = CFrame.Angles(math.rad(25), 0, 0)
             humanoid.Animator:ApplyJointTransform("Left Shoulder", shoulderAngle)
             humanoid.Animator:ApplyJointTransform("Right Shoulder", shoulderAngle)
+            
+            -- Дополнительно: немного наклоняем вперед весь позвоночник
+            local spineAngle = CFrame.Angles(math.rad(5), 0, 0)
+            humanoid.Animator:ApplyJointTransform("Waist", spineAngle)
         end
     end
     
@@ -3632,7 +3636,7 @@ function MainModule.ToggleKillaura(enabled)
         
         -- Сбрасываем позу в нормальное состояние
         if humanoid:FindFirstChild("Animator") then
-            for _, jointName in ipairs({"Torso", "Left Hip", "Right Hip", "Neck", "Left Shoulder", "Right Shoulder"}) do
+            for _, jointName in ipairs({"Torso", "Left Hip", "Right Hip", "Neck", "Left Shoulder", "Right Shoulder", "Waist"}) do
                 pcall(function()
                     humanoid.Animator:ApplyJointTransform(jointName, CFrame.new())
                 end)
@@ -3678,13 +3682,13 @@ function MainModule.ToggleKillaura(enabled)
     end
     
     local function getProperLyingCFrame(position, lookAtPosition)
-        -- ПРАВИЛЬНО: создаем CFrame, который смотрит вперед, но наклонен на 80 градусов
-        -- Это будет поза "на животе, смотря вниз"
+        -- Создаем CFrame, который смотрит вперед и наклонен
+        -- Используем увеличенный угол для лучшего наклона вперед
         local baseCFrame = CFrame.new(position, lookAtPosition)
         
-        -- Поворачиваем на 80 градусов по оси X (наклон вперед для положения на животе)
-        -- Без использования lookAt во второй раз
-        return baseCFrame * CFrame.Angles(math.rad(80), 0, 0)
+        -- Увеличил угол до 85 градусов для лучшего наклона вперед
+        -- Добавил небольшой дополнительный наклон по оси Z для естественности
+        return baseCFrame * CFrame.Angles(math.rad(MainModule.Killaura.LyingAngle), 0, math.rad(-2))
     end
     
     local function setupCharacterForKillaura(character, targetRoot)
@@ -3741,13 +3745,12 @@ function MainModule.ToggleKillaura(enabled)
         -- Позиция над целью
         local targetPosition = targetRoot.Position + Vector3.new(0, MainModule.Killaura.AttachYOffset, 0)
         
-        -- ПРАВИЛЬНАЯ ТЕЛЕПОРТАЦИЯ: смотрим на цель, но наклонены вперед на 80 градусов
-        -- Это дает положение "на животе, смотря вниз на цель"
+        -- ТЕЛЕПОРТАЦИЯ С УЛУЧШЕННЫМ НАКЛОНОМ ВПЕРЕД
         local lookAtPos = targetRoot.Position
         local properCFrame = getProperLyingCFrame(targetPosition, lookAtPos)
         rootPart.CFrame = properCFrame
         
-        -- Применяем легкую позу лежа на животе
+        -- Применяем улучшенную позу лежа на животе
         applyLyingPose(character, targetPosition)
         
         -- Создаем СИЛЬНОЕ поле против отталкивания
@@ -3770,16 +3773,16 @@ function MainModule.ToggleKillaura(enabled)
         bodyPosition.Position = targetPosition
         bodyPosition.Parent = rootPart
         
-        -- BodyGyro для ориентации "на животе, смотря вниз"
+        -- BodyGyro для ориентации "на животе, смотря вниз" с улучшенным наклоном
         local bodyGyro = Instance.new("BodyGyro")
         bodyGyro.Name = "KillauraGyro"
         bodyGyro.MaxTorque = Vector3.new(1000000, 1000000, 1000000)
         bodyGyro.P = 1000000
         bodyGyro.D = 50000
         
-        -- ПРАВИЛЬНО: Устанавливаем BodyGyro чтобы смотреть на цель, но быть наклоненным на 80 градусов
-        -- Не используем lookAt внутри BodyGyro - это создает конфликт
-        bodyGyro.CFrame = CFrame.new(targetPosition) * CFrame.Angles(math.rad(80), 0, 0)
+        -- Улучшенный наклон: 85 градусов + небольшой наклон по Z
+        bodyGyro.CFrame = CFrame.new(targetPosition) * 
+                         CFrame.Angles(math.rad(MainModule.Killaura.LyingAngle), 0, math.rad(-2))
         bodyGyro.Parent = rootPart
         
         -- BodyForce для компенсации гравитации
@@ -3953,11 +3956,12 @@ function MainModule.ToggleKillaura(enabled)
             bodyVelocity.Velocity = targetRoot.Velocity
         end
         
-        -- Обновляем BodyGyro для положения на животе
+        -- Обновляем BodyGyro для положения на животе с улучшенным наклоном
         local bodyGyro = rootPart:FindFirstChild("KillauraGyro")
         if bodyGyro then
-            -- ПРАВИЛЬНО: Просто поддерживаем угол 80 градусов без lookAt
-            bodyGyro.CFrame = CFrame.new(targetPosition) * CFrame.Angles(math.rad(80), 0, 0)
+            -- Улучшенный наклон: 85 градусов + небольшой наклон по Z
+            bodyGyro.CFrame = CFrame.new(targetPosition) * 
+                             CFrame.Angles(math.rad(MainModule.Killaura.LyingAngle), 0, math.rad(-2))
         end
         
         -- Обновляем BodyForce для компенсации гравитации
@@ -3999,7 +4003,7 @@ function MainModule.ToggleKillaura(enabled)
             customMassForce.Force = accelerationForce
         end
         
-        -- Поддерживаем легкую позу лежа на животе
+        -- Поддерживаем улучшенную позу лежа на животе
         applyLyingPose(character, targetPosition)
     end
     
@@ -4170,7 +4174,7 @@ function MainModule.ToggleKillaura(enabled)
         
         local character = GetCharacter()
         if character then
-            -- Поддерживаем легкую позу лежа на животе
+            -- Поддерживаем улучшенную позу лежа на животе
             applyLyingPose(character, Vector3.new(0, 0, 0))
         end
     end)
@@ -4511,6 +4515,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
