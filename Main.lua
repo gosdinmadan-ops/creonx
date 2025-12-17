@@ -1166,18 +1166,23 @@ end
 
 function MainModule.ToggleESP(enabled)
     MainModule.Misc.ESPEnabled = enabled
+    
     if MainModule.ESP.MainConnection then
         MainModule.ESP.MainConnection:Disconnect()
         MainModule.ESP.MainConnection = nil
     end
+    
     MainModule.ClearESP()
+    
     if enabled then
         MainModule.ESP.Folder = Instance.new("Folder")
         MainModule.ESP.Folder.Name = "CreonXESP"
         MainModule.ESP.Folder.Parent = CoreGui
         
         local function createPlayerESP(player)
-            if not player or player == LocalPlayer then return nil end
+            if not player or player == LocalPlayer then 
+                return nil 
+            end
             
             local espData = {
                 Player = player,
@@ -1190,21 +1195,35 @@ function MainModule.ToggleESP(enabled)
             }
             
             local function updateESP()
-                if not espData.Player or not espData.Player.Parent then return end
+                if not espData.Player or not espData.Player.Parent then 
+                    return 
+                end
+                
                 local character = espData.Player.Character
-                if not character then return end
+                if not character then 
+                    return 
+                end
+                
                 local humanoid = GetHumanoid(character)
                 local rootPart = GetRootPart(character)
+                
                 if not (humanoid and rootPart and humanoid.Health > 0) then
-                    if espData.Highlight then espData.Highlight.Enabled = false end
-                    if espData.Billboard then espData.Billboard.Enabled = false end
-                    if espData.Box then espData.Box.Adornee = nil end
+                    if espData.Highlight then 
+                        espData.Highlight.Enabled = false 
+                    end
+                    if espData.Billboard then 
+                        espData.Billboard.Enabled = false 
+                    end
+                    if espData.Box then 
+                        espData.Box.Adornee = nil 
+                    end
                     return
                 end
                 
                 local localCharacter = GetCharacter()
                 local localRoot = localCharacter and GetRootPart(localCharacter)
                 
+                -- Создаем Highlight если нужно
                 if MainModule.Misc.ESPHighlight and not espData.Highlight then
                     espData.Highlight = Instance.new("Highlight")
                     espData.Highlight.Name = player.Name .. "_ESP"
@@ -1215,6 +1234,7 @@ function MainModule.ToggleESP(enabled)
                     espData.Highlight.Parent = MainModule.ESP.Folder
                 end
                 
+                -- Обновляем Highlight
                 if espData.Highlight then
                     espData.Highlight.Enabled = true
                     espData.Highlight.Adornee = character
@@ -1233,6 +1253,7 @@ function MainModule.ToggleESP(enabled)
                     end
                 end
                 
+                -- Создаем Box если нужно
                 if MainModule.Misc.ESPBoxes and not espData.Box then
                     espData.Box = Instance.new("BoxHandleAdornment")
                     espData.Box.Name = player.Name .. "_Box"
@@ -1245,6 +1266,7 @@ function MainModule.ToggleESP(enabled)
                     espData.Box.Parent = MainModule.ESP.Folder
                 end
                 
+                -- Обновляем Box
                 if espData.Box then
                     espData.Box.Adornee = rootPart
                     espData.Box.Size = rootPart.Size * 1.2
@@ -1253,6 +1275,7 @@ function MainModule.ToggleESP(enabled)
                     end
                 end
                 
+                -- Создаем Billboard если нужно
                 if MainModule.Misc.ESPNames then
                     if not espData.Billboard then
                         espData.Billboard = Instance.new("BillboardGui")
@@ -1276,17 +1299,21 @@ function MainModule.ToggleESP(enabled)
                     end
                     
                     espData.Billboard.Enabled = true
+                    
                     local distanceText = ""
                     if MainModule.Misc.ESPDistance and localRoot then
                         local distance = math.floor(GetDistance(rootPart.Position, localRoot.Position))
                         distanceText = string.format(" [%dm]", distance)
                     end
+                    
                     local healthPercent = math.floor((humanoid.Health / humanoid.MaxHealth) * 100)
                     local healthBar = "▮":rep(math.floor(healthPercent / 10)) .. "▯":rep(10 - math.floor(healthPercent / 10))
                     local nameText = player.DisplayName or player.Name
                     local healthText = string.format("HP: %d/%d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
+                    
                     espData.Label.Text = string.format("%s\n%s\n%s %s", nameText, healthText, healthBar, distanceText)
                     
+                    -- Цвет текста в зависимости от здоровья
                     if healthPercent > 70 then
                         espData.Label.TextColor3 = Color3.fromRGB(0, 255, 0)
                     elseif healthPercent > 30 then
@@ -1303,6 +1330,7 @@ function MainModule.ToggleESP(enabled)
                 end
             end
             
+            -- Инициализация ESP
             if player.Character then
                 updateESP()
                 espData.Connection = player.CharacterAdded:Connect(function()
@@ -1319,12 +1347,14 @@ function MainModule.ToggleESP(enabled)
             return espData
         end
         
+        -- Создаем ESP для всех существующих игроков
         for _, player in pairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
                 MainModule.ESP.Players[player] = createPlayerESP(player)
             end
         end
         
+        -- Обработчик новых игроков
         MainModule.ESP.Connections.PlayerAdded = Players.PlayerAdded:Connect(function(player)
             if MainModule.Misc.ESPEnabled and player ~= LocalPlayer then
                 task.wait(0.5)
@@ -1332,6 +1362,7 @@ function MainModule.ToggleESP(enabled)
             end
         end)
         
+        -- Обработчик уходящих игроков
         MainModule.ESP.Connections.PlayerRemoving = Players.PlayerRemoving:Connect(function(player)
             local espData = MainModule.ESP.Players[player]
             if espData then
@@ -1351,8 +1382,12 @@ function MainModule.ToggleESP(enabled)
             end
         end)
         
+        -- Основной цикл обновления ESP
         MainModule.ESP.MainConnection = RunService.RenderStepped:Connect(function()
-            if not MainModule.Misc.ESPEnabled then return end
+            if not MainModule.Misc.ESPEnabled then 
+                return 
+            end
+            
             for player, espData in pairs(MainModule.ESP.Players) do
                 if player and player.Parent then
                     if espData and espData.Connection then
@@ -1369,9 +1404,15 @@ function MainModule.ToggleESP(enabled)
                     end
                 else
                     if espData then
-                        if espData.Highlight then SafeDestroy(espData.Highlight) end
-                        if espData.Billboard then SafeDestroy(espData.Billboard) end
-                        if espData.Box then SafeDestroy(espData.Box) end
+                        if espData.Highlight then 
+                            SafeDestroy(espData.Highlight) 
+                        end
+                        if espData.Billboard then 
+                            SafeDestroy(espData.Billboard) 
+                        end
+                        if espData.Box then 
+                            SafeDestroy(espData.Box) 
+                        end
                         MainModule.ESP.Players[player] = nil
                     end
                 end
@@ -3953,3 +3994,4 @@ task.spawn(function()
 end)
 
 return MainModule
+
