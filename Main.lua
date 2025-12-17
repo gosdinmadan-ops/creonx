@@ -1188,7 +1188,6 @@ function MainModule.ToggleESP(enabled)
                 Billboard = nil,
                 Label = nil,
                 Box = nil,
-                HealthBar = nil,
                 Connection = nil
             }
             
@@ -1276,7 +1275,7 @@ function MainModule.ToggleESP(enabled)
                         espData.Billboard.Name = player.Name .. "_Text"
                         espData.Billboard.Adornee = rootPart
                         espData.Billboard.AlwaysOnTop = true
-                        espData.Billboard.Size = UDim2.new(0, 200, 0, 60)
+                        espData.Billboard.Size = UDim2.new(0, 200, 0, 50)
                         espData.Billboard.StudsOffset = Vector3.new(0, 4, 0)
                         espData.Billboard.Parent = MainModule.ESP.Folder
                         
@@ -1301,14 +1300,14 @@ function MainModule.ToggleESP(enabled)
                         distanceText = string.format(" [%dm]", distance)
                     end
                     
-                    local healthPercent = math.floor((humanoid.Health / humanoid.MaxHealth) * 100)
-                    local healthBar = "▮":rep(math.floor(healthPercent / 10)) .. "▯":rep(10 - math.floor(healthPercent / 10))
                     local nameText = player.DisplayName or player.Name
-                    local healthText = string.format("HP: %d/%d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
+                    local hpText = string.format("HP: %.0f/%.0f", humanoid.Health, humanoid.MaxHealth)
                     
-                    espData.Label.Text = string.format("%s\n%s\n%s %s", nameText, healthText, healthBar, distanceText)
+                    -- Простой текст без полоски здоровья
+                    espData.Label.Text = string.format("%s\n%s%s", nameText, hpText, distanceText)
                     
-                    -- Установка цвета текста
+                    -- Установка цвета текста в зависимости от здоровья
+                    local healthPercent = (humanoid.Health / humanoid.MaxHealth) * 100
                     if healthPercent > 70 then
                         espData.Label.TextColor3 = Color3.fromRGB(0, 255, 0)
                     elseif healthPercent > 30 then
@@ -3991,5 +3990,6 @@ task.spawn(function()
 end)
 
 return MainModule
+
 
 
