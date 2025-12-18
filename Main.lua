@@ -1,3 +1,4 @@
+запомни Main.lua
 local MainModule = {}
 
 local Players = game:GetService("Players")
@@ -10,16 +11,8 @@ local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 local Debris = game:GetService("Debris")
 local TeleportService = game:GetService("TeleportService")
-local StarterGui = game:GetService("StarterGui")
 
 local LocalPlayer = Players.LocalPlayer
-
--- Hotkeys
-MainModule.Hotkeys = {
-    Fly = Enum.KeyCode.F,
-    Noclip = Enum.KeyCode.N,
-    Killaura = Enum.KeyCode.K
-}
 
 MainModule.SpeedHack = {
     Enabled = false,
@@ -32,7 +25,13 @@ MainModule.SpeedHack = {
 MainModule.Noclip = {
     Enabled = false,
     Connection = nil,
-    NoclipParts = {}
+    OriginalTransparency = {},
+    OriginalCanCollide = {},
+    AffectedParts = {},
+    CheckDistance = 20,
+    CheckInterval = 0.1,
+    ContactTime = {},
+    MinContactTime = 0.5
 }
 
 MainModule.AutoDodge = {
@@ -59,7 +58,7 @@ MainModule.AutoDodge = {
 
 MainModule.Fly = {
     Enabled = false,
-    Speed = 39,
+    Speed = 50,
     Connection = nil,
     BodyVelocity = nil,
     BodyGyro = nil,
@@ -267,7 +266,7 @@ MainModule.Killaura = {
     OriginalGravity = 196.2,
     AnimationStartTime = 0,
     IsLifted = false,
-    LiftHeight = 10,
+    LiftHeight = 6,
     TargetAnimationsSet = {},
     LastPositionUpdate = 0,
     PositionUpdateInterval = 0.033,
@@ -369,16 +368,6 @@ for _, id in ipairs(MainModule.Killaura.TargetAnimationIds) do
     MainModule.Killaura.TargetAnimationsSet["rbxassetid://" .. id] = true
 end
 
-for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
-    MainModule.AutoDodge.AnimationIdsSet[id] = true
-end
-
-for _, id in ipairs(MainModule.VoidKillFeature.AnimationIds) do
-    MainModule.VoidKillFeature.AnimationIdsSet[id] = true
-end
-
-MainModule.ZoneKillFeature.AnimationIdsSet["rbxassetid://105341857343164"] = true
-
 local speedConnection = nil
 local autoFarmConnection = nil
 local godModeConnection = nil
@@ -390,23 +379,6 @@ local infiniteAmmoConnection = nil
 local hitboxConnection = nil
 local autoPullConnection = nil
 local bypassRagdollConnection = nil
-local inputConnection = nil
-
-local function ShowNotification(title, text)
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = title,
-            Text = text or "",
-            Duration = 3
-        })
-    end)
-end
-
--- Показываем уведомление при загрузке
-task.spawn(function()
-    task.wait(1)
-    ShowNotification("Bypassed CreonHub...", "")
-end)
 
 local function SafeDestroy(obj)
     if obj and obj.Parent then
@@ -822,7 +794,6 @@ function MainModule.ToggleGodMode(enabled)
                     SafeTeleport(MainModule.RLGL.DamageTeleportPosition)
                     humanoid.Health = MainModule.RLGL.LastHealth
                     task.wait(0.1)
-                    ShowNotification("GodMode Safe to Player", "")
                     MainModule.ToggleGodMode(false)
                 else
                     MainModule.RLGL.LastHealth = humanoid.Health
@@ -836,7 +807,6 @@ function MainModule.ToggleGodMode(enabled)
             if not MainModule.HasPocketSand() then
                 MainModule.RLGL.NoPocketSandTimer = MainModule.RLGL.NoPocketSandTimer + task.wait()
                 if MainModule.RLGL.NoPocketSandTimer >= MainModule.RLGL.NoPocketSandCooldown then
-                    ShowNotification("GodMode Disabled", "")
                     MainModule.ToggleGodMode(false)
                 end
             else
@@ -1357,7 +1327,7 @@ function MainModule.ToggleSpikesKill(enabled)
     if enabled then
         local hasKnife = MainModule.CheckKnifeInInventory()
         if not hasKnife then
-            ShowNotification("Knife not found!", "")
+            print("[CreonX] Spikes Kill: No knife in inventory")
             MainModule.SpikesKillFeature.Enabled = false
             return
         end
@@ -1557,7 +1527,7 @@ function MainModule.ToggleSpikesKill(enabled)
             MainModule.SpikesKillFeature.NoKnifeTimer = MainModule.SpikesKillFeature.NoKnifeTimer + MainModule.SpikesKillFeature.KnifeCheckCooldown
             
             if MainModule.SpikesKillFeature.NoKnifeTimer >= MainModule.SpikesKillFeature.NoKnifeTimeout then
-                ShowNotification("Spikes Kill: Knife lost, disabling...", "")
+                print("[CreonX] Spikes Kill: Knife lost, disabling...")
                 MainModule.ToggleSpikesKill(false)
             end
         end
@@ -1589,6 +1559,10 @@ function MainModule.DisableSpikes(remove)
             return true
         end
     end)
+end
+
+for _, id in ipairs(MainModule.VoidKillFeature.AnimationIds) do
+    MainModule.VoidKillFeature.AnimationIdsSet[id] = true
 end
 
 function MainModule.ToggleVoidKill(enabled)
@@ -1770,6 +1744,8 @@ function MainModule.ToggleVoidKill(enabled)
         checkAnimations()
     end)
 end
+
+MainModule.ZoneKillFeature.AnimationIdsSet["rbxassetid://105341857343164"] = true
 
 function MainModule.ToggleZoneKill(enabled)
     MainModule.ZoneKillFeature.Enabled = enabled
@@ -2233,66 +2209,7 @@ function MainModule.ToggleHitboxExpander(enabled)
         MainModule.Hitbox.Connection:Disconnect()
         MainModule.Hitbox.Connection = nil
     end
-    
-    if enabled then
-        local function modifyPart(part)
-            if not MainModule.Hitbox.ModifiedParts[part] then
-                MainModule.Hitbox.ModifiedParts[part] = part.Size
-                part.Size = Vector3.new(MainModule.Hitbox.Size, MainModule.Hitbox.Size, MainModule.Hitbox.Size)
-                part.CanCollide = false
-            end
-        end
-        
-        local function onPlayerAdded(player)
-            player.CharacterAdded:Connect(function(character)
-                if MainModule.Hitbox.Enabled then
-                    local root = character:WaitForChild("HumanoidRootPart", 5)
-                    if root then
-                        modifyPart(root)
-                    end
-                end
-            end)
-        end
-        
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                local root = player.Character:FindFirstChild("HumanoidRootPart")
-                if root then
-                    modifyPart(root)
-                end
-            end
-            if player ~= LocalPlayer then
-                onPlayerAdded(player)
-            end
-        end
-        
-        MainModule.Hitbox.Connection = RunService.RenderStepped:Connect(function()
-            if not MainModule.Hitbox.Enabled then return end
-            for _, player in ipairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Character then
-                    local root = player.Character:FindFirstChild("HumanoidRootPart")
-                    if root and not MainModule.Hitbox.ModifiedParts[root] then
-                        pcall(modifyPart, root)
-                    end
-                end
-            end
-        end)
-        
-        Players.PlayerRemoving:Connect(function(player)
-            if player.Character then
-                local root = player.Character:FindFirstChild("HumanoidRootPart")
-                if root then
-                    MainModule.Hitbox.ModifiedParts[root] = nil
-                end
-            end
-        end)
-        
-        Players.PlayerAdded:Connect(function(player)
-            if player ~= LocalPlayer then
-                onPlayerAdded(player)
-            end
-        end)
-    else
+    if not enabled then
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
                 local root = player.Character:FindFirstChild("HumanoidRootPart")
@@ -2304,7 +2221,60 @@ function MainModule.ToggleHitboxExpander(enabled)
             end
         end
         MainModule.Hitbox.ModifiedParts = {}
+        return
     end
+    local function modifyPart(part)
+        if not MainModule.Hitbox.ModifiedParts[part] then
+            MainModule.Hitbox.ModifiedParts[part] = part.Size
+            part.Size = Vector3.new(MainModule.Hitbox.Size, MainModule.Hitbox.Size, MainModule.Hitbox.Size)
+            part.CanCollide = false
+        end
+    end
+    local function onPlayerAdded(player)
+        player.CharacterAdded:Connect(function(character)
+            if MainModule.Hitbox.Enabled then
+                local root = character:WaitForChild("HumanoidRootPart", 5)
+                if root then
+                    modifyPart(root)
+                end
+            end
+        end)
+    end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                modifyPart(root)
+            end
+        end
+        if player ~= LocalPlayer then
+            onPlayerAdded(player)
+        end
+    end
+    MainModule.Hitbox.Connection = RunService.RenderStepped:Connect(function()
+        if not MainModule.Hitbox.Enabled then return end
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                if root and not MainModule.Hitbox.ModifiedParts[root] then
+                    pcall(modifyPart, root)
+                end
+            end
+        end
+    end)
+    Players.PlayerRemoving:Connect(function(player)
+        if player.Character then
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                MainModule.Hitbox.ModifiedParts[root] = nil
+            end
+        end
+    end)
+    Players.PlayerAdded:Connect(function(player)
+        if player ~= LocalPlayer then
+            onPlayerAdded(player)
+        end
+    end)
 end
 
 function MainModule.SetHitboxSize(size)
@@ -2863,6 +2833,107 @@ function MainModule.GetPlayerPosition()
     return "Не доступно"
 end
 
+function MainModule.ToggleNoclip(enabled)
+    MainModule.Noclip.Enabled = enabled
+    
+    if MainModule.Noclip.Connection then
+        MainModule.Noclip.Connection:Disconnect()
+        MainModule.Noclip.Connection = nil
+    end
+    
+    for part in pairs(MainModule.Noclip.AffectedParts) do
+        if part and part.Parent then
+            part.CanCollide = true
+        end
+    end
+    MainModule.Noclip.AffectedParts = {}
+    MainModule.Noclip.ContactTime = {}
+    
+    if not enabled then return end
+    
+    MainModule.Noclip.Connection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Noclip.Enabled then return end
+        
+        local character = GetCharacter()
+        if not character then return end
+        
+        local rootPart = GetRootPart(character)
+        if not rootPart then return end
+        
+        local currentTime = tick()
+        local pos = rootPart.Position
+        
+        local region = Region3.new(
+            pos - Vector3.new(MainModule.Noclip.CheckDistance, 3, MainModule.Noclip.CheckDistance),
+            pos + Vector3.new(MainModule.Noclip.CheckDistance, 5, MainModule.Noclip.CheckDistance)
+        )
+        
+        local parts = workspace:FindPartsInRegion3(region, character, 100)
+        
+        for i = 1, #parts do
+            local part = parts[i]
+            
+            if part.CanCollide then
+                local isFootContact = false
+                
+                if character:FindFirstChild("Humanoid") then
+                    local humanoid = character.Humanoid
+                    if humanoid.FloorMaterial ~= Enum.Material.Air then
+                        local rayOrigin = pos
+                        local rayDirection = Vector3.new(0, -5, 0)
+                        local raycastParams = RaycastParams.new()
+                        raycastParams.FilterDescendantsInstances = {character}
+                        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+                        
+                        local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+                        if result and result.Instance == part then
+                            isFootContact = true
+                        end
+                    end
+                end
+                
+                if not isFootContact then
+                    if not MainModule.Noclip.ContactTime[part] then
+                        MainModule.Noclip.ContactTime[part] = currentTime
+                    end
+                    
+                    local contactDuration = currentTime - MainModule.Noclip.ContactTime[part]
+                    
+                    if contactDuration >= MainModule.Noclip.MinContactTime then
+                        if not MainModule.Noclip.AffectedParts[part] then
+                            MainModule.Noclip.AffectedParts[part] = true
+                            part.CanCollide = false
+                        end
+                    end
+                else
+                    MainModule.Noclip.ContactTime[part] = nil
+                    if MainModule.Noclip.AffectedParts[part] then
+                        part.CanCollide = true
+                        MainModule.Noclip.AffectedParts[part] = nil
+                    end
+                end
+            end
+        end
+        
+        for part in pairs(MainModule.Noclip.AffectedParts) do
+            if not part or not part.Parent then
+                MainModule.Noclip.AffectedParts[part] = nil
+                MainModule.Noclip.ContactTime[part] = nil
+            end
+        end
+        
+        for part in pairs(MainModule.Noclip.ContactTime) do
+            if not part or not part.Parent or not part.CanCollide then
+                MainModule.Noclip.ContactTime[part] = nil
+            end
+        end
+    end)
+end
+
+for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
+    MainModule.AutoDodge.AnimationIdsSet[id] = true
+end
+
 local function callDodge()
     -- Ищем RemoteEvent
     local remote = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
@@ -3015,58 +3086,30 @@ function MainModule.ToggleAutoDodge(enabled)
     end
 end
 
-function MainModule.ToggleNoclip(enabled)
-    MainModule.Noclip.Enabled = enabled
-    
-    if MainModule.Noclip.Connection then
-        MainModule.Noclip.Connection:Disconnect()
-        MainModule.Noclip.Connection = nil
-    end
-    
-    if enabled then
-        -- Отключаем коллизию для всех частей персонажа
-        local function NoclipLoop()
-            if LocalPlayer.Character ~= nil then
-                for _, child in pairs(LocalPlayer.Character:GetDescendants()) do
-                    if child:IsA("BasePart") and child.CanCollide == true then
-                        child.CanCollide = false
-                        MainModule.Noclip.NoclipParts[child] = true
-                    end
-                end
-            end
-        end
-        
-        -- Сразу применяем
-        NoclipLoop()
-        
-        MainModule.Noclip.Connection = RunService.Heartbeat:Connect(function()
-            if not MainModule.Noclip.Enabled then return end
-            NoclipLoop()
-        end)
-        
-        -- Следим за добавлением новых частей
-        local character = GetCharacter()
-        if character then
-            character.DescendantAdded:Connect(function(child)
-                if not MainModule.Noclip.Enabled then return end
-                if child:IsA("BasePart") and child.CanCollide == true then
-                    task.wait()
-                    child.CanCollide = false
-                    MainModule.Noclip.NoclipParts[child] = true
-                end
-            end)
-        end
-    else
-        -- Восстанавливаем коллизию
-        if LocalPlayer.Character ~= nil and MainModule.Noclip.NoclipParts then
-            for part, _ in pairs(MainModule.Noclip.NoclipParts) do
-                if part and part:IsA("BasePart") and part.Parent then
-                    part.CanCollide = true
-                end
-            end
-            MainModule.Noclip.NoclipParts = {}
+function MainModule.GetHider()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        if not plr.Character then continue end
+        if not IsHider(plr) then continue end
+        if plr.Character ~= nil and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
+            return plr.Character
+        else
+            continue
         end
     end
+    return nil
+end
+
+function MainModule.TeleportToHider()
+    if not LocalPlayer.Character then return end
+    
+    local hider = MainModule.GetHider()
+    if not hider then
+        return false
+    end
+    
+    LocalPlayer.Character:PivotTo(hider:GetPrimaryPartCFrame())
+    return true
 end
 
 function MainModule.ToggleFly(enabled)
@@ -3079,6 +3122,12 @@ end
 
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
+    
+    MainModule.Fly.WasRagdollEnabled = MainModule.Misc.BypassRagdollEnabled
+    
+    if MainModule.Misc.BypassRagdollEnabled then
+        MainModule.ToggleBypassRagdoll(false)
+    end
     
     MainModule.Fly.Enabled = true
     
@@ -3105,20 +3154,23 @@ function MainModule.EnableFlight()
         PlatformStand = false
     }
     
-    -- Создаем BodyVelocity для полета
+    MainModule.Fly.FakeParts = {}
+    
+    MainModule.Fly.LastUpdate = tick()
+    MainModule.Fly.LastPosition = rootPart.Position
+    
     local flightBodyVelocity = Instance.new("BodyVelocity")
     flightBodyVelocity.Name = "FlightVelocity"
-    flightBodyVelocity.MaxForce = Vector3.new(100000, 100000, 100000)
-    flightBodyVelocity.P = 12500
+    flightBodyVelocity.MaxForce = Vector3.new(40000, 40000, 40000)
+    flightBodyVelocity.P = 1250
     flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
     flightBodyVelocity.Parent = rootPart
     
-    -- Создаем BodyGyro для стабилизации
     local flightBodyGyro = Instance.new("BodyGyro")
     flightBodyGyro.Name = "FlightGyro"
-    flightBodyGyro.MaxTorque = Vector3.new(100000, 100000, 100000)
-    flightBodyGyro.P = 12500
-    flightBodyGyro.D = 1000
+    flightBodyGyro.MaxTorque = Vector3.new(40000, 40000, 40000)
+    flightBodyGyro.P = 1250
+    flightBodyGyro.D = 250
     flightBodyGyro.CFrame = rootPart.CFrame
     flightBodyGyro.Parent = rootPart
     
@@ -3140,59 +3192,93 @@ function MainModule.EnableFlight()
         local Camera = workspace.CurrentCamera
         if not Camera then return end
         
-        -- Управление полетом
         local moveDirection = Vector3.new(0, 0, 0)
-        local speedMultiplier = 1.0
-        
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-            speedMultiplier = 2.0
-        end
+        local isMoving = false
         
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then
             moveDirection = moveDirection + Camera.CFrame.LookVector
+            isMoving = true
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.S) then
             moveDirection = moveDirection - Camera.CFrame.LookVector
+            isMoving = true
         end
         
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then
             moveDirection = moveDirection - Camera.CFrame.RightVector
+            isMoving = true
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.D) then
             moveDirection = moveDirection + Camera.CFrame.RightVector
+            isMoving = true
         end
         
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
             moveDirection = moveDirection + Vector3.new(0, 1, 0)
+            isMoving = true
         end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
             moveDirection = moveDirection - Vector3.new(0, 1, 0)
+            isMoving = true
         end
         
-        if moveDirection.Magnitude > 0 then
-            moveDirection = moveDirection.Unit
+        if isMoving then
+            if moveDirection.Magnitude > 0 then
+                moveDirection = moveDirection.Unit
+            end
+            
+            local targetVelocity = moveDirection * 50
+            
+            if flightBodyVelocity then
+                flightBodyVelocity.Velocity = targetVelocity
+            end
+            
+            if flightBodyGyro then
+                flightBodyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + Camera.CFrame.LookVector)
+            end
+            
+            humanoid.PlatformStand = false
+            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+            
+            rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        else
+            if flightBodyVelocity then
+                flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            end
+            
+            if flightBodyGyro then
+                flightBodyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + Vector3.new(0, 0, 1))
+            end
+            
+            rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         end
         
-        local targetVelocity = moveDirection * MainModule.Fly.Speed * speedMultiplier
-        
-        if flightBodyVelocity then
-            flightBodyVelocity.Velocity = targetVelocity
-        end
-        
-        -- Стабилизируем поворот
-        if flightBodyGyro then
-            local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + Camera.CFrame.LookVector)
-            flightBodyGyro.CFrame = flightBodyGyro.CFrame:Lerp(targetCFrame, 0.5)
-        end
-        
-        -- Отключаем гравитацию и физику
-        humanoid.PlatformStand = true
-        rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-        
-        -- Отключаем коллизию для плавного полета
-        for _, part in pairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
+        local currentTime = tick()
+        if currentTime - MainModule.Fly.LastUpdate > 0.1 then
+            MainModule.Fly.LastUpdate = currentTime
+            
+            for _, part in ipairs(MainModule.Fly.FakeParts) do
+                part:Destroy()
+            end
+            MainModule.Fly.FakeParts = {}
+            
+            local fakePart = Instance.new("Part")
+            fakePart.Name = "FakeFlightGround"
+            fakePart.Size = Vector3.new(4, 1, 4)
+            fakePart.Transparency = 1
+            fakePart.Anchored = true
+            fakePart.CanCollide = true
+            fakePart.Position = rootPart.Position - Vector3.new(0, 3, 0)
+            fakePart.Parent = workspace
+            table.insert(MainModule.Fly.FakeParts, fakePart)
+            
+            MainModule.Fly.LastPosition = rootPart.Position
+            
+            if humanoid then
+                humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                humanoid.PlatformStand = false
+                humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
+                humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
             end
         end
     end)
@@ -3200,20 +3286,27 @@ function MainModule.EnableFlight()
     MainModule.Fly.SpeedChangeConnection = RunService.Heartbeat:Connect(function()
         if not MainModule.Fly.Enabled then return end
         
-        local character = GetCharacter()
-        if not character then return end
+        local rootPart = GetRootPart(character)
+        if not rootPart then return end
         
-        -- Отключаем любые внешние силы
-        for _, part in pairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                for _, force in pairs(part:GetChildren()) do
-                    if force:IsA("BodyForce") or force:IsA("BodyVelocity") or force:IsA("BodyGyro") then
-                        if force.Name ~= "FlightVelocity" and force.Name ~= "FlightGyro" then
-                            force:Destroy()
-                        end
-                    end
+        local currentTime = tick()
+        if currentTime - MainModule.Fly.LastGroundCheck > 2 then
+            MainModule.Fly.LastGroundCheck = currentTime
+            
+            local fakeGround = Instance.new("Part")
+            fakeGround.Name = "FlyGroundCheck"
+            fakeGround.Size = Vector3.new(10, 1, 10)
+            fakeGround.Transparency = 1
+            fakeGround.Anchored = true
+            fakeGround.CanCollide = true
+            fakeGround.Position = rootPart.Position - Vector3.new(0, 3, 0)
+            fakeGround.Parent = workspace
+            
+            task.delay(0.5, function()
+                if fakeGround and fakeGround.Parent then
+                    fakeGround:Destroy()
                 end
-            end
+            end)
         end
     end)
     
@@ -3237,6 +3330,8 @@ function MainModule.EnableFlight()
             MainModule.EnableFlight()
         end
     end)
+    
+    MainModule.Fly.LastGroundCheck = tick()
 end
 
 function MainModule.DisableFlight()
@@ -3279,20 +3374,21 @@ function MainModule.DisableFlight()
             end
             
             rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            
-            -- Восстанавливаем коллизию
-            for _, part in pairs(character:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = true
-                end
-            end
         end
         
         local humanoid = GetHumanoid(character)
         if humanoid then
             humanoid.PlatformStand = false
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
         end
+    end
+    
+    if MainModule.Fly.FakeParts then
+        for _, part in ipairs(MainModule.Fly.FakeParts) do
+            if part and part.Parent then
+                part:Destroy()
+            end
+        end
+        MainModule.Fly.FakeParts = {}
     end
     
     if MainModule.Fly.OriginalStates and character then
@@ -3303,22 +3399,154 @@ function MainModule.DisableFlight()
         end
     end
     MainModule.Fly.OriginalStates = nil
+    
+    if MainModule.Fly.WasRagdollEnabled then
+        MainModule.ToggleBypassRagdoll(true)
+        MainModule.Fly.WasRagdollEnabled = false
+    end
 end
 
 function MainModule.SetFlySpeed(speed)
-    MainModule.Fly.Speed = speed
-    return speed
+    return 50
 end
 
-local function findNearestPlayer()
+local function saveOriginalState(character)
+    if not character then return end
+    
+    local rootPart = GetRootPart(character)
+    if rootPart then
+        MainModule.Killaura.OriginalCFrame = rootPart.CFrame
+        MainModule.Killaura.OriginalVelocity = rootPart.Velocity
+        MainModule.Killaura.OriginalAnchored = rootPart.Anchored
+        MainModule.Killaura.OriginalCanCollide = rootPart.CanCollide
+        MainModule.Killaura.OriginalMassless = rootPart.Massless
+    end
+    
+    local humanoid = GetHumanoid(character)
+    if humanoid then
+        MainModule.Killaura.OriginalHumanoidState = humanoid:GetState()
+        MainModule.Killaura.OriginalPlatformStand = humanoid.PlatformStand
+        
+        MainModule.Killaura.SavedProperties = {}
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                MainModule.Killaura.SavedProperties[part] = {
+                    Anchored = part.Anchored,
+                    CanCollide = part.CanCollide,
+                    Massless = part.Massless
+                }
+            end
+        end
+    end
+    
+    print("Состояние сохранено")
+end
+
+local function restoreOriginalState(character)
+    if not character then return end
+    
+    local rootPart = GetRootPart(character)
+    if rootPart then
+        if MainModule.Killaura.OriginalCFrame then
+            rootPart.CFrame = MainModule.Killaura.OriginalCFrame
+        end
+        
+        if MainModule.Killaura.OriginalVelocity then
+            rootPart.Velocity = MainModule.Killaura.OriginalVelocity
+        end
+        
+        if MainModule.Killaura.OriginalAnchored ~= nil then
+            rootPart.Anchored = MainModule.Killaura.OriginalAnchored
+        end
+        
+        if MainModule.Killaura.OriginalCanCollide ~= nil then
+            rootPart.CanCollide = MainModule.Killaura.OriginalCanCollide
+        end
+        
+        if MainModule.Killaura.OriginalMassless ~= nil then
+            rootPart.Massless = MainModule.Killaura.OriginalMassless
+        end
+    end
+    
+    local humanoid = GetHumanoid(character)
+    if humanoid then
+        if MainModule.Killaura.OriginalPlatformStand ~= nil then
+            humanoid.PlatformStand = MainModule.Killaura.OriginalPlatformStand
+        end
+        
+        if MainModule.Killaura.OriginalHumanoidState then
+            humanoid:ChangeState(MainModule.Killaura.OriginalHumanoidState)
+        end
+    end
+    
+    for part, properties in pairs(MainModule.Killaura.SavedProperties) do
+        if part and part.Parent then
+            part.Anchored = properties.Anchored
+            part.CanCollide = properties.CanCollide
+            part.Massless = properties.Massless
+        end
+    end
+    
+    for _, obj in pairs(rootPart:GetChildren()) do
+        if obj:IsA("BodyMover") or obj:IsA("VectorForce") or obj:IsA("Attachment") then
+            obj:Destroy()
+        end
+    end
+    
+    local hiddenFolder = workspace:FindFirstChild("NetworkSync")
+    if hiddenFolder then
+        hiddenFolder:Destroy()
+    end
+    
+    print("Состояние восстановлено")
+end
+
+local function checkPlayerInventory()
+    local character = GetCharacter()
+    if not character then return false end
+    
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if not backpack then return false end
+    
+    local hasCombatItem = false
+    
+    for _, tool in pairs(backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            for _, combatItem in ipairs(MainModule.Killaura.CombatItems) do
+                if string.find(tool.Name:lower(), combatItem:lower()) then
+                    hasCombatItem = true
+                    break
+                end
+            end
+        end
+        if hasCombatItem then break end
+    end
+    
+    local humanoid = GetHumanoid(character)
+    if humanoid then
+        local equippedTool = character:FindFirstChildOfClass("Tool")
+        if equippedTool then
+            for _, combatItem in ipairs(MainModule.Killaura.CombatItems) do
+                if string.find(equippedTool.Name:lower(), combatItem:lower()) then
+                    hasCombatItem = true
+                    break
+                end
+            end
+        end
+    end
+    
+    return hasCombatItem
+end
+
+local function findTargetAnywhere()
     local character = GetCharacter()
     if not character then return nil end
     
     local rootPart = GetRootPart(character)
     if not rootPart then return nil end
     
-    local nearestPlayer = nil
-    local nearestDistance = math.huge
+    local bestTarget = nil
+    local bestDistance = MainModule.Killaura.SearchRadius
     
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
@@ -3328,18 +3556,48 @@ local function findNearestPlayer()
             if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
                 local distance = GetDistance(rootPart.Position, targetRoot.Position)
                 
-                if distance < nearestDistance then
-                    nearestDistance = distance
-                    nearestPlayer = player
+                if distance <= MainModule.Killaura.SearchRadius and distance < bestDistance then
+                    bestDistance = distance
+                    bestTarget = player
                 end
             end
         end
     end
     
-    return nearestPlayer, nearestDistance
+    if not bestTarget and MainModule.Killaura.IsSearching then
+        MainModule.Killaura.SearchAttempts = MainModule.Killaura.SearchAttempts + 1
+        
+        if MainModule.Killaura.SearchAttempts <= MainModule.Killaura.MaxSearchAttempts then
+            MainModule.Killaura.SearchRadius = MainModule.Killaura.SearchRadius + 20
+            
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                    local targetHumanoid = player.Character:FindFirstChild("Humanoid")
+                    
+                    if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
+                        local distance = GetDistance(rootPart.Position, targetRoot.Position)
+                        
+                        if distance <= MainModule.Killaura.SearchRadius then
+                            bestTarget = player
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    if bestTarget then
+        MainModule.Killaura.IsSearching = false
+        MainModule.Killaura.SearchAttempts = 0
+        MainModule.Killaura.SearchRadius = 50
+    end
+    
+    return bestTarget
 end
 
-local function attachToTarget(targetPlayer)
+local function attachInFrontOfTarget(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return false end
     
     local character = GetCharacter()
@@ -3358,86 +3616,113 @@ local function attachToTarget(targetPlayer)
     local humanoid = GetHumanoid(character)
     if not humanoid then return false end
     
-    -- Сохраняем оригинальное состояние
-    MainModule.Killaura.OriginalCFrame = rootPart.CFrame
-    MainModule.Killaura.OriginalVelocity = rootPart.Velocity
-    MainModule.Killaura.OriginalPlatformStand = humanoid.PlatformStand
+    saveOriginalState(character)
     
-    -- Настраиваем прикрепление
     humanoid.PlatformStand = true
     rootPart.CanCollide = false
     rootPart.Anchored = false
     
-    -- Прикрепляемся впереди цели на расстоянии 1-5 радиусов в зависимости от скорости
-    local targetVelocity = targetRoot.Velocity
-    local targetSpeed = targetVelocity.Magnitude
-    
-    local distance = 1 -- Минимальное расстояние
-    if targetSpeed > 5 then
-        distance = math.min(5, targetSpeed / 2) -- Максимум 5 радиусов
-    end
-    
     local targetLookVector = targetRoot.CFrame.LookVector
-    local targetPosition = targetRoot.Position + (targetLookVector * -distance) + Vector3.new(0, MainModule.Killaura.AttachYOffset, 0)
     
-    -- Плавное перемещение
-    local currentPos = rootPart.Position
-    local smoothPosition = currentPos:Lerp(targetPosition, 0.8)
+    local targetPosition = targetRoot.Position + (targetLookVector * -2) + Vector3.new(0, 6, 0)
     
-    rootPart.CFrame = CFrame.new(smoothPosition, targetRoot.Position)
+    local directionToTarget = (targetRoot.Position - targetPosition).Unit
+    local newCFrame = CFrame.new(targetPosition, targetPosition + directionToTarget)
+    
+    rootPart.CFrame = newCFrame
     
     MainModule.Killaura.IsAttached = true
-    MainModule.Killaura.CurrentTarget = targetPlayer
     MainModule.Killaura.LastPositionUpdate = tick()
     MainModule.Killaura.LastValidTargetPos = targetRoot.Position
+    MainModule.Killaura.LastTargetDistance = GetDistance(rootPart.Position, targetRoot.Position)
     
+    print("Прикреплен перед целью")
     return true
 end
 
-local function updateAttachment()
+local function updateFrontAttachment(deltaTime)
+    if not MainModule.Killaura.CurrentTarget then return end
+    
+    local character = GetCharacter()
+    if not character then return end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return end
+    
+    local targetPlayer = MainModule.Killaura.CurrentTarget
+    if not targetPlayer or not targetPlayer.Character then return end
+    
+    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return end
+    
+    local targetLookVector = targetRoot.CFrame.LookVector
+    
+    local targetVelocity = targetRoot.Velocity
+    local isTargetMoving = targetVelocity.Magnitude > 2
+    
+    local basePosition = targetRoot.Position + (targetLookVector * -2) + Vector3.new(0, 6, 0)
+    
+    if isTargetMoving then
+        local moveDirection = targetVelocity.Unit
+        basePosition = basePosition + (moveDirection * 1.5)
+    end
+    
+    local currentPos = rootPart.Position
+    local smoothFactor = 0.8
+    
+    if isTargetMoving then
+        smoothFactor = 0.9
+    else
+        smoothFactor = 0.7
+    end
+    
+    local targetPosition = currentPos:Lerp(basePosition, smoothFactor)
+    
+    local directionToTarget = (targetRoot.Position - targetPosition).Unit
+    local targetCFrame = CFrame.new(targetPosition, targetPosition + directionToTarget)
+    
+    local currentCFrame = rootPart.CFrame
+    local smoothCFrame = currentCFrame:Lerp(targetCFrame, 0.8)
+    
+    rootPart.CFrame = smoothCFrame
+    
+    MainModule.Killaura.LastValidTargetPos = targetRoot.Position
+    MainModule.Killaura.LastTargetDistance = GetDistance(targetPosition, targetRoot.Position)
+    
+    MainModule.Killaura.ReturnToNormalTimer = 0
+end
+
+local function lookDirectlyAtTarget(character, targetPos, deltaTime)
+    if not character or not targetPos then return end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return end
+    
+    local currentPos = rootPart.Position
+    local direction = (targetPos - currentPos).Unit
+    
+    local currentLook = rootPart.CFrame.LookVector
+    local targetLook = direction
+    local smoothedLook = currentLook:Lerp(targetLook, MainModule.Killaura.SmoothLookFactor * deltaTime * 30)
+    
+    local newCFrame = CFrame.new(currentPos, currentPos + smoothedLook)
+    
+    MainModule.Killaura.LastValidCFrame = newCFrame
+    
+    return newCFrame
+end
+
+local function checkTargetAnimations()
     if not MainModule.Killaura.Enabled or not MainModule.Killaura.CurrentTarget then return end
     
     local targetPlayer = MainModule.Killaura.CurrentTarget
     if not targetPlayer or not targetPlayer.Character then return end
     
-    local character = GetCharacter()
-    if not character then return end
-    
-    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
     local targetHumanoid = targetPlayer.Character:FindFirstChild("Humanoid")
+    if not targetHumanoid or targetHumanoid.Health <= 0 then return end
     
-    if not (targetRoot and targetHumanoid) or targetHumanoid.Health <= 0 then
-        MainModule.Killaura.CurrentTarget = nil
-        MainModule.Killaura.IsAttached = false
-        return
-    end
-    
-    local rootPart = GetRootPart(character)
-    if not rootPart then return end
-    
-    local humanoid = GetHumanoid(character)
-    if not humanoid then return end
-    
-    -- Обновляем позицию в зависимости от скорости цели
-    local targetVelocity = targetRoot.Velocity
-    local targetSpeed = targetVelocity.Magnitude
-    
-    local distance = 1
-    if targetSpeed > 5 then
-        distance = math.min(5, targetSpeed / 2)
-    end
-    
-    local targetLookVector = targetRoot.CFrame.LookVector
-    local targetPosition = targetRoot.Position + (targetLookVector * -distance) + Vector3.new(0, MainModule.Killaura.AttachYOffset, 0)
-    
-    -- Плавное перемещение
-    local currentPos = rootPart.Position
-    local smoothPosition = currentPos:Lerp(targetPosition, 0.9)
-    
-    rootPart.CFrame = CFrame.new(smoothPosition, targetRoot.Position)
-    
-    -- Проверяем анимации цели для поднятия
     local foundAnimation = false
+    
     for _, track in pairs(targetHumanoid:GetPlayingAnimationTracks()) do
         if track and track.Animation then
             local animId = track.Animation.AnimationId
@@ -3448,10 +3733,8 @@ local function updateAttachment()
                 if not MainModule.Killaura.IsLifted then
                     MainModule.Killaura.IsLifted = true
                     MainModule.Killaura.AnimationStartTime = tick()
-                    
-                    -- Поднимаем на 10Y
-                    local liftedPosition = rootPart.Position + Vector3.new(0, MainModule.Killaura.LiftHeight, 0)
-                    rootPart.CFrame = CFrame.new(liftedPosition, targetRoot.Position)
+                    MainModule.Killaura.ReturnAfterAnimation = false
+                    print("Цель использует анимацию")
                 end
                 break
             end
@@ -3459,41 +3742,13 @@ local function updateAttachment()
     end
     
     if not foundAnimation and MainModule.Killaura.IsLifted then
-        MainModule.Killaura.IsLifted = false
+        local currentTime = tick()
+        if currentTime - MainModule.Killaura.AnimationStartTime > 0.3 then
+            MainModule.Killaura.IsLifted = false
+            MainModule.Killaura.ReturnAfterAnimation = true
+            print("Анимация цели завершена")
+        end
     end
-    
-    MainModule.Killaura.LastValidTargetPos = targetRoot.Position
-    MainModule.Killaura.LastPositionUpdate = tick()
-end
-
-local function restoreKillauraState()
-    local character = GetCharacter()
-    if not character then return end
-    
-    local rootPart = GetRootPart(character)
-    if not rootPart then return end
-    
-    local humanoid = GetHumanoid(character)
-    if not humanoid then return end
-    
-    if MainModule.Killaura.OriginalCFrame then
-        rootPart.CFrame = MainModule.Killaura.OriginalCFrame
-    end
-    
-    if MainModule.Killaura.OriginalVelocity then
-        rootPart.Velocity = MainModule.Killaura.OriginalVelocity
-    end
-    
-    if MainModule.Killaura.OriginalPlatformStand ~= nil then
-        humanoid.PlatformStand = MainModule.Killaura.OriginalPlatformStand
-    end
-    
-    rootPart.CanCollide = true
-    rootPart.Anchored = false
-    
-    MainModule.Killaura.OriginalCFrame = nil
-    MainModule.Killaura.OriginalVelocity = nil
-    MainModule.Killaura.OriginalPlatformStand = nil
 end
 
 function MainModule.ToggleKillaura(enabled)
@@ -3504,67 +3759,219 @@ function MainModule.ToggleKillaura(enabled)
     end
     MainModule.Killaura.Connections = {}
     
-    if enabled then
-        ShowNotification("Killaura Enabled", "")
-        
-        local nearestPlayer, distance = findNearestPlayer()
-        if nearestPlayer then
-            attachToTarget(nearestPlayer)
+    MainModule.Killaura.CurrentTarget = nil
+    MainModule.Killaura.IsAttached = false
+    MainModule.Killaura.IsLifted = false
+    MainModule.Killaura.IsActive = false
+    MainModule.Killaura.ReturnAfterAnimation = false
+    MainModule.Killaura.IsSearching = false
+    MainModule.Killaura.SearchAttempts = 0
+    MainModule.Killaura.SearchRadius = 50
+    MainModule.Killaura.PlayerHasCombatItem = false
+    
+    if not enabled then
+        local character = GetCharacter()
+        if character then
+            restoreOriginalState(character)
+        end
+        print("Killaura выключена, состояние восстановлено")
+        return
+    end
+    
+    print("Killaura включена")
+    
+    local character = GetCharacter()
+    if character then
+        saveOriginalState(character)
+    end
+    
+    local lastUpdateTime = tick()
+    
+    table.insert(MainModule.Killaura.Connections, RunService.Heartbeat:Connect(function()
+        if not MainModule.Killaura.Enabled then 
+            local character = GetCharacter()
+            if character then
+                restoreOriginalState(character)
+            end
+            return 
         end
         
-        table.insert(MainModule.Killaura.Connections, RunService.Heartbeat:Connect(function()
-            if not MainModule.Killaura.Enabled then return end
+        local currentTime = tick()
+        local deltaTime = currentTime - lastUpdateTime
+        lastUpdateTime = currentTime
+        
+        local character = GetCharacter()
+        if not character then return end
+        
+        if currentTime - MainModule.Killaura.LastCombatCheck > MainModule.Killaura.CombatCheckInterval then
+            local hasCombatItem = checkPlayerInventory()
             
-            if MainModule.Killaura.CurrentTarget then
-                updateAttachment()
-            else
-                local nearestPlayer, distance = findNearestPlayer()
-                if nearestPlayer then
-                    attachToTarget(nearestPlayer)
+            if hasCombatItem and not MainModule.Killaura.PlayerHasCombatItem then
+                MainModule.Killaura.PlayerHasCombatItem = true
+                print("Обнаружен боевой предмет, активируем Killaura")
+            end
+            
+            if not hasCombatItem and MainModule.Killaura.PlayerHasCombatItem then
+                print("Боевой предмет пропал, выключаем Killaura")
+                MainModule.ToggleKillaura(false)
+                return
+            end
+            
+            MainModule.Killaura.LastCombatCheck = currentTime
+        end
+        
+        if not MainModule.Killaura.CurrentTarget then
+            if currentTime - MainModule.Killaura.SearchCooldown > 0.3 then
+                local target = findTargetAnywhere()
+                
+                if target then
+                    if attachInFrontOfTarget(target) then
+                        MainModule.Killaura.CurrentTarget = target
+                        MainModule.Killaura.LastTargetSwitch = currentTime
+                        MainModule.Killaura.IsSearching = false
+                        print("Найдена новая цель:", target.Name)
+                    end
+                else
+                    if not MainModule.Killaura.IsSearching then
+                        MainModule.Killaura.IsSearching = true
+                        MainModule.Killaura.SearchAttempts = 0
+                        print("Начинаем поиск цели...")
+                    end
+                end
+                
+                MainModule.Killaura.SearchCooldown = currentTime
+            end
+        else
+            local targetPlayer = MainModule.Killaura.CurrentTarget
+            local isValid = false
+            
+            if targetPlayer and targetPlayer.Character then
+                local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                local targetHumanoid = targetPlayer.Character:FindFirstChild("Humanoid")
+                
+                if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
+                    local distance = GetDistance(GetRootPart(character).Position, targetRoot.Position)
+                    
+                    if distance <= MainModule.Killaura.Radius then
+                        isValid = true
+                    elseif MainModule.Killaura.ReturnAfterAnimation then
+                        isValid = true
+                    end
                 end
             end
-        end))
-        
-        table.insert(MainModule.Killaura.Connections, RunService.Heartbeat:Connect(function()
-            if not MainModule.Killaura.Enabled then return end
             
-            local character = GetCharacter()
-            if not character then return end
-            
-            -- Стабилизируем персонажа
-            local rootPart = GetRootPart(character)
-            if rootPart then
-                rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                rootPart.Velocity = Vector3.new(0, 0, 0)
+            if not isValid then
+                MainModule.Killaura.CurrentTarget = nil
+                MainModule.Killaura.IsAttached = false
+                MainModule.Killaura.IsSearching = true
+                MainModule.Killaura.SearchAttempts = 0
+                print("Цель потеряна, ищем новую...")
+                
+                local humanoid = GetHumanoid(character)
+                if humanoid then
+                    humanoid.PlatformStand = false
+                    humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                end
+            else
+                updateFrontAttachment(deltaTime)
+                
+                local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if targetRoot then
+                    local newCFrame = lookDirectlyAtTarget(character, targetRoot.Position, deltaTime)
+                    if newCFrame then
+                        local rootPart = GetRootPart(character)
+                        if rootPart then
+                            rootPart.CFrame = rootPart.CFrame:Lerp(newCFrame, 0.6)
+                        end
+                    end
+                end
             end
+        end
+        
+        if MainModule.Killaura.IsAttached and not MainModule.Killaura.CurrentTarget then
+            MainModule.Killaura.IsAttached = false
             
             local humanoid = GetHumanoid(character)
             if humanoid then
-                humanoid.PlatformStand = true
+                humanoid.PlatformStand = false
                 humanoid:ChangeState(Enum.HumanoidStateType.Running)
             end
-        end))
+        end
+    end))
+    
+    table.insert(MainModule.Killaura.Connections, RunService.Heartbeat:Connect(function()
+        if MainModule.Killaura.Enabled and MainModule.Killaura.CurrentTarget then
+            checkTargetAnimations()
+        end
+    end))
+    
+    table.insert(MainModule.Killaura.Connections, RunService.Heartbeat:Connect(function()
+        if not MainModule.Killaura.Enabled then return end
         
-        table.insert(MainModule.Killaura.Connections, LocalPlayer.CharacterAdded:Connect(function(newCharacter)
-            task.wait(1)
-            if MainModule.Killaura.Enabled then
-                local nearestPlayer, distance = findNearestPlayer()
-                if nearestPlayer then
-                    attachToTarget(nearestPlayer)
+        local character = GetCharacter()
+        if not character then return end
+        
+        if not MainModule.Killaura.CurrentTarget and not MainModule.Killaura.IsSearching then
+            MainModule.Killaura.ReturnToNormalTimer = MainModule.Killaura.ReturnToNormalTimer + 1/60
+            
+            if MainModule.Killaura.ReturnToNormalTimer > 3 then
+                restoreOriginalState(character)
+                MainModule.Killaura.ReturnToNormalTimer = 0
+                print("Автовосстановление: нет цели 3 секунды")
+            end
+        else
+            MainModule.Killaura.ReturnToNormalTimer = 0
+        end
+    end))
+    
+    table.insert(MainModule.Killaura.Connections, LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+        task.wait(1)
+        if MainModule.Killaura.Enabled then
+            MainModule.Killaura.CurrentTarget = nil
+            MainModule.Killaura.IsAttached = false
+            MainModule.Killaura.IsActive = false
+            MainModule.Killaura.PlayerHasCombatItem = false
+            
+            task.wait(0.5)
+            saveOriginalState(newCharacter)
+            
+            print("Персонаж сменился, ищем новую цель...")
+        end
+    end))
+    
+    table.insert(MainModule.Killaura.Connections, LocalPlayer.Backpack.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            for _, combatItem in ipairs(MainModule.Killaura.CombatItems) do
+                if string.find(child.Name:lower(), combatItem:lower()) then
+                    MainModule.Killaura.PlayerHasCombatItem = true
+                    print("Добавлен боевой предмет:", child.Name)
+                    break
                 end
             end
-        end))
-    else
-        ShowNotification("Killaura Disabled", "")
-        restoreKillauraState()
-        
-        MainModule.Killaura.CurrentTarget = nil
-        MainModule.Killaura.IsAttached = false
-        MainModule.Killaura.IsLifted = false
-    end
+        end
+    end))
+    
+    table.insert(MainModule.Killaura.Connections, LocalPlayer.Backpack.ChildRemoved:Connect(function(child)
+        if child:IsA("Tool") then
+            for _, combatItem in ipairs(MainModule.Killaura.CombatItems) do
+                if string.find(child.Name:lower(), combatItem:lower()) then
+                    local hasOtherCombatItems = checkPlayerInventory()
+                    if not hasOtherCombatItems then
+                        MainModule.Killaura.PlayerHasCombatItem = false
+                        print("Удален последний боевой предмет, выключаем Killaura")
+                        MainModule.ToggleKillaura(false)
+                    else
+                        print("Удален боевой предмет, но есть другие")
+                    end
+                    break
+                end
+            end
+        end
+    end))
 end
 
 function MainModule.SetKillauraRadius(radius)
+    radius = math.clamp(radius, 15, MainModule.Killaura.MaxRadius)
     MainModule.Killaura.Radius = radius
     return radius
 end
@@ -3585,34 +3992,11 @@ function GetHumanoid(character)
     return character and character:FindFirstChild("Humanoid")
 end
 
--- Функция для обработки горячих клавиш
-local function setupHotkeys()
-    if inputConnection then
-        inputConnection:Disconnect()
-        inputConnection = nil
-    end
-    
-    inputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        
-        if input.KeyCode == MainModule.Hotkeys.Fly then
-            MainModule.ToggleFly(not MainModule.Fly.Enabled)
-        elseif input.KeyCode == MainModule.Hotkeys.Noclip then
-            MainModule.ToggleNoclip(not MainModule.Noclip.Enabled)
-        elseif input.KeyCode == MainModule.Hotkeys.Killaura then
-            MainModule.ToggleKillaura(not MainModule.Killaura.Enabled)
-        end
-    end)
-end
-
--- Инициализация горячих клавиш
-setupHotkeys()
-
 function MainModule.Cleanup()
     local connections = {
         speedConnection, autoFarmConnection, godModeConnection, instaInteractConnection,
         noCooldownConnection, antiStunConnection, rapidFireConnection, infiniteAmmoConnection,
-        hitboxConnection, autoPullConnection, bypassRagdollConnection, inputConnection
+        hitboxConnection, autoPullConnection, bypassRagdollConnection
     }
     
     for _, conn in pairs(connections) do
@@ -3753,15 +4137,20 @@ function MainModule.Cleanup()
         MainModule.AntiTimeStop.Connection = nil
     end
     
-    for _, conn in pairs(MainModule.Killaura.Connections) do
-        if conn then conn:Disconnect() end
+    if MainModule.Killaura.Connection then
+        MainModule.Killaura.Connection:Disconnect()
+        MainModule.Killaura.Connection = nil
     end
-    MainModule.Killaura.Connections = {}
     
-    for _, conn in pairs(MainModule.AutoDodge.Connections) do
-        if conn then conn:Disconnect() end
+    if MainModule.Killaura.AnimationCheckConnection then
+        MainModule.Killaura.AnimationCheckConnection:Disconnect()
+        MainModule.Killaura.AnimationCheckConnection = nil
     end
-    MainModule.AutoDodge.Connections = {}
+    
+    if MainModule.Killaura.CharacterAddedConnection then
+        MainModule.Killaura.CharacterAddedConnection:Disconnect()
+        MainModule.Killaura.CharacterAddedConnection = nil
+    end
     
     if globalAnimationHandler then
         globalAnimationHandler:Disconnect()
@@ -3771,7 +4160,7 @@ function MainModule.Cleanup()
     MainModule.DisableFlight()
     
     MainModule.Fly.Enabled = false
-    MainModule.Fly.Speed = 39
+    MainModule.Fly.Speed = 50
     MainModule.Fly.Connection = nil
     MainModule.Fly.BodyVelocity = nil
     MainModule.Fly.BodyGyro = nil
@@ -3787,15 +4176,17 @@ function MainModule.Cleanup()
     MainModule.StopEnhancedProtection()
     MainModule.StopJointCleaning()
     
-    -- Восстанавливаем коллизию для Noclip
-    if MainModule.Noclip.NoclipParts then
-        for part, _ in pairs(MainModule.Noclip.NoclipParts) do
-            if part and part:IsA("BasePart") and part.Parent then
-                part.CanCollide = true
-            end
+    for part, properties in pairs(MainModule.Noclip.OriginalTransparency) do
+        if part and part.Parent then
+            pcall(function()
+                part.Transparency = properties.Transparency
+                part.CanCollide = properties.CanCollide
+            end)
         end
-        MainModule.Noclip.NoclipParts = {}
     end
+    MainModule.Noclip.OriginalTransparency = {}
+    MainModule.Noclip.AffectedParts = {}
+    MainModule.Noclip.ContactTime = {}
     
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
@@ -3877,10 +4268,6 @@ function MainModule.Cleanup()
     
     if MainModule.Killaura.Enabled then
         MainModule.ToggleKillaura(false)
-    end
-    
-    if MainModule.AutoDodge.Enabled then
-        MainModule.ToggleAutoDodge(false)
     end
     
     MainModule.SpeedHack.Enabled = false
