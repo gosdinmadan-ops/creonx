@@ -14,11 +14,11 @@ local StarterGui = game:GetService("StarterGui")
 
 local LocalPlayer = Players.LocalPlayer
 
--- Горячие клавиши по умолчанию
+-- Hotkeys
 MainModule.Hotkeys = {
-    Fly = nil,
-    Noclip = nil,
-    Killaura = nil
+    Fly = Enum.KeyCode.F,
+    Noclip = Enum.KeyCode.N,
+    Killaura = Enum.KeyCode.K
 }
 
 MainModule.SpeedHack = {
@@ -54,7 +54,7 @@ MainModule.AutoDodge = {
     AnimationIdsSet = {},
     PlayersInRange = {},
     LastRangeUpdate = 0,
-    RangeUpdateInterval = 0.1
+    RangeUpdateInterval = 0.5
 }
 
 MainModule.Fly = {
@@ -68,7 +68,12 @@ MainModule.Fly = {
     SpeedChangeConnection = nil,
     WasRagdollEnabled = false,
     LastUpdate = 0,
+    LastPosition = Vector3.new(0, 0, 0),
     OriginalStates = nil,
+    FakeParts = {},
+    LastGroundCheck = 0,
+    GroundCheckInterval = 2,
+    FakeFloorSize = Vector3.new(10, 1, 10),
     IsFlying = false
 }
 
@@ -111,7 +116,6 @@ MainModule.Guards = {
     OriginalFireRates = {},
     OriginalAmmo = {},
     OriginalHitboxes = {},
-    OriginalSizes = {},
     Connections = {}
 }
 
@@ -234,8 +238,7 @@ MainModule.Hitbox = {
     Size = 150,
     Enabled = false,
     Connection = nil,
-    ModifiedParts = {},
-    OriginalSizes = {}
+    ModifiedParts = {}
 }
 
 MainModule.FreeDash = {
@@ -268,13 +271,57 @@ MainModule.Killaura = {
     TargetAnimationsSet = {},
     LastPositionUpdate = 0,
     PositionUpdateInterval = 0.033,
-    AttachDistance = 5,
-    MinDistance = 1,
-    IsActive = false,
+    AttachYOffset = 1.8,
+    SearchCooldown = 0,
     LastTargetSwitch = 0,
+    LastValidTargetPos = nil,
+    ReturnAfterAnimation = false,
+    IsActive = false,
+    HiddenForces = {},
+    UseNetworkMethods = true,
+    SmoothReturn = true,
+    MaxForceMultiplier = 100000,
+    NetworkOwnershipEnabled = true,
+    UseCFrameManipulation = true,
+    LastValidCFrame = nil,
+    FakeVelocity = Vector3.new(0, 0, 0),
     OriginalProperties = {},
-    SmoothFactor = 0.8
+    NetworkSyncRate = 0.1,
+    LastNetworkSync = 0,
+    UseAssemblyLinearVelocity = true,
+    ForceMultipliers = {
+        Position = 100000,
+        Gyro = 100000,
+        Velocity = 50000,
+        AntiGravity = 1.2
+    },
+    OriginalHumanoidState = nil,
+    OriginalPlatformStand = nil,
+    IsSearching = false,
+    SearchAttempts = 0,
+    MaxSearchAttempts = 5,
+    SearchRadius = 50,
+    ReturnToNormalTimer = 0,
+    LastTargetDistance = 0,
+    SmoothLookFactor = 0.8,
+    MovementSimulation = {
+        Enabled = true,
+        WalkCycle = 0,
+        LegMovement = 0,
+        ArmMovement = 0
+    },
+    CombatItems = {"Fork", "Bottle", "Knife"},
+    PlayerHasCombatItem = false,
+    LastCombatCheck = 0,
+    CombatCheckInterval = 0.1,
+    OriginalCFrame = nil,
+    OriginalVelocity = nil,
+    OriginalAnchored = nil,
+    OriginalCanCollide = nil,
+    OriginalMassless = nil,
+    SavedProperties = {}
 }
+
 
 MainModule.Misc = {
     InstaInteract = false,
@@ -315,8 +362,7 @@ MainModule.ESP = {
     Connections = {},
     Folder = nil,
     MainConnection = nil,
-    UpdateRate = 0.1,
-    PlayerAddedConnections = {}
+    UpdateRate = 0.1
 }
 
 for _, id in ipairs(MainModule.Killaura.TargetAnimationIds) do
@@ -344,6 +390,23 @@ local infiniteAmmoConnection = nil
 local hitboxConnection = nil
 local autoPullConnection = nil
 local bypassRagdollConnection = nil
+local inputConnection = nil
+
+local function ShowNotification(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title,
+            Text = text or "",
+            Duration = 3
+        })
+    end)
+end
+
+-- Показываем уведомление при загрузке
+task.spawn(function()
+    task.wait(1)
+    ShowNotification("Bypassed CreonHub...", "")
+end)
 
 local function SafeDestroy(obj)
     if obj and obj.Parent then
@@ -406,18 +469,27 @@ local function SafeTeleport(position)
     if not character then return false end
     local rootPart = GetRootPart(character)
     if not rootPart then return false end
-    
+    local currentPosition = rootPart.Position
+    local currentCFrame = rootPart.CFrame
     local tempPart = Instance.new("Part")
     tempPart.Size = Vector3.new(1, 1, 1)
     tempPart.Transparency = 1
     tempPart.Anchored = true
     tempPart.CanCollide = false
-    tempPart.Position = rootPart.Position
+    tempPart.Position = currentPosition
     tempPart.Parent = workspace
     Debris:AddItem(tempPart, 0.1)
-    
+    local fakeVelocity = Instance.new("BodyVelocity")
+    fakeVelocity.Velocity = (position - currentPosition).Unit * 100
+    fakeVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+    fakeVelocity.Parent = rootPart
+    Debris:AddItem(fakeVelocity, 0.1)
     rootPart.CFrame = CFrame.new(position)
-    
+    task.delay(0.05, function()
+        if fakeVelocity and fakeVelocity.Parent then
+            fakeVelocity:Destroy()
+        end
+    end)
     return true
 end
 
@@ -492,10 +564,8 @@ local function KillEnemy(enemyName)
         local enemyTag = enemy:FindFirstChild("Enemy")
         local deadTag = enemy:FindFirstChild("Dead")
         if not enemyTag or deadTag then return end
-        
         local gun = GetPlayerGun()
         if not gun then return end
-        
         local args = {
             gun,
             {
@@ -514,161 +584,8 @@ local function KillEnemy(enemyName)
             }
         }
         local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("FiredGunClient")
-        remote:FireServer(table.unpack(args))  -- Используем table.unpack вместо unpack
+        remote:FireServer(unpack(args))
     end)
-end
-
-local function showNotification(title, text, duration)
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = title,
-            Text = text or "",
-            Duration = duration or 3
-        })
-    end)
-end
-
--- AutoDodge новая логика
-local function executeInstantDodge()
-    if not MainModule.AutoDodge.Enabled then return false end
-    
-    local currentTime = tick()
-    if currentTime - MainModule.AutoDodge.LastDodgeTime < MainModule.AutoDodge.DodgeCooldown then
-        return false
-    end
-    
-    local remote = ReplicatedStorage:FindFirstChild("Remotes")
-    if remote then
-        remote = remote:FindFirstChild("UsedTool")
-        if not remote then return false end
-        
-        local player = Players.LocalPlayer
-        local tool = player.Character:FindFirstChild("DODGE!") or player.Backpack:FindFirstChild("DODGE!")
-        
-        if tool then
-            local success = pcall(function() 
-                remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true}) 
-            end)
-            
-            if success then
-                MainModule.AutoDodge.LastDodgeTime = currentTime
-                return true
-            end
-        end
-    end
-    
-    return false
-end
-
-local function setupPlayerAnimationTracking(player)
-    if player == LocalPlayer then return end
-    
-    local function onAnimationPlayed(track)
-        if not MainModule.AutoDodge.Enabled then return end
-        
-        if track and track.Animation then
-            local animId = track.Animation.AnimationId
-            
-            if MainModule.AutoDodge.AnimationIdsSet[animId] then
-                local localCharacter = GetCharacter()
-                local targetCharacter = player.Character
-                
-                if not (localCharacter and targetCharacter) then return end
-                
-                local localRoot = GetRootPart(localCharacter)
-                local targetRoot = GetRootPart(targetCharacter)
-                
-                if not (localRoot and targetRoot) then return end
-                
-                local distance = GetDistance(localRoot.Position, targetRoot.Position)
-                
-                if distance <= MainModule.AutoDodge.Range then
-                    executeInstantDodge()
-                end
-            end
-        end
-    end
-    
-    local function setupCharacter(character)
-        if not character or not MainModule.AutoDodge.Enabled then return end
-        
-        local humanoid = character:WaitForChild("Humanoid", 5)
-        if humanoid then
-            local conn = humanoid.AnimationPlayed:Connect(onAnimationPlayed)
-            table.insert(MainModule.AutoDodge.Connections, conn)
-        end
-    end
-    
-    if player.Character then
-        task.spawn(setupCharacter, player.Character)
-    end
-    
-    local charConn = player.CharacterAdded:Connect(function(character)
-        if MainModule.AutoDodge.Enabled then
-            task.spawn(setupCharacter, character)
-        end
-    end)
-    table.insert(MainModule.AutoDodge.Connections, charConn)
-end
-
-function MainModule.ToggleAutoDodge(enabled)
-    MainModule.AutoDodge.Enabled = false
-    
-    for _, conn in pairs(MainModule.AutoDodge.Connections) do
-        if conn then
-            pcall(function() conn:Disconnect() end)
-        end
-    end
-    MainModule.AutoDodge.Connections = {}
-    
-    MainModule.AutoDodge.LastDodgeTime = 0
-    
-    if enabled then
-        MainModule.AutoDodge.Enabled = true
-        
-        for _, player in pairs(Players:GetPlayers()) do
-            task.spawn(setupPlayerAnimationTracking, player)
-        end
-        
-        local playerAddedConn = Players.PlayerAdded:Connect(function(player)
-            if MainModule.AutoDodge.Enabled then
-                task.spawn(setupPlayerAnimationTracking, player)
-            end
-        end)
-        table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
-        
-        local heartbeatConn = RunService.Heartbeat:Connect(function()
-            if not MainModule.AutoDodge.Enabled then return end
-            
-            local currentTime = tick()
-            if currentTime - MainModule.AutoDodge.LastRangeUpdate > MainModule.AutoDodge.RangeUpdateInterval then
-                MainModule.AutoDodge.LastRangeUpdate = currentTime
-                
-                local localCharacter = GetCharacter()
-                if not localCharacter then return end
-                
-                local localRoot = GetRootPart(localCharacter)
-                if not localRoot then return end
-                
-                local playersInRange = {}
-                
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player ~= LocalPlayer and player.Character then
-                        local targetRoot = GetRootPart(player.Character)
-                        if targetRoot then
-                            local distance = GetDistance(localRoot.Position, targetRoot.Position)
-                            if distance <= MainModule.AutoDodge.Range then
-                                table.insert(playersInRange, player.Name)
-                            end
-                        end
-                    end
-                end
-                
-                MainModule.AutoDodge.PlayersInRange = playersInRange
-            end
-        end)
-        table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
-    end
 end
 
 function MainModule.ToggleFreeDash(enabled)
@@ -883,7 +800,6 @@ function MainModule.ToggleGodMode(enabled)
             if not MainModule.HasPocketSand() then
                 MainModule.RLGL.NoPocketSandTimer = MainModule.RLGL.NoPocketSandTimer + task.wait()
                 if MainModule.RLGL.NoPocketSandTimer >= MainModule.RLGL.NoPocketSandCooldown then
-                    showNotification("GodMode Disabled", "", 3)
                     MainModule.ToggleGodMode(false)
                     return
                 end
@@ -902,11 +818,11 @@ function MainModule.ToggleGodMode(enabled)
                 if not (humanoid and rootPart) then return end
                 
                 if humanoid.Health < MainModule.RLGL.LastHealth then
-                    showNotification("GodMode Safe to Player", "", 3)
                     MainModule.RLGL.LastDamageTime = currentTime
                     SafeTeleport(MainModule.RLGL.DamageTeleportPosition)
                     humanoid.Health = MainModule.RLGL.LastHealth
                     task.wait(0.1)
+                    ShowNotification("GodMode Safe to Player", "")
                     MainModule.ToggleGodMode(false)
                 else
                     MainModule.RLGL.LastHealth = humanoid.Health
@@ -920,7 +836,7 @@ function MainModule.ToggleGodMode(enabled)
             if not MainModule.HasPocketSand() then
                 MainModule.RLGL.NoPocketSandTimer = MainModule.RLGL.NoPocketSandTimer + task.wait()
                 if MainModule.RLGL.NoPocketSandTimer >= MainModule.RLGL.NoPocketSandCooldown then
-                    showNotification("GodMode Disabled", "", 3)
+                    ShowNotification("GodMode Disabled", "")
                     MainModule.ToggleGodMode(false)
                 end
             else
@@ -1069,6 +985,9 @@ function MainModule.ToggleBypassRagdoll(enabled)
                 end
             end)
         end
+        task.wait(0.5)
+        MainModule.StartEnhancedProtection()
+        MainModule.StartJointCleaning()
     else
         local character = GetCharacter()
         if character then
@@ -1079,7 +998,183 @@ function MainModule.ToggleBypassRagdoll(enabled)
                 end
             end
         end
+        MainModule.StopEnhancedProtection()
+        MainModule.StopJointCleaning()
     end
+end
+
+local harmfulEffectsList = {
+    "RagdollStun", "Stun", "Stunned", "StunEffect", "StunHit",
+    "Knockback", "Knockdown", "Knockout", "KB_Effect",
+    "Dazed", "Paralyzed", "Paralyze", "Freeze", "Frozen", 
+    "Sleep", "Sleeping", "SleepEffect", "Confusion", "Confused",
+    "Slow", "Slowed", "Root", "Rooted", "Immobilized",
+    "Bleed", "Bleeding", "Poison", "Poisoned", "Burn", "Burning",
+    "Shock", "Shocked", "Electrocuted", "Silence", "Silenced",
+    "Disarm", "Disarmed", "Blind", "Blinded", "Fear", "Feared",
+    "Taunt", "Taunted", "Charm", "Charmed", "Petrify", "Petrified"
+}
+
+local enhancedProtectionConnection = nil
+local jointCleaningConnection = nil
+local ragdollBlockConnection = nil
+
+local function CleanNegativeEffects(character)
+    if not character or not MainModule.Misc.BypassRagdollEnabled then return end
+    pcall(function()
+        for _, effectName in ipairs(harmfulEffectsList) do
+            local effect = character:FindFirstChild(effectName)
+            if effect then
+                if effect:IsA("BasePart") then
+                    task.spawn(function()
+                        for i = 1, 5 do
+                            if effect and effect.Parent then
+                                effect.Transparency = effect.Transparency + 0.2
+                                task.wait(0.02)
+                            end
+                        end
+                        pcall(function() effect:Destroy() end)
+                    end)
+                else
+                    pcall(function() effect:Destroy() end)
+                end
+            end
+        end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            local badAttributes = {"Stunned", "Paralyzed", "Frozen", "Asleep", "Confused", 
+                                   "Slowed", "Rooted", "Silenced", "Disarmed", "Blinded", "Feared"}
+            for _, attr in ipairs(badAttributes) do
+                if humanoid:GetAttribute(attr) then
+                    humanoid:SetAttribute(attr, false)
+                end
+            end
+        end
+    end)
+end
+
+local function CleanJointsAndConstraints(character)
+    if not character then return end
+    pcall(function()
+        local Humanoid = character:FindFirstChild("Humanoid")
+        local HumanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        local Torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
+        if not (Humanoid and HumanoidRootPart and Torso) then return end
+        for _, child in ipairs(character:GetChildren()) do
+            if child.Name == "Ragdoll" then
+                pcall(function() child:Destroy() end)
+            end
+        end
+        for _, folderName in pairs({"Stun", "RotateDisabled", "RagdollWakeupImmunity", "InjuredWalking"}) do
+            local folder = character:FindFirstChild(folderName)
+            if folder then
+                folder:Destroy()
+            end
+        end
+        for _, obj in pairs(HumanoidRootPart:GetChildren()) do
+            if obj:IsA("BallSocketConstraint") or obj.Name:match("^CacheAttachment") then
+                obj:Destroy()
+            end
+        end
+        local joints = {"Left Hip", "Left Shoulder", "Neck", "Right Hip", "Right Shoulder"}
+        for _, jointName in pairs(joints) do
+            local motor = Torso:FindFirstChild(jointName)
+            if motor and motor:IsA("Motor6D") and not motor.Part0 then
+                motor.Part0 = Torso
+            end
+        end
+        for _, part in pairs(character:GetChildren()) do
+            if part:IsA("BasePart") and part:FindFirstChild("BoneCustom") then
+                part.BoneCustom:Destroy()
+            end
+        end
+    end)
+end
+
+local function SetupRagdollListener(character)
+    if not character then return end
+    if ragdollBlockConnection then
+        ragdollBlockConnection:Disconnect()
+        ragdollBlockConnection = nil
+    end
+    local Humanoid = character:FindFirstChild("Humanoid")
+    if not Humanoid then return end
+    ragdollBlockConnection = character.ChildAdded:Connect(function(child)
+        if child.Name == "Ragdoll" then
+            pcall(function() child:Destroy() end)
+            pcall(function()
+                Humanoid.PlatformStand = false
+                Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+            end)
+        end
+    end)
+end
+
+function MainModule.StartEnhancedProtection()
+    if enhancedProtectionConnection then
+        enhancedProtectionConnection:Disconnect()
+    end
+    enhancedProtectionConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Misc.BypassRagdollEnabled then return end
+        local character = GetCharacter()
+        if character then
+            CleanNegativeEffects(character)
+        end
+    end)
+end
+
+function MainModule.StopEnhancedProtection()
+    if enhancedProtectionConnection then
+        enhancedProtectionConnection:Disconnect()
+        enhancedProtectionConnection = nil
+    end
+end
+
+function MainModule.StartJointCleaning()
+    if jointCleaningConnection then
+        jointCleaningConnection:Disconnect()
+    end
+    local character = GetCharacter()
+    if character then
+        CleanJointsAndConstraints(character)
+        SetupRagdollListener(character)
+    end
+    jointCleaningConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Misc.BypassRagdollEnabled then return end
+        local character = GetCharacter()
+        if character then
+            CleanJointsAndConstraints(character)
+        end
+    end)
+    LocalPlayer.CharacterAdded:Connect(function(newChar)
+        task.wait(1)
+        SetupRagdollListener(newChar)
+        CleanJointsAndConstraints(newChar)
+    end)
+end
+
+function MainModule.StopJointCleaning()
+    if jointCleaningConnection then
+        jointCleaningConnection:Disconnect()
+        jointCleaningConnection = nil
+    end
+    if ragdollBlockConnection then
+        ragdollBlockConnection:Disconnect()
+        ragdollBlockConnection = nil
+    end
+end
+
+function MainModule.FullCleanup()
+    local character = GetCharacter()
+    if character then
+        CleanNegativeEffects(character)
+        CleanJointsAndConstraints(character)
+        return true
+    end
+    return false
 end
 
 function MainModule.ToggleESP(enabled)
@@ -1088,259 +1183,112 @@ function MainModule.ToggleESP(enabled)
         MainModule.ESP.MainConnection:Disconnect()
         MainModule.ESP.MainConnection = nil
     end
-    
-    for _, conn in pairs(MainModule.ESP.PlayerAddedConnections) do
-        if conn then
-            pcall(function() conn:Disconnect() end)
-        end
-    end
-    MainModule.ESP.PlayerAddedConnections = {}
-    
     MainModule.ClearESP()
-    
     if enabled then
         MainModule.ESP.Folder = Instance.new("Folder")
         MainModule.ESP.Folder.Name = "CreonXESP"
         MainModule.ESP.Folder.Parent = CoreGui
-        
-        local function createESP(player)
+        local function UpdatePlayerESP(player)
             if not player or player == LocalPlayer then return end
-            
-            local function updateESP()
-                local character = player.Character
-                if not character then return end
-                
-                local humanoid = GetHumanoid(character)
-                local rootPart = GetRootPart(character)
-                
-                if not (humanoid and rootPart and humanoid.Health > 0) then
-                    if MainModule.ESP.Players[player] then
-                        if MainModule.ESP.Players[player].Highlight then
-                            MainModule.ESP.Players[player].Highlight:Destroy()
-                        end
-                        if MainModule.ESP.Players[player].Billboard then
-                            MainModule.ESP.Players[player].Billboard:Destroy()
-                        end
-                        if MainModule.ESP.Players[player].Box then
-                            MainModule.ESP.Players[player].Box:Destroy()
-                        end
-                        MainModule.ESP.Players[player] = nil
-                    end
-                    return
-                end
-                
-                local espData = MainModule.ESP.Players[player]
-                if not espData then
-                    espData = {
-                        Player = player,
-                        Highlight = nil,
-                        Billboard = nil,
-                        Box = nil,
-                        HealthBar = nil
-                    }
-                    MainModule.ESP.Players[player] = espData
-                end
-                
-                if not espData.Highlight then
-                    espData.Highlight = Instance.new("Highlight")
-                    espData.Highlight.Name = player.Name .. "_ESP"
-                    espData.Highlight.Adornee = character
-                    espData.Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                    espData.Highlight.FillTransparency = 0.7
-                    espData.Highlight.OutlineTransparency = 0
-                    espData.Highlight.Parent = MainModule.ESP.Folder
-                    
-                    espData.Box = Instance.new("BoxHandleAdornment")
-                    espData.Box.Name = player.Name .. "_Box"
-                    espData.Box.Adornee = rootPart
-                    espData.Box.AlwaysOnTop = true
-                    espData.Box.Size = rootPart.Size + Vector3.new(0.1, 0.1, 0.1)
-                    espData.Box.Transparency = 0.3
-                    espData.Box.ZIndex = 1
-                    espData.Box.Parent = MainModule.ESP.Folder
-                    
-                    espData.HealthBar = Instance.new("Frame")
-                    espData.HealthBar.Name = player.Name .. "_HealthBar"
-                    espData.HealthBar.Size = UDim2.new(2, 0, 0.2, 0)
-                    espData.HealthBar.Position = UDim2.new(-0.5, 0, -0.3, 0)
-                    espData.HealthBar.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-                    espData.HealthBar.BorderSizePixel = 1
-                    espData.HealthBar.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                    espData.HealthBar.Parent = espData.Box
-                    
-                    local healthFill = Instance.new("Frame")
-                    healthFill.Name = "HealthFill"
-                    healthFill.Size = UDim2.new(humanoid.Health / humanoid.MaxHealth, 0, 1, 0)
-                    healthFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-                    healthFill.BorderSizePixel = 0
-                    healthFill.Parent = espData.HealthBar
-                    
+            local character = player.Character
+            if not character then return end
+            local humanoid = GetHumanoid(character)
+            local rootPart = GetRootPart(character)
+            if not (humanoid and rootPart and humanoid.Health > 0) then return end
+            local localCharacter = GetCharacter()
+            local localRoot = localCharacter and GetRootPart(localCharacter)
+            local espData = MainModule.ESP.Players[player]
+            if not espData then
+                espData = {
+                    Player = player,
+                    Highlight = nil,
+                    Billboard = nil,
+                    Label = nil
+                }
+                MainModule.ESP.Players[player] = espData
+            end
+            if not espData.Highlight then
+                espData.Highlight = Instance.new("Highlight")
+                espData.Highlight.Name = player.Name .. "_ESP"
+                espData.Highlight.Adornee = character
+                espData.Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                espData.Highlight.Enabled = MainModule.Misc.ESPHighlight
+                espData.Highlight.Parent = MainModule.ESP.Folder
+            end
+            if IsHider(player) and MainModule.Misc.ESPHiders then
+                espData.Highlight.FillColor = Color3.fromRGB(0, 255, 0)
+                espData.Highlight.OutlineColor = Color3.fromRGB(0, 200, 0)
+            elseif IsSeeker(player) and MainModule.Misc.ESPSeekers then
+                espData.Highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                espData.Highlight.OutlineColor = Color3.fromRGB(200, 0, 0)
+            elseif MainModule.Misc.ESPPlayers then
+                espData.Highlight.FillColor = Color3.fromRGB(0, 120, 255)
+                espData.Highlight.OutlineColor = Color3.fromRGB(0, 100, 200)
+            else
+                espData.Highlight.Enabled = false
+            end
+            espData.Highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+            espData.Highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+            if MainModule.Misc.ESPNames then
+                if not espData.Billboard then
                     espData.Billboard = Instance.new("BillboardGui")
                     espData.Billboard.Name = player.Name .. "_Text"
                     espData.Billboard.Adornee = rootPart
                     espData.Billboard.AlwaysOnTop = true
                     espData.Billboard.Size = UDim2.new(0, 200, 0, 50)
-                    espData.Billboard.StudsOffset = Vector3.new(0, 4, 0)
+                    espData.Billboard.StudsOffset = Vector3.new(0, 3, 0)
                     espData.Billboard.Parent = MainModule.ESP.Folder
-                    
                     espData.Label = Instance.new("TextLabel")
                     espData.Label.Size = UDim2.new(1, 0, 1, 0)
                     espData.Label.BackgroundTransparency = 1
-                    espData.Label.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    espData.Label.TextSize = 14
+                    espData.Label.TextColor3 = espData.Highlight.FillColor
+                    espData.Label.TextSize = MainModule.Misc.ESPTextSize
                     espData.Label.Font = Enum.Font.GothamBold
                     espData.Label.TextStrokeColor3 = Color3.new(0, 0, 0)
                     espData.Label.TextStrokeTransparency = 0.5
                     espData.Label.Parent = espData.Billboard
                 end
-                
-                local localCharacter = GetCharacter()
-                local localRoot = localCharacter and GetRootPart(localCharacter)
-                
-                local espColor = Color3.fromRGB(0, 120, 255)
-                if IsHider(player) and MainModule.Misc.ESPHiders then
-                    espColor = Color3.fromRGB(0, 255, 0)
-                elseif IsSeeker(player) and MainModule.Misc.ESPSeekers then
-                    espColor = Color3.fromRGB(255, 0, 0)
-                elseif MainModule.Misc.ESPPlayers then
-                    espColor = Color3.fromRGB(0, 120, 255)
-                else
-                    espData.Highlight.Enabled = false
-                    espData.Box.Visible = false
-                    espData.Billboard.Enabled = false
-                    return
+                espData.Billboard.Enabled = true
+                local distanceText = ""
+                if MainModule.Misc.ESPDistance and localRoot then
+                    local distance = math.floor(GetDistance(rootPart.Position, localRoot.Position))
+                    distanceText = string.format(" [%dm]", distance)
                 end
-                
-                espData.Highlight.Enabled = MainModule.Misc.ESPHighlight
-                espData.Highlight.FillColor = espColor
-                espData.Highlight.OutlineColor = espColor
-                
-                espData.Box.Visible = MainModule.Misc.ESPBoxes
-                espData.Box.Color3 = espColor
-                
-                if espData.HealthBar and espData.HealthBar:FindFirstChild("HealthFill") then
-                    local healthFill = espData.HealthBar.HealthFill
-                    local healthPercent = humanoid.Health / humanoid.MaxHealth
-                    healthFill.Size = UDim2.new(healthPercent, 0, 1, 0)
-                    
-                    if healthPercent > 0.5 then
-                        healthFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-                    elseif healthPercent > 0.25 then
-                        healthFill.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
-                    else
-                        healthFill.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-                    end
-                end
-                
-                if MainModule.Misc.ESPNames then
-                    espData.Billboard.Enabled = true
-                    local distanceText = ""
-                    if MainModule.Misc.ESPDistance and localRoot then
-                        local distance = math.floor(GetDistance(rootPart.Position, localRoot.Position))
-                        distanceText = string.format(" [%dm]", distance)
-                    end
-                    
-                    local nameText = player.DisplayName or player.Name
-                    local healthText = string.format("HP: %d/%d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
-                    local teamText = ""
-                    
-                    if IsHider(player) then
-                        teamText = " [HIDER]"
-                    elseif IsSeeker(player) then
-                        teamText = " [SEEKER]"
-                    end
-                    
-                    espData.Label.Text = string.format("%s%s\n%s%s", nameText, teamText, healthText, distanceText)
-                    espData.Label.TextColor3 = espColor
-                else
-                    espData.Billboard.Enabled = false
-                end
+                local healthText = string.format("HP: %d/%d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
+                local nameText = player.DisplayName or player.Name
+                espData.Label.Text = string.format("%s\n%s%s", nameText, healthText, distanceText)
+                espData.Label.TextColor3 = espData.Highlight.FillColor
+                espData.Label.TextSize = MainModule.Misc.ESPTextSize
+            elseif espData.Billboard then
+                espData.Billboard.Enabled = false
             end
-            
-            local charConn = player.CharacterAdded:Connect(function()
-                task.wait(0.5)
-                updateESP()
-            end)
-            
-            local diedConn = nil
-            if player.Character then
-                local humanoid = player.Character:FindFirstChild("Humanoid")
-                if humanoid then
-                    diedConn = humanoid.Died:Connect(function()
-                        task.wait(0.1)
-                        updateESP()
-                    end)
-                end
-            end
-            
-            table.insert(MainModule.ESP.PlayerAddedConnections, charConn)
-            if diedConn then
-                table.insert(MainModule.ESP.PlayerAddedConnections, diedConn)
-            end
-            
-            updateESP()
         end
-        
         for _, player in pairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
-                createESP(player)
+                UpdatePlayerESP(player)
+                player.CharacterAdded:Connect(function()
+                    task.wait(0.5)
+                    UpdatePlayerESP(player)
+                end)
             end
         end
-        
-        local playerAddedConn = Players.PlayerAdded:Connect(function(player)
-            if player ~= LocalPlayer then
-                task.wait(1)
-                createESP(player)
+        MainModule.ESP.Connections.PlayerAdded = Players.PlayerAdded:Connect(function(player)
+            if MainModule.Misc.ESPEnabled and player ~= LocalPlayer then
+                task.wait(0.5)
+                UpdatePlayerESP(player)
             end
         end)
-        table.insert(MainModule.ESP.PlayerAddedConnections, playerAddedConn)
-        
         MainModule.ESP.MainConnection = RunService.RenderStepped:Connect(function()
             if not MainModule.Misc.ESPEnabled then return end
-            
             for player, espData in pairs(MainModule.ESP.Players) do
-                if player and player.Parent then
-                    if player.Character then
-                        local humanoid = GetHumanoid(player.Character)
-                        local rootPart = GetRootPart(player.Character)
-                        
-                        if humanoid and rootPart and humanoid.Health > 0 then
-                            if espData.Box then
-                                espData.Box.Size = rootPart.Size + Vector3.new(0.1, 0.1, 0.1)
-                            end
-                        else
-                            if espData.Highlight then
-                                espData.Highlight:Destroy()
-                            end
-                            if espData.Billboard then
-                                espData.Billboard:Destroy()
-                            end
-                            if espData.Box then
-                                espData.Box:Destroy()
-                            end
-                            MainModule.ESP.Players[player] = nil
-                        end
-                    else
-                        if espData.Highlight then
-                            espData.Highlight:Destroy()
-                        end
-                        if espData.Billboard then
-                            espData.Billboard:Destroy()
-                        end
-                        if espData.Box then
-                            espData.Box:Destroy()
-                        end
-                        MainModule.ESP.Players[player] = nil
-                    end
+                if player and player.Parent and player.Character then
+                    UpdatePlayerESP(player)
                 else
                     if espData.Highlight then
-                        espData.Highlight:Destroy()
+                        SafeDestroy(espData.Highlight)
                     end
                     if espData.Billboard then
-                        espData.Billboard:Destroy()
-                    end
-                    if espData.Box then
-                        espData.Box:Destroy()
+                        SafeDestroy(espData.Billboard)
                     end
                     MainModule.ESP.Players[player] = nil
                 end
@@ -1357,19 +1305,8 @@ function MainModule.ClearESP()
         if espData.Billboard then
             SafeDestroy(espData.Billboard)
         end
-        if espData.Box then
-            SafeDestroy(espData.Box)
-        end
     end
     MainModule.ESP.Players = {}
-    
-    for _, conn in pairs(MainModule.ESP.PlayerAddedConnections) do
-        if conn then
-            pcall(function() conn:Disconnect() end)
-        end
-    end
-    MainModule.ESP.PlayerAddedConnections = {}
-    
     if MainModule.ESP.Connections then
         for name, connection in pairs(MainModule.ESP.Connections) do
             if connection then
@@ -1420,9 +1357,9 @@ function MainModule.ToggleSpikesKill(enabled)
     if enabled then
         local hasKnife = MainModule.CheckKnifeInInventory()
         if not hasKnife then
-            showNotification("Knife not found!", "", 3)
+            ShowNotification("Knife not found!", "")
             MainModule.SpikesKillFeature.Enabled = false
-            return false
+            return
         end
         MainModule.SpikesKillFeature.HasKnife = true
     end
@@ -1463,7 +1400,7 @@ function MainModule.ToggleSpikesKill(enabled)
     
     if not enabled then
         MainModule.SpikesKillFeature.HasKnife = false
-        return true
+        return
     end
     
     MainModule.DisableSpikes(true)
@@ -1620,13 +1557,11 @@ function MainModule.ToggleSpikesKill(enabled)
             MainModule.SpikesKillFeature.NoKnifeTimer = MainModule.SpikesKillFeature.NoKnifeTimer + MainModule.SpikesKillFeature.KnifeCheckCooldown
             
             if MainModule.SpikesKillFeature.NoKnifeTimer >= MainModule.SpikesKillFeature.NoKnifeTimeout then
-                showNotification("Knife not found!", "", 3)
+                ShowNotification("Spikes Kill: Knife lost, disabling...", "")
                 MainModule.ToggleSpikesKill(false)
             end
         end
     end)
-    
-    return true
 end
 
 function MainModule.DisableSpikes(remove)
@@ -2294,94 +2229,93 @@ end
 
 function MainModule.ToggleHitboxExpander(enabled)
     MainModule.Hitbox.Enabled = enabled
-    
     if MainModule.Hitbox.Connection then
         MainModule.Hitbox.Connection:Disconnect()
         MainModule.Hitbox.Connection = nil
     end
     
-    if not enabled then
-        for part, originalSize in pairs(MainModule.Hitbox.OriginalSizes) do
-            if part and part.Parent then
-                part.Size = originalSize
-                part.CanCollide = true
+    if enabled then
+        local function modifyPart(part)
+            if not MainModule.Hitbox.ModifiedParts[part] then
+                MainModule.Hitbox.ModifiedParts[part] = part.Size
+                part.Size = Vector3.new(MainModule.Hitbox.Size, MainModule.Hitbox.Size, MainModule.Hitbox.Size)
+                part.CanCollide = false
             end
         end
-        MainModule.Hitbox.OriginalSizes = {}
-        MainModule.Hitbox.ModifiedParts = {}
-        return
-    end
-    
-    local function modifyPart(part)
-        if not MainModule.Hitbox.OriginalSizes[part] then
-            MainModule.Hitbox.OriginalSizes[part] = part.Size
-            part.Size = Vector3.new(MainModule.Hitbox.Size, MainModule.Hitbox.Size, MainModule.Hitbox.Size)
-            part.CanCollide = false
-            MainModule.Hitbox.ModifiedParts[part] = true
-        end
-    end
-    
-    local function onPlayerAdded(player)
-        if player == LocalPlayer then return end
         
-        player.CharacterAdded:Connect(function(character)
-            if MainModule.Hitbox.Enabled then
-                local root = character:WaitForChild("HumanoidRootPart", 5)
-                if root then
-                    modifyPart(root)
+        local function onPlayerAdded(player)
+            player.CharacterAdded:Connect(function(character)
+                if MainModule.Hitbox.Enabled then
+                    local root = character:WaitForChild("HumanoidRootPart", 5)
+                    if root then
+                        modifyPart(root)
+                    end
                 end
-            end
-        end)
-    end
-    
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local root = player.Character:FindFirstChild("HumanoidRootPart")
-            if root then
-                modifyPart(root)
-            end
+            end)
         end
-        if player ~= LocalPlayer then
-            onPlayerAdded(player)
-        end
-    end
-    
-    MainModule.Hitbox.Connection = RunService.RenderStepped:Connect(function()
-        if not MainModule.Hitbox.Enabled then return end
         
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
                 local root = player.Character:FindFirstChild("HumanoidRootPart")
-                if root and not MainModule.Hitbox.ModifiedParts[root] then
-                    pcall(modifyPart, root)
+                if root then
+                    modifyPart(root)
+                end
+            end
+            if player ~= LocalPlayer then
+                onPlayerAdded(player)
+            end
+        end
+        
+        MainModule.Hitbox.Connection = RunService.RenderStepped:Connect(function()
+            if not MainModule.Hitbox.Enabled then return end
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    local root = player.Character:FindFirstChild("HumanoidRootPart")
+                    if root and not MainModule.Hitbox.ModifiedParts[root] then
+                        pcall(modifyPart, root)
+                    end
+                end
+            end
+        end)
+        
+        Players.PlayerRemoving:Connect(function(player)
+            if player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                if root then
+                    MainModule.Hitbox.ModifiedParts[root] = nil
+                end
+            end
+        end)
+        
+        Players.PlayerAdded:Connect(function(player)
+            if player ~= LocalPlayer then
+                onPlayerAdded(player)
+            end
+        end)
+    else
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                if root and MainModule.Hitbox.ModifiedParts[root] then
+                    root.Size = MainModule.Hitbox.ModifiedParts[root]
+                    root.CanCollide = true
+                    MainModule.Hitbox.ModifiedParts[root] = nil
                 end
             end
         end
-    end)
-    
-    Players.PlayerRemoving:Connect(function(player)
-        if player.Character then
-            local root = player.Character:FindFirstChild("HumanoidRootPart")
-            if root then
-                MainModule.Hitbox.ModifiedParts[root] = nil
-                MainModule.Hitbox.OriginalSizes[root] = nil
-            end
-        end
-    end)
-    
-    Players.PlayerAdded:Connect(function(player)
-        if player ~= LocalPlayer then
-            onPlayerAdded(player)
-        end
-    end)
+        MainModule.Hitbox.ModifiedParts = {}
+    end
 end
 
 function MainModule.SetHitboxSize(size)
     MainModule.Hitbox.Size = size
     if MainModule.Hitbox.Enabled then
-        for part, _ in pairs(MainModule.Hitbox.ModifiedParts) do
-            if part and part.Parent then
-                part.Size = Vector3.new(size, size, size)
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                if root and MainModule.Hitbox.ModifiedParts[root] then
+                    root.Size = Vector3.new(size, size, size)
+                end
             end
         end
     end
@@ -2827,6 +2761,22 @@ function MainModule.ToggleGlassBridgeESP(enabled)
             end
         end
     end)
+    
+    local Effects = ReplicatedStorage:FindFirstChild("Modules") and 
+                   ReplicatedStorage.Modules:FindFirstChild("Effects")
+    if Effects then
+        local success, result = pcall(function()
+            return require(Effects)
+        end)
+        if success and result and result.AnnouncementTween then
+            result.AnnouncementTween({
+                AnnouncementOneLine = true,
+                FasterTween = true,
+                DisplayTime = 10,
+                AnnouncementDisplayText = "[CreonHub]: Glass ESP Activated! Red = Breakable, Green = Safe"
+            })
+        end
+    end
 end
 
 function MainModule.TeleportToGlassBridgeEnd()
@@ -2913,6 +2863,158 @@ function MainModule.GetPlayerPosition()
     return "Не доступно"
 end
 
+local function callDodge()
+    -- Ищем RemoteEvent
+    local remote = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+    if remote then
+        remote = remote:FindFirstChild("UsedTool")
+    end
+    
+    if not remote then return false end
+    
+    -- Получаем игрока
+    local player = game:GetService("Players").LocalPlayer
+    
+    -- Ищем инструмент DODGE! в инвентаре или экипировке
+    local tool = player.Character:FindFirstChild("DODGE!") or player.Backpack:FindFirstChild("DODGE!")
+    
+    if tool then
+        -- Прямой вызов DODGE! без экипировки
+        remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true})
+        return true
+    end
+    
+    return false
+end
+
+local function createAnimationHandler(player)
+    return function(track)
+        if not MainModule.AutoDodge.Enabled then return end
+        if player == LocalPlayer then return end
+        
+        local animId
+        if track and track.Animation then
+            animId = track.Animation.AnimationId
+        end
+        
+        if not animId then return end
+        
+        if not MainModule.AutoDodge.AnimationIdsSet[animId] then
+            return
+        end
+        
+        if not LocalPlayer or not LocalPlayer.Character then return end
+        if not player or not player.Character then return end
+        
+        local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+        
+        if not (localRoot and targetRoot) then return end
+        
+        local diff = targetRoot.Position - localRoot.Position
+        local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
+        
+        -- Проверяем дистанцию 4.8 радиуса
+        if distanceSquared <= MainModule.AutoDodge.RangeSquared then
+            local currentTime = tick()
+            if currentTime - MainModule.AutoDodge.LastDodgeTime >= MainModule.AutoDodge.DodgeCooldown then
+                callDodge()
+                MainModule.AutoDodge.LastDodgeTime = currentTime
+            end
+        end
+    end
+end
+
+local function setupPlayerTracking(player)
+    if player == LocalPlayer then return end
+    
+    local function setupCharacter(character)
+        if not character or not MainModule.AutoDodge.Enabled then return end
+        
+        for i = 1, 2 do
+            if character:FindFirstChild("Humanoid") then break end
+            task.wait(0.1)
+        end
+        
+        local humanoid = character:FindFirstChild("Humanoid")
+        if humanoid then
+            local handler = createAnimationHandler(player)
+            local conn = humanoid.AnimationPlayed:Connect(handler)
+            table.insert(MainModule.AutoDodge.Connections, conn)
+        end
+    end
+    
+    if player.Character then
+        task.spawn(setupCharacter, player.Character)
+    end
+    
+    local charConn = player.CharacterAdded:Connect(function(character)
+        if MainModule.AutoDodge.Enabled then
+            task.spawn(setupCharacter, character)
+        end
+    end)
+    table.insert(MainModule.AutoDodge.Connections, charConn)
+end
+
+function MainModule.ToggleAutoDodge(enabled)
+    MainModule.AutoDodge.Enabled = enabled
+    
+    for _, conn in pairs(MainModule.AutoDodge.Connections) do
+        if conn then
+            pcall(function() conn:Disconnect() end)
+        end
+    end
+    MainModule.AutoDodge.Connections = {}
+    
+    MainModule.AutoDodge.PlayersInRange = {}
+    MainModule.AutoDodge.LastDodgeTime = 0
+    MainModule.AutoDodge.LastRangeUpdate = 0
+    
+    if enabled then
+        for _, player in pairs(Players:GetPlayers()) do
+            task.spawn(setupPlayerTracking, player)
+        end
+        
+        local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+            if MainModule.AutoDodge.Enabled then
+                task.spawn(setupPlayerTracking, player)
+            end
+        end)
+        table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
+        
+        local heartbeatConn = RunService.Heartbeat:Connect(function()
+            if not MainModule.AutoDodge.Enabled then return end
+            
+            local currentTime = tick()
+            if currentTime - MainModule.AutoDodge.LastRangeUpdate > MainModule.AutoDodge.RangeUpdateInterval then
+                MainModule.AutoDodge.PlayersInRange = {}
+                
+                local localCharacter = GetCharacter()
+                local localRoot = localCharacter and GetRootPart(localCharacter)
+                
+                if localRoot then
+                    for _, player in pairs(Players:GetPlayers()) do
+                        if player ~= LocalPlayer and player.Character then
+                            local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                            if playerRoot then
+                                local diff = playerRoot.Position - localRoot.Position
+                                local distanceSquared = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
+                                
+                                if distanceSquared <= MainModule.AutoDodge.RangeSquared then
+                                    table.insert(MainModule.AutoDodge.PlayersInRange, player.Name)
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                MainModule.AutoDodge.LastRangeUpdate = currentTime
+            end
+        end)
+        table.insert(MainModule.AutoDodge.Connections, heartbeatConn)
+    end
+end
+
 function MainModule.ToggleNoclip(enabled)
     MainModule.Noclip.Enabled = enabled
     
@@ -2921,61 +3023,52 @@ function MainModule.ToggleNoclip(enabled)
         MainModule.Noclip.Connection = nil
     end
     
-    for part, _ in pairs(MainModule.Noclip.NoclipParts) do
-        if part and part.Parent and part:IsA("BasePart") then
-            part.CanCollide = true
-        end
-    end
-    MainModule.Noclip.NoclipParts = {}
-    
     if enabled then
-        showNotification("Noclip Enabled", "", 3)
+        -- Отключаем коллизию для всех частей персонажа
+        local function NoclipLoop()
+            if LocalPlayer.Character ~= nil then
+                for _, child in pairs(LocalPlayer.Character:GetDescendants()) do
+                    if child:IsA("BasePart") and child.CanCollide == true then
+                        child.CanCollide = false
+                        MainModule.Noclip.NoclipParts[child] = true
+                    end
+                end
+            end
+        end
+        
+        -- Сразу применяем
+        NoclipLoop()
         
         MainModule.Noclip.Connection = RunService.Heartbeat:Connect(function()
             if not MainModule.Noclip.Enabled then return end
-            
-            local character = GetCharacter()
-            if not character then return end
-            
-            for _, child in pairs(character:GetDescendants()) do
+            NoclipLoop()
+        end)
+        
+        -- Следим за добавлением новых частей
+        local character = GetCharacter()
+        if character then
+            character.DescendantAdded:Connect(function(child)
+                if not MainModule.Noclip.Enabled then return end
                 if child:IsA("BasePart") and child.CanCollide == true then
+                    task.wait()
                     child.CanCollide = false
                     MainModule.Noclip.NoclipParts[child] = true
                 end
-            end
-        end)
+            end)
+        end
     else
-        showNotification("Noclip Disabled", "", 3)
-    end
-end
-
-function MainModule.GetHider()
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr == LocalPlayer then continue end
-        if not plr.Character then continue end
-        if not IsHider(plr) then continue end
-        if plr.Character ~= nil and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
-            return plr.Character
-        else
-            continue
+        -- Восстанавливаем коллизию
+        if LocalPlayer.Character ~= nil and MainModule.Noclip.NoclipParts then
+            for part, _ in pairs(MainModule.Noclip.NoclipParts) do
+                if part and part:IsA("BasePart") and part.Parent then
+                    part.CanCollide = true
+                end
+            end
+            MainModule.Noclip.NoclipParts = {}
         end
     end
-    return nil
 end
 
-function MainModule.TeleportToHider()
-    if not LocalPlayer.Character then return false end
-    
-    local hider = MainModule.GetHider()
-    if not hider then
-        return false
-    end
-    
-    LocalPlayer.Character:PivotTo(hider:GetPrimaryPartCFrame())
-    return true
-end
-
--- Улучшенный Fly
 function MainModule.ToggleFly(enabled)
     if enabled then
         MainModule.EnableFlight()
@@ -2987,17 +3080,16 @@ end
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
-    MainModule.Fly.WasRagdollEnabled = MainModule.Misc.BypassRagdollEnabled
-    
-    if MainModule.Misc.BypassRagdollEnabled then
-        MainModule.ToggleBypassRagdoll(false)
-    end
-    
     MainModule.Fly.Enabled = true
     
     if MainModule.Fly.Connection then
         MainModule.Fly.Connection:Disconnect()
         MainModule.Fly.Connection = nil
+    end
+    
+    if MainModule.Fly.SpeedChangeConnection then
+        MainModule.Fly.SpeedChangeConnection:Disconnect()
+        MainModule.Fly.SpeedChangeConnection = nil
     end
     
     local character = GetCharacter()
@@ -3010,10 +3102,28 @@ function MainModule.EnableFlight()
     MainModule.Fly.OriginalStates = {
         WalkSpeed = humanoid.WalkSpeed,
         JumpPower = humanoid.JumpPower,
-        PlatformStand = humanoid.PlatformStand
+        PlatformStand = false
     }
     
-    MainModule.Fly.LastUpdate = tick()
+    -- Создаем BodyVelocity для полета
+    local flightBodyVelocity = Instance.new("BodyVelocity")
+    flightBodyVelocity.Name = "FlightVelocity"
+    flightBodyVelocity.MaxForce = Vector3.new(100000, 100000, 100000)
+    flightBodyVelocity.P = 12500
+    flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    flightBodyVelocity.Parent = rootPart
+    
+    -- Создаем BodyGyro для стабилизации
+    local flightBodyGyro = Instance.new("BodyGyro")
+    flightBodyGyro.Name = "FlightGyro"
+    flightBodyGyro.MaxTorque = Vector3.new(100000, 100000, 100000)
+    flightBodyGyro.P = 12500
+    flightBodyGyro.D = 1000
+    flightBodyGyro.CFrame = rootPart.CFrame
+    flightBodyGyro.Parent = rootPart
+    
+    MainModule.Fly.BodyVelocity = flightBodyVelocity
+    MainModule.Fly.BodyGyro = flightBodyGyro
     
     MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
         if not MainModule.Fly.Enabled or not character or not character.Parent then 
@@ -3030,73 +3140,81 @@ function MainModule.EnableFlight()
         local Camera = workspace.CurrentCamera
         if not Camera then return end
         
-        if not MainModule.Fly.BodyVelocity or not MainModule.Fly.BodyVelocity.Parent then
-            MainModule.Fly.BodyVelocity = Instance.new("BodyVelocity")
-            MainModule.Fly.BodyVelocity.Name = "FlightVelocity"
-            MainModule.Fly.BodyVelocity.MaxForce = Vector3.new(40000, 40000, 40000)
-            MainModule.Fly.BodyVelocity.P = 1250
-            MainModule.Fly.BodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            MainModule.Fly.BodyVelocity.Parent = rootPart
-        end
-        
-        if not MainModule.Fly.BodyGyro or not MainModule.Fly.BodyGyro.Parent then
-            MainModule.Fly.BodyGyro = Instance.new("BodyGyro")
-            MainModule.Fly.BodyGyro.Name = "FlightGyro"
-            MainModule.Fly.BodyGyro.MaxTorque = Vector3.new(40000, 40000, 40000)
-            MainModule.Fly.BodyGyro.P = 1250
-            MainModule.Fly.BodyGyro.D = 250
-            MainModule.Fly.BodyGyro.CFrame = rootPart.CFrame
-            MainModule.Fly.BodyGyro.Parent = rootPart
-        end
-        
+        -- Управление полетом
         local moveDirection = Vector3.new(0, 0, 0)
-        local isMoving = false
+        local speedMultiplier = 1.0
+        
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+            speedMultiplier = 2.0
+        end
         
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then
             moveDirection = moveDirection + Camera.CFrame.LookVector
-            isMoving = true
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.S) then
             moveDirection = moveDirection - Camera.CFrame.LookVector
-            isMoving = true
         end
         
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then
             moveDirection = moveDirection - Camera.CFrame.RightVector
-            isMoving = true
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.D) then
             moveDirection = moveDirection + Camera.CFrame.RightVector
-            isMoving = true
         end
         
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
             moveDirection = moveDirection + Vector3.new(0, 1, 0)
-            isMoving = true
         end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
             moveDirection = moveDirection - Vector3.new(0, 1, 0)
-            isMoving = true
         end
         
-        if isMoving then
-            if moveDirection.Magnitude > 0 then
-                moveDirection = moveDirection.Unit
-            end
-            
-            local targetVelocity = moveDirection * MainModule.Fly.Speed
-            
-            MainModule.Fly.BodyVelocity.Velocity = targetVelocity
-            MainModule.Fly.BodyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + Camera.CFrame.LookVector)
-            
-            humanoid.PlatformStand = false
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
-        else
-            MainModule.Fly.BodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            MainModule.Fly.BodyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + Vector3.new(0, 0, 1))
+        if moveDirection.Magnitude > 0 then
+            moveDirection = moveDirection.Unit
         end
         
+        local targetVelocity = moveDirection * MainModule.Fly.Speed * speedMultiplier
+        
+        if flightBodyVelocity then
+            flightBodyVelocity.Velocity = targetVelocity
+        end
+        
+        -- Стабилизируем поворот
+        if flightBodyGyro then
+            local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + Camera.CFrame.LookVector)
+            flightBodyGyro.CFrame = flightBodyGyro.CFrame:Lerp(targetCFrame, 0.5)
+        end
+        
+        -- Отключаем гравитацию и физику
+        humanoid.PlatformStand = true
         rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        
+        -- Отключаем коллизию для плавного полета
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end)
+    
+    MainModule.Fly.SpeedChangeConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Fly.Enabled then return end
+        
+        local character = GetCharacter()
+        if not character then return end
+        
+        -- Отключаем любые внешние силы
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                for _, force in pairs(part:GetChildren()) do
+                    if force:IsA("BodyForce") or force:IsA("BodyVelocity") or force:IsA("BodyGyro") then
+                        if force.Name ~= "FlightVelocity" and force.Name ~= "FlightGyro" then
+                            force:Destroy()
+                        end
+                    end
+                end
+            end
+        end
     end)
     
     if MainModule.Fly.HumanoidDiedConnection then
@@ -3131,6 +3249,11 @@ function MainModule.DisableFlight()
         MainModule.Fly.Connection = nil
     end
     
+    if MainModule.Fly.SpeedChangeConnection then
+        MainModule.Fly.SpeedChangeConnection:Disconnect()
+        MainModule.Fly.SpeedChangeConnection = nil
+    end
+    
     if MainModule.Fly.HumanoidDiedConnection then
         MainModule.Fly.HumanoidDiedConnection:Disconnect()
         MainModule.Fly.HumanoidDiedConnection = nil
@@ -3156,11 +3279,19 @@ function MainModule.DisableFlight()
             end
             
             rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            
+            -- Восстанавливаем коллизию
+            for _, part in pairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
         end
         
         local humanoid = GetHumanoid(character)
         if humanoid then
-            humanoid.PlatformStand = MainModule.Fly.OriginalStates and MainModule.Fly.OriginalStates.PlatformStand or false
+            humanoid.PlatformStand = false
+            humanoid:ChangeState(Enum.HumanoidStateType.Running)
         end
     end
     
@@ -3172,11 +3303,6 @@ function MainModule.DisableFlight()
         end
     end
     MainModule.Fly.OriginalStates = nil
-    
-    if MainModule.Fly.WasRagdollEnabled then
-        MainModule.ToggleBypassRagdoll(true)
-        MainModule.Fly.WasRagdollEnabled = false
-    end
 end
 
 function MainModule.SetFlySpeed(speed)
@@ -3184,7 +3310,6 @@ function MainModule.SetFlySpeed(speed)
     return speed
 end
 
--- Улучшенный Killaura
 local function findNearestPlayer()
     local character = GetCharacter()
     if not character then return nil end
@@ -3197,11 +3322,12 @@ local function findNearestPlayer()
     
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
-            local targetRoot = GetRootPart(player.Character)
-            local targetHumanoid = GetHumanoid(player.Character)
+            local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+            local targetHumanoid = player.Character:FindFirstChild("Humanoid")
             
             if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
                 local distance = GetDistance(rootPart.Position, targetRoot.Position)
+                
                 if distance < nearestDistance then
                     nearestDistance = distance
                     nearestPlayer = player
@@ -3210,61 +3336,164 @@ local function findNearestPlayer()
         end
     end
     
-    return nearestPlayer
+    return nearestPlayer, nearestDistance
 end
 
-local function saveOriginalKillauraState(character)
+local function attachToTarget(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return false end
+    
+    local character = GetCharacter()
+    if not character then return false end
+    
+    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local targetHumanoid = targetPlayer.Character:FindFirstChild("Humanoid")
+    
+    if not (targetRoot and targetHumanoid) or targetHumanoid.Health <= 0 then
+        return false
+    end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return false end
+    
+    local humanoid = GetHumanoid(character)
+    if not humanoid then return false end
+    
+    -- Сохраняем оригинальное состояние
+    MainModule.Killaura.OriginalCFrame = rootPart.CFrame
+    MainModule.Killaura.OriginalVelocity = rootPart.Velocity
+    MainModule.Killaura.OriginalPlatformStand = humanoid.PlatformStand
+    
+    -- Настраиваем прикрепление
+    humanoid.PlatformStand = true
+    rootPart.CanCollide = false
+    rootPart.Anchored = false
+    
+    -- Прикрепляемся впереди цели на расстоянии 1-5 радиусов в зависимости от скорости
+    local targetVelocity = targetRoot.Velocity
+    local targetSpeed = targetVelocity.Magnitude
+    
+    local distance = 1 -- Минимальное расстояние
+    if targetSpeed > 5 then
+        distance = math.min(5, targetSpeed / 2) -- Максимум 5 радиусов
+    end
+    
+    local targetLookVector = targetRoot.CFrame.LookVector
+    local targetPosition = targetRoot.Position + (targetLookVector * -distance) + Vector3.new(0, MainModule.Killaura.AttachYOffset, 0)
+    
+    -- Плавное перемещение
+    local currentPos = rootPart.Position
+    local smoothPosition = currentPos:Lerp(targetPosition, 0.8)
+    
+    rootPart.CFrame = CFrame.new(smoothPosition, targetRoot.Position)
+    
+    MainModule.Killaura.IsAttached = true
+    MainModule.Killaura.CurrentTarget = targetPlayer
+    MainModule.Killaura.LastPositionUpdate = tick()
+    MainModule.Killaura.LastValidTargetPos = targetRoot.Position
+    
+    return true
+end
+
+local function updateAttachment()
+    if not MainModule.Killaura.Enabled or not MainModule.Killaura.CurrentTarget then return end
+    
+    local targetPlayer = MainModule.Killaura.CurrentTarget
+    if not targetPlayer or not targetPlayer.Character then return end
+    
+    local character = GetCharacter()
+    if not character then return end
+    
+    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local targetHumanoid = targetPlayer.Character:FindFirstChild("Humanoid")
+    
+    if not (targetRoot and targetHumanoid) or targetHumanoid.Health <= 0 then
+        MainModule.Killaura.CurrentTarget = nil
+        MainModule.Killaura.IsAttached = false
+        return
+    end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return end
+    
+    local humanoid = GetHumanoid(character)
+    if not humanoid then return end
+    
+    -- Обновляем позицию в зависимости от скорости цели
+    local targetVelocity = targetRoot.Velocity
+    local targetSpeed = targetVelocity.Magnitude
+    
+    local distance = 1
+    if targetSpeed > 5 then
+        distance = math.min(5, targetSpeed / 2)
+    end
+    
+    local targetLookVector = targetRoot.CFrame.LookVector
+    local targetPosition = targetRoot.Position + (targetLookVector * -distance) + Vector3.new(0, MainModule.Killaura.AttachYOffset, 0)
+    
+    -- Плавное перемещение
+    local currentPos = rootPart.Position
+    local smoothPosition = currentPos:Lerp(targetPosition, 0.9)
+    
+    rootPart.CFrame = CFrame.new(smoothPosition, targetRoot.Position)
+    
+    -- Проверяем анимации цели для поднятия
+    local foundAnimation = false
+    for _, track in pairs(targetHumanoid:GetPlayingAnimationTracks()) do
+        if track and track.Animation then
+            local animId = track.Animation.AnimationId
+            
+            if MainModule.Killaura.TargetAnimationsSet[animId] then
+                foundAnimation = true
+                
+                if not MainModule.Killaura.IsLifted then
+                    MainModule.Killaura.IsLifted = true
+                    MainModule.Killaura.AnimationStartTime = tick()
+                    
+                    -- Поднимаем на 10Y
+                    local liftedPosition = rootPart.Position + Vector3.new(0, MainModule.Killaura.LiftHeight, 0)
+                    rootPart.CFrame = CFrame.new(liftedPosition, targetRoot.Position)
+                end
+                break
+            end
+        end
+    end
+    
+    if not foundAnimation and MainModule.Killaura.IsLifted then
+        MainModule.Killaura.IsLifted = false
+    end
+    
+    MainModule.Killaura.LastValidTargetPos = targetRoot.Position
+    MainModule.Killaura.LastPositionUpdate = tick()
+end
+
+local function restoreKillauraState()
+    local character = GetCharacter()
     if not character then return end
     
     local rootPart = GetRootPart(character)
-    if rootPart then
-        MainModule.Killaura.OriginalProperties.CFrame = rootPart.CFrame
-        MainModule.Killaura.OriginalProperties.Velocity = rootPart.Velocity
-        MainModule.Killaura.OriginalProperties.Anchored = rootPart.Anchored
-        MainModule.Killaura.OriginalProperties.CanCollide = rootPart.CanCollide
-    end
+    if not rootPart then return end
     
     local humanoid = GetHumanoid(character)
-    if humanoid then
-        MainModule.Killaura.OriginalProperties.PlatformStand = humanoid.PlatformStand
-        MainModule.Killaura.OriginalProperties.HumanoidState = humanoid:GetState()
-    end
-end
-
-local function restoreOriginalKillauraState(character)
-    if not character then return end
+    if not humanoid then return end
     
-    local rootPart = GetRootPart(character)
-    if rootPart then
-        if MainModule.Killaura.OriginalProperties.CFrame then
-            rootPart.CFrame = MainModule.Killaura.OriginalProperties.CFrame
-        end
-        
-        if MainModule.Killaura.OriginalProperties.Velocity then
-            rootPart.Velocity = MainModule.Killaura.OriginalProperties.Velocity
-        end
-        
-        if MainModule.Killaura.OriginalProperties.Anchored ~= nil then
-            rootPart.Anchored = MainModule.Killaura.OriginalProperties.Anchored
-        end
-        
-        if MainModule.Killaura.OriginalProperties.CanCollide ~= nil then
-            rootPart.CanCollide = MainModule.Killaura.OriginalProperties.CanCollide
-        end
+    if MainModule.Killaura.OriginalCFrame then
+        rootPart.CFrame = MainModule.Killaura.OriginalCFrame
     end
     
-    local humanoid = GetHumanoid(character)
-    if humanoid then
-        if MainModule.Killaura.OriginalProperties.PlatformStand ~= nil then
-            humanoid.PlatformStand = MainModule.Killaura.OriginalProperties.PlatformStand
-        end
-        
-        if MainModule.Killaura.OriginalProperties.HumanoidState then
-            humanoid:ChangeState(MainModule.Killaura.OriginalProperties.HumanoidState)
-        end
+    if MainModule.Killaura.OriginalVelocity then
+        rootPart.Velocity = MainModule.Killaura.OriginalVelocity
     end
     
-    MainModule.Killaura.OriginalProperties = {}
+    if MainModule.Killaura.OriginalPlatformStand ~= nil then
+        humanoid.PlatformStand = MainModule.Killaura.OriginalPlatformStand
+    end
+    
+    rootPart.CanCollide = true
+    rootPart.Anchored = false
+    
+    MainModule.Killaura.OriginalCFrame = nil
+    MainModule.Killaura.OriginalVelocity = nil
+    MainModule.Killaura.OriginalPlatformStand = nil
 end
 
 function MainModule.ToggleKillaura(enabled)
@@ -3275,182 +3504,115 @@ function MainModule.ToggleKillaura(enabled)
     end
     MainModule.Killaura.Connections = {}
     
-    MainModule.Killaura.CurrentTarget = nil
-    MainModule.Killaura.IsAttached = false
-    MainModule.Killaura.IsLifted = false
-    MainModule.Killaura.IsActive = false
-    
-    if not enabled then
-        local character = GetCharacter()
-        if character then
-            restoreOriginalKillauraState(character)
-        end
-        showNotification("Killaura Disabled", "", 3)
-        return
-    end
-    
-    showNotification("Killaura Enabled", "", 3)
-    
-    local character = GetCharacter()
-    if character then
-        saveOriginalKillauraState(character)
-    end
-    
-    local lastUpdateTime = tick()
-    
-    table.insert(MainModule.Killaura.Connections, RunService.Heartbeat:Connect(function()
-        if not MainModule.Killaura.Enabled then 
-            local character = GetCharacter()
-            if character then
-                restoreOriginalKillauraState(character)
-            end
-            return 
+    if enabled then
+        ShowNotification("Killaura Enabled", "")
+        
+        local nearestPlayer, distance = findNearestPlayer()
+        if nearestPlayer then
+            attachToTarget(nearestPlayer)
         end
         
-        local currentTime = tick()
-        local deltaTime = currentTime - lastUpdateTime
-        lastUpdateTime = currentTime
-        
-        local character = GetCharacter()
-        if not character then return end
-        
-        local rootPart = GetRootPart(character)
-        local humanoid = GetHumanoid(character)
-        if not (rootPart and humanoid) then return end
-        
-        if not MainModule.Killaura.CurrentTarget then
-            MainModule.Killaura.CurrentTarget = findNearestPlayer()
+        table.insert(MainModule.Killaura.Connections, RunService.Heartbeat:Connect(function()
+            if not MainModule.Killaura.Enabled then return end
             
             if MainModule.Killaura.CurrentTarget then
-                MainModule.Killaura.IsAttached = true
-                humanoid.PlatformStand = true
-                rootPart.Anchored = false
-                rootPart.CanCollide = false
-            end
-        end
-        
-        if MainModule.Killaura.CurrentTarget then
-            local targetPlayer = MainModule.Killaura.CurrentTarget
-            if not targetPlayer or not targetPlayer.Character then
-                MainModule.Killaura.CurrentTarget = nil
-                MainModule.Killaura.IsAttached = false
-                humanoid.PlatformStand = false
-                return
-            end
-            
-            local targetRoot = GetRootPart(targetPlayer.Character)
-            local targetHumanoid = GetHumanoid(targetPlayer.Character)
-            
-            if not (targetRoot and targetHumanoid) or targetHumanoid.Health <= 0 then
-                MainModule.Killaura.CurrentTarget = nil
-                MainModule.Killaura.IsAttached = false
-                humanoid.PlatformStand = false
-                return
-            end
-            
-            local targetVelocity = targetRoot.Velocity
-            local isTargetMoving = targetVelocity.Magnitude > 2
-            
-            local targetLookVector = targetRoot.CFrame.LookVector
-            local basePosition = targetRoot.Position + (targetLookVector * -MainModule.Killaura.AttachDistance)
-            
-            if isTargetMoving then
-                local moveDirection = targetVelocity.Unit
-                local speedFactor = math.min(targetVelocity.Magnitude / 10, 2)
-                basePosition = basePosition + (moveDirection * MainModule.Killaura.AttachDistance * 0.5 * speedFactor)
+                updateAttachment()
             else
-                basePosition = targetRoot.Position + (targetLookVector * -MainModule.Killaura.MinDistance)
-            end
-            
-            basePosition = basePosition + Vector3.new(0, 3, 0)
-            
-            local currentPos = rootPart.Position
-            local smoothFactor = MainModule.Killaura.SmoothFactor
-            
-            if isTargetMoving then
-                smoothFactor = 0.9
-            end
-            
-            local targetPosition = currentPos:Lerp(basePosition, smoothFactor)
-            
-            local directionToTarget = (targetRoot.Position - targetPosition).Unit
-            local targetCFrame = CFrame.new(targetPosition, targetPosition + directionToTarget)
-            
-            local currentCFrame = rootPart.CFrame
-            local smoothCFrame = currentCFrame:Lerp(targetCFrame, 0.8)
-            
-            rootPart.CFrame = smoothCFrame
-        end
-    end))
-    
-    table.insert(MainModule.Killaura.Connections, RunService.Heartbeat:Connect(function()
-        if not MainModule.Killaura.Enabled or not MainModule.Killaura.CurrentTarget then return end
-        
-        local targetPlayer = MainModule.Killaura.CurrentTarget
-        if not targetPlayer or not targetPlayer.Character then return end
-        
-        local targetHumanoid = GetHumanoid(targetPlayer.Character)
-        if not targetHumanoid or targetHumanoid.Health <= 0 then return end
-        
-        local foundAnimation = false
-        
-        for _, track in pairs(targetHumanoid:GetPlayingAnimationTracks()) do
-            if track and track.Animation then
-                local animId = track.Animation.AnimationId
-                
-                if MainModule.Killaura.TargetAnimationsSet[animId] then
-                    foundAnimation = true
-                    
-                    if not MainModule.Killaura.IsLifted then
-                        MainModule.Killaura.IsLifted = true
-                        MainModule.Killaura.AnimationStartTime = tick()
-                        
-                        local character = GetCharacter()
-                        if character then
-                            local rootPart = GetRootPart(character)
-                            if rootPart then
-                                local currentPos = rootPart.Position
-                                rootPart.CFrame = CFrame.new(currentPos + Vector3.new(0, MainModule.Killaura.LiftHeight, 0))
-                            end
-                        end
-                    end
-                    break
+                local nearestPlayer, distance = findNearestPlayer()
+                if nearestPlayer then
+                    attachToTarget(nearestPlayer)
                 end
             end
-        end
+        end))
         
-        if not foundAnimation and MainModule.Killaura.IsLifted then
-            local currentTime = tick()
-            if currentTime - MainModule.Killaura.AnimationStartTime > 0.3 then
-                MainModule.Killaura.IsLifted = false
-            end
-        end
-    end))
-    
-    table.insert(MainModule.Killaura.Connections, LocalPlayer.CharacterAdded:Connect(function(newCharacter)
-        task.wait(1)
-        if MainModule.Killaura.Enabled then
-            MainModule.Killaura.CurrentTarget = nil
-            MainModule.Killaura.IsAttached = false
-            MainModule.Killaura.IsActive = false
+        table.insert(MainModule.Killaura.Connections, RunService.Heartbeat:Connect(function()
+            if not MainModule.Killaura.Enabled then return end
             
-            task.wait(0.5)
-            saveOriginalKillauraState(newCharacter)
-        end
-    end))
+            local character = GetCharacter()
+            if not character then return end
+            
+            -- Стабилизируем персонажа
+            local rootPart = GetRootPart(character)
+            if rootPart then
+                rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                rootPart.Velocity = Vector3.new(0, 0, 0)
+            end
+            
+            local humanoid = GetHumanoid(character)
+            if humanoid then
+                humanoid.PlatformStand = true
+                humanoid:ChangeState(Enum.HumanoidStateType.Running)
+            end
+        end))
+        
+        table.insert(MainModule.Killaura.Connections, LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+            task.wait(1)
+            if MainModule.Killaura.Enabled then
+                local nearestPlayer, distance = findNearestPlayer()
+                if nearestPlayer then
+                    attachToTarget(nearestPlayer)
+                end
+            end
+        end))
+    else
+        ShowNotification("Killaura Disabled", "")
+        restoreKillauraState()
+        
+        MainModule.Killaura.CurrentTarget = nil
+        MainModule.Killaura.IsAttached = false
+        MainModule.Killaura.IsLifted = false
+    end
 end
 
 function MainModule.SetKillauraRadius(radius)
-    radius = math.clamp(radius, 15, MainModule.Killaura.MaxRadius)
     MainModule.Killaura.Radius = radius
     return radius
 end
+
+function GetDistance(pos1, pos2)
+    return (pos1 - pos2).Magnitude
+end
+
+function GetCharacter()
+    return LocalPlayer.Character
+end
+
+function GetRootPart(character)
+    return character and character:FindFirstChild("HumanoidRootPart")
+end
+
+function GetHumanoid(character)
+    return character and character:FindFirstChild("Humanoid")
+end
+
+-- Функция для обработки горячих клавиш
+local function setupHotkeys()
+    if inputConnection then
+        inputConnection:Disconnect()
+        inputConnection = nil
+    end
+    
+    inputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        if input.KeyCode == MainModule.Hotkeys.Fly then
+            MainModule.ToggleFly(not MainModule.Fly.Enabled)
+        elseif input.KeyCode == MainModule.Hotkeys.Noclip then
+            MainModule.ToggleNoclip(not MainModule.Noclip.Enabled)
+        elseif input.KeyCode == MainModule.Hotkeys.Killaura then
+            MainModule.ToggleKillaura(not MainModule.Killaura.Enabled)
+        end
+    end)
+end
+
+-- Инициализация горячих клавиш
+setupHotkeys()
 
 function MainModule.Cleanup()
     local connections = {
         speedConnection, autoFarmConnection, godModeConnection, instaInteractConnection,
         noCooldownConnection, antiStunConnection, rapidFireConnection, infiniteAmmoConnection,
-        hitboxConnection, autoPullConnection, bypassRagdollConnection
+        hitboxConnection, autoPullConnection, bypassRagdollConnection, inputConnection
     }
     
     for _, conn in pairs(connections) do
@@ -3546,6 +3708,11 @@ function MainModule.Cleanup()
         MainModule.ZoneKillFeature.AnimationCheckConnection = nil
     end
     
+    if MainModule.ZoneKillFeature.ZoneCheckConnection then
+        MainModule.ZoneKillFeature.ZoneCheckConnection:Disconnect()
+        MainModule.ZoneKillFeature.ZoneCheckConnection = nil
+    end
+    
     for _, conn in ipairs(MainModule.ZoneKillFeature.AnimationStoppedConnections) do
         pcall(function() conn:Disconnect() end)
     end
@@ -3587,33 +3754,58 @@ function MainModule.Cleanup()
     end
     
     for _, conn in pairs(MainModule.Killaura.Connections) do
-        if conn then
-            pcall(function() conn:Disconnect() end)
-        end
+        if conn then conn:Disconnect() end
     end
     MainModule.Killaura.Connections = {}
     
+    for _, conn in pairs(MainModule.AutoDodge.Connections) do
+        if conn then conn:Disconnect() end
+    end
+    MainModule.AutoDodge.Connections = {}
+    
+    if globalAnimationHandler then
+        globalAnimationHandler:Disconnect()
+        globalAnimationHandler = nil
+    end
+    
     MainModule.DisableFlight()
+    
+    MainModule.Fly.Enabled = false
+    MainModule.Fly.Speed = 39
+    MainModule.Fly.Connection = nil
+    MainModule.Fly.BodyVelocity = nil
+    MainModule.Fly.BodyGyro = nil
+    MainModule.Fly.HumanoidDiedConnection = nil
+    MainModule.Fly.CharacterAddedConnection = nil
+    MainModule.Fly.SpeedChangeConnection = nil
     
     if MainModule.Noclip.Connection then
         MainModule.Noclip.Connection:Disconnect()
         MainModule.Noclip.Connection = nil
     end
     
-    for part, _ in pairs(MainModule.Noclip.NoclipParts) do
-        if part and part.Parent and part:IsA("BasePart") then
-            part.CanCollide = true
-        end
-    end
-    MainModule.Noclip.NoclipParts = {}
+    MainModule.StopEnhancedProtection()
+    MainModule.StopJointCleaning()
     
-    for part, originalSize in pairs(MainModule.Hitbox.OriginalSizes) do
-        if part and part.Parent then
-            part.Size = originalSize
-            part.CanCollide = true
+    -- Восстанавливаем коллизию для Noclip
+    if MainModule.Noclip.NoclipParts then
+        for part, _ in pairs(MainModule.Noclip.NoclipParts) do
+            if part and part:IsA("BasePart") and part.Parent then
+                part.CanCollide = true
+            end
+        end
+        MainModule.Noclip.NoclipParts = {}
+    end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if root and MainModule.Hitbox.ModifiedParts[root] then
+                root.Size = MainModule.Hitbox.ModifiedParts[root]
+                root.CanCollide = true
+            end
         end
     end
-    MainModule.Hitbox.OriginalSizes = {}
     MainModule.Hitbox.ModifiedParts = {}
     
     for obj, originalValue in pairs(MainModule.Guards.OriginalAmmo) do
@@ -3687,10 +3879,6 @@ function MainModule.Cleanup()
         MainModule.ToggleKillaura(false)
     end
     
-    if MainModule.Fly.Enabled then
-        MainModule.DisableFlight()
-    end
-    
     if MainModule.AutoDodge.Enabled then
         MainModule.ToggleAutoDodge(false)
     end
@@ -3734,24 +3922,6 @@ function MainModule.Cleanup()
     MainModule.FreeDashGuards.Enabled = false
 end
 
--- Обработка горячих клавиш
-local function processHotkeys()
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        
-        if input.KeyCode == MainModule.Hotkeys.Fly then
-            MainModule.ToggleFly(not MainModule.Fly.Enabled)
-        elseif input.KeyCode == MainModule.Hotkeys.Noclip then
-            MainModule.ToggleNoclip(not MainModule.Noclip.Enabled)
-        elseif input.KeyCode == MainModule.Hotkeys.Killaura then
-            MainModule.ToggleKillaura(not MainModule.Killaura.Enabled)
-        end
-    end)
-end
-
--- Запускаем обработку горячих клавиш
-task.spawn(processHotkeys)
-
 LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
     if not LocalPlayer.Parent then
         MainModule.Cleanup()
@@ -3759,5 +3929,3 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
-
-
