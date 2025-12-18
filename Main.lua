@@ -1,4 +1,3 @@
-запомни Main.lua
 local MainModule = {}
 
 local Players = game:GetService("Players")
@@ -56,24 +55,102 @@ MainModule.AutoDodge = {
     RangeUpdateInterval = 0.5
 }
 
+-- Усовершенствованный модуль полета
 MainModule.Fly = {
     Enabled = false,
-    Speed = 50,
+    Speed = 39,
     Connection = nil,
     BodyVelocity = nil,
     BodyGyro = nil,
     HumanoidDiedConnection = nil,
     CharacterAddedConnection = nil,
     SpeedChangeConnection = nil,
-    WasRagdollEnabled = false,
+    CameraConnections = {},
+    InputConnections = {},
+    RaycastIgnoredInstances = {},
     LastUpdate = 0,
-    LastPosition = Vector3.new(0, 0, 0),
-    OriginalStates = nil,
-    FakeParts = {},
+    LastVelocityUpdate = 0,
+    VelocityHistory = {},
+    PredictionFactor = 0.95,
+    SmoothVelocity = Vector3.new(0, 0, 0),
+    NetworkOwnershipChanged = false,
+    OriginalNetworkOwner = nil,
+    PhysicsSimulationState = nil,
+    CharacterCollisions = {},
+    AntiDetectionEnabled = true,
+    MovementPatterns = {"linear", "sinusoidal", "circular"},
+    CurrentPattern = "linear",
+    PatternChangeTime = 0,
+    VelocityJitter = Vector3.new(0, 0, 0),
+    LastJitterUpdate = 0,
+    JitterMagnitude = 0.3,
+    MaxVelocityDelta = 5,
+    VelocitySmoothingFactor = 0.15,
+    AntiCheatBypassEnabled = true,
+    BypassMethods = {
+        "NetworkOwnership",
+        "PhysicsPriority",
+        "VelocityBlending",
+        "RaycastSpam"
+    },
+    RaycastSpamInterval = 0.05,
+    LastRaycastSpam = 0,
+    FakeGravityEnabled = true,
+    FakeGravityForce = 196.2,
+    GroundRaycastDistance = 10,
+    IsOnGround = false,
     LastGroundCheck = 0,
-    GroundCheckInterval = 2,
-    FakeFloorSize = Vector3.new(10, 1, 10),
-    IsFlying = false
+    GroundCheckInterval = 0.3,
+    SimulationRadius = 50,
+    PacketOptimization = true,
+    PacketOptimizationFactor = 0.8,
+    LastPacketOptimization = 0,
+    HumanoidStateOverride = false,
+    OriginalHumanoidStates = {},
+    LegCollisionDisable = true,
+    OriginalCollisionFidelity = nil,
+    ContactOffsetModified = false,
+    OriginalContactOffset = nil,
+    MasslessParts = {},
+    NetworkPauseEnabled = false,
+    LastNetworkPause = 0,
+    NetworkPauseDuration = 0.02,
+    VelocityPredictionCorrection = true,
+    PredictionCorrectionStrength = 0.5,
+    AntiLagCompensation = true,
+    LagCompensationFactor = 0.3,
+    StealthMode = {
+        RandomVelocitySpikes = false,
+        VelocitySpikeInterval = 2,
+        LastSpikeTime = 0,
+        SpikeMagnitude = 2,
+        NaturalMovementSimulation = true,
+        NaturalMovementFactor = 0.1,
+        AntiTraceDetection = true,
+        TraceDetectionInterval = 0.5,
+        LastTraceDetection = 0
+    },
+    PerformanceSettings = {
+        MaxRaycastsPerFrame = 3,
+        MaxVelocityUpdatesPerFrame = 2,
+        OptimizationEnabled = true,
+        AdaptiveOptimization = true
+    },
+    
+    -- Система биндов
+    Keybind = Enum.KeyCode.None,
+    KeybindConnection = nil,
+    KeybindEndConnection = nil,
+    ToggleDebounce = false,
+    LastToggleTime = 0,
+    ToggleCooldown = 0.3,
+    KeybindMode = "Toggle", -- "Toggle" или "Hold"
+    KeybindStates = {
+        IsHolding = false,
+        WasToggled = false,
+        InputActive = false,
+        LastPressTime = 0
+    }
 }
 
 MainModule.AutoQTE = {
@@ -3112,6 +3189,349 @@ function MainModule.TeleportToHider()
     return true
 end
 
+-- Вспомогательные функции для скрытности
+local function CreateStealthBodyVelocity(parent)
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "StealthVelocity_" .. tostring(math.random(10000, 99999))
+    bv.MaxForce = Vector3.new(40000, 40000, 40000) * 0.98
+    bv.P = 9000
+    bv.Velocity = Vector3.new(0, 0, 0)
+    
+    -- Задержка перед установкой родителя
+    task.delay(0.01, function()
+        if bv and parent and parent.Parent then
+            bv.Parent = parent
+        end
+    end)
+    
+    return bv
+end
+
+local function CreateStealthBodyGyro(parent)
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "StealthGyro_" .. tostring(math.random(10000, 99999))
+    bg.MaxTorque = Vector3.new(40000, 40000, 40000) * 0.97
+    bg.P = 12000
+    bg.D = 1000
+    bg.CFrame = parent.CFrame
+    
+    task.delay(0.02, function()
+        if bg and parent and parent.Parent then
+            bg.Parent = parent
+        end
+    end)
+    
+    return bg
+end
+
+local function GetRandomPattern()
+    local patterns = MainModule.Fly.MovementPatterns
+    local random = math.random(1, #patterns)
+    return patterns[random]
+end
+
+local function ApplyJitterToVelocity(velocity)
+    local currentTime = tick()
+    if currentTime - MainModule.Fly.LastJitterUpdate > 0.1 then
+        MainModule.Fly.LastJitterUpdate = currentTime
+        
+        local jitter = Vector3.new(
+            (math.random() * 2 - 1) * MainModule.Fly.JitterMagnitude,
+            (math.random() * 2 - 1) * MainModule.Fly.JitterMagnitude * 0.5,
+            (math.random() * 2 - 1) * MainModule.Fly.JitterMagnitude
+        )
+        
+        MainModule.Fly.VelocityJitter = jitter
+        
+        if currentTime - MainModule.Fly.PatternChangeTime > 3 then
+            MainModule.Fly.CurrentPattern = GetRandomPattern()
+            MainModule.Fly.PatternChangeTime = currentTime
+        end
+    end
+    
+    local patternFactor = 1
+    if MainModule.Fly.CurrentPattern == "sinusoidal" then
+        patternFactor = 1 + math.sin(currentTime * 3) * 0.05
+    elseif MainModule.Fly.CurrentPattern == "circular" then
+        patternFactor = 1 + math.cos(currentTime * 2) * 0.03
+    end
+    
+    return velocity * patternFactor + MainModule.Fly.VelocityJitter
+end
+
+local function CalculateSmoothedVelocity(targetVelocity)
+    local smoothingFactor = MainModule.Fly.VelocitySmoothingFactor
+    MainModule.Fly.SmoothVelocity = MainModule.Fly.SmoothVelocity:Lerp(targetVelocity, smoothingFactor)
+    
+    -- Ограничение дельты скорости для избежания детекции
+    local velocityDelta = (targetVelocity - MainModule.Fly.SmoothVelocity).Magnitude
+    if velocityDelta > MainModule.Fly.MaxVelocityDelta then
+        MainModule.Fly.SmoothVelocity = MainModule.Fly.SmoothVelocity.Unit * math.min(
+            MainModule.Fly.SmoothVelocity.Magnitude,
+            MainModule.Fly.MaxVelocityDelta
+        )
+    end
+    
+    table.insert(MainModule.Fly.VelocityHistory, MainModule.Fly.SmoothVelocity)
+    if #MainModule.Fly.VelocityHistory > 10 then
+        table.remove(MainModule.Fly.VelocityHistory, 1)
+    end
+    
+    return MainModule.Fly.SmoothVelocity
+end
+
+local function PerformRaycastSpam(character, rootPart)
+    local currentTime = tick()
+    if currentTime - MainModule.Fly.LastRaycastSpam < MainModule.Fly.RaycastSpamInterval then
+        return
+    end
+    
+    MainModule.Fly.LastRaycastSpam = currentTime
+    
+    local raycastCount = math.min(3, MainModule.Fly.PerformanceSettings.MaxRaycastsPerFrame)
+    for i = 1, raycastCount do
+        local randomDirection = Vector3.new(
+            math.random() * 2 - 1,
+            math.random() * -0.5,
+            math.random() * 2 - 1
+        ).Unit
+        
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+        raycastParams.FilterDescendantsInstances = {character}
+        raycastParams.IgnoreWater = true
+        
+        workspace:Raycast(
+            rootPart.Position,
+            randomDirection * 20,
+            raycastParams
+        )
+        
+        if i == 1 and MainModule.Fly.AntiDetectionEnabled then
+            local fakeRay = Ray.new(
+                rootPart.Position + Vector3.new(0, -5, 0),
+                Vector3.new(0, -10, 0)
+            )
+            local hit = workspace:FindPartOnRayWithIgnoreList(
+                fakeRay,
+                {character, unpack(MainModule.Fly.RaycastIgnoredInstances)}
+            )
+            
+            if hit then
+                MainModule.Fly.IsOnGround = true
+                MainModule.Fly.LastGroundCheck = currentTime
+            end
+        end
+    end
+end
+
+local function OptimizeNetworkPackets()
+    if not MainModule.Fly.PacketOptimization then return end
+    
+    local currentTime = tick()
+    if currentTime - MainModule.Fly.LastPacketOptimization < 0.1 then
+        return
+    end
+    
+    MainModule.Fly.LastPacketOptimization = currentTime
+    
+    local character = GetCharacter()
+    if not character then return end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return end
+    
+    -- Временная пауза сетевой синхронизации
+    if MainModule.Fly.NetworkPauseEnabled then
+        if currentTime - MainModule.Fly.LastNetworkPause > 0.5 then
+            MainModule.Fly.LastNetworkPause = currentTime
+            
+            for _, part in pairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.ReceiveAge = math.random(1, 3)
+                    
+                    if math.random() < 0.3 then
+                        local networkOwner = part:GetNetworkOwner()
+                        if networkOwner and networkOwner ~= LocalPlayer then
+                            MainModule.Fly.OriginalNetworkOwner = networkOwner
+                            part:SetNetworkOwner(nil)
+                            task.delay(0.1, function()
+                                if part and part.Parent then
+                                    part:SetNetworkOwner(networkOwner)
+                                end
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Оптимизация физики
+    for _, part in pairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if not MainModule.Fly.MasslessParts[part] then
+                MainModule.Fly.MasslessParts[part] = part.Massless
+                part.Massless = true
+            end
+            
+            if MainModule.Fly.LegCollisionDisable and string.find(part.Name:lower(), "leg") then
+                part.CanCollide = false
+            end
+        end
+    end
+end
+
+local function ApplyAntiLagCompensation(rootPart, targetVelocity)
+    if not MainModule.Fly.AntiLagCompensation then
+        return targetVelocity
+    end
+    
+    local compensationFactor = MainModule.Fly.LagCompensationFactor
+    local networkPing = 0.1 -- Примерное значение пинга
+    
+    local compensatedVelocity = targetVelocity * (1 + networkPing * compensationFactor)
+    
+    if MainModule.Fly.VelocityPredictionCorrection then
+        if #MainModule.Fly.VelocityHistory >= 3 then
+            local avgVelocity = Vector3.new(0, 0, 0)
+            for _, vel in ipairs(MainModule.Fly.VelocityHistory) do
+                avgVelocity = avgVelocity + vel
+            end
+            avgVelocity = avgVelocity / #MainModule.Fly.VelocityHistory
+            
+            compensatedVelocity = compensatedVelocity:Lerp(
+                avgVelocity,
+                MainModule.Fly.PredictionCorrectionStrength
+            )
+        end
+    end
+    
+    return compensatedVelocity
+end
+
+local function SimulateNaturalMovement(rootPart, humanoid)
+    if not MainModule.Fly.StealthMode.NaturalMovementSimulation then
+        return
+    end
+    
+    local currentTime = tick()
+    
+    if humanoid and humanoid.Parent then
+        humanoid.AutoRotate = true
+        humanoid.Jump = false
+        
+        if currentTime - MainModule.Fly.LastGroundCheck > MainModule.Fly.GroundCheckInterval then
+            MainModule.Fly.LastGroundCheck = currentTime
+            
+            local raycastParams = RaycastParams.new()
+            raycastParams.FilterDescendantsInstances = {humanoid.Parent}
+            raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+            
+            local result = workspace:Raycast(
+                rootPart.Position,
+                Vector3.new(0, -MainModule.Fly.GroundRaycastDistance, 0),
+                raycastParams
+            )
+            
+            MainModule.Fly.IsOnGround = result ~= nil
+            
+            if MainModule.Fly.FakeGravityEnabled and not MainModule.Fly.IsOnGround then
+                local gravityVelocity = Vector3.new(0, -MainModule.Fly.FakeGravityForce * 0.1, 0)
+                rootPart.Velocity = rootPart.Velocity + gravityVelocity
+            end
+        end
+    end
+end
+
+-- Функция для установки бинда
+function MainModule.SetFlyKeybind(keyCode, mode)
+    if typeof(keyCode) == "EnumItem" and keyCode.EnumType == Enum.KeyCode then
+        -- Отключаем предыдущие соединения
+        if MainModule.Fly.KeybindConnection then
+            MainModule.Fly.KeybindConnection:Disconnect()
+            MainModule.Fly.KeybindConnection = nil
+        end
+        
+        if MainModule.Fly.KeybindEndConnection then
+            MainModule.Fly.KeybindEndConnection:Disconnect()
+            MainModule.Fly.KeybindEndConnection = nil
+        end
+        
+        MainModule.Fly.Keybind = keyCode
+        
+        if mode and (mode == "Toggle" or mode == "Hold") then
+            MainModule.Fly.KeybindMode = mode
+        end
+        
+        -- Обработка нажатия клавиши
+        MainModule.Fly.KeybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            if gameProcessed then return end
+            
+            if input.KeyCode == MainModule.Fly.Keybind then
+                MainModule.Fly.KeybindStates.LastPressTime = tick()
+                MainModule.Fly.KeybindStates.InputActive = true
+                
+                if MainModule.Fly.KeybindMode == "Toggle" then
+                    local currentTime = tick()
+                    if currentTime - MainModule.Fly.LastToggleTime > MainModule.Fly.ToggleCooldown then
+                        MainModule.Fly.LastToggleTime = currentTime
+                        MainModule.Fly.KeybindStates.WasToggled = true
+                        MainModule.ToggleFly(not MainModule.Fly.Enabled)
+                    end
+                else
+                    MainModule.Fly.KeybindStates.IsHolding = true
+                    
+                    if not MainModule.Fly.Enabled then
+                        MainModule.ToggleFly(true)
+                    end
+                end
+            end
+        end)
+        
+        -- Обработка отпускания клавиши (только для режима Hold)
+        if MainModule.Fly.KeybindMode == "Hold" then
+            MainModule.Fly.KeybindEndConnection = UserInputService.InputEnded:Connect(function(input)
+                if input.KeyCode == MainModule.Fly.Keybind then
+                    MainModule.Fly.KeybindStates.IsHolding = false
+                    MainModule.Fly.KeybindStates.InputActive = false
+                    
+                    if MainModule.Fly.Enabled then
+                        MainModule.ToggleFly(false)
+                    end
+                end
+            end)
+        end
+    end
+end
+
+-- Функция получения текущего бинда
+function MainModule.GetFlyKeybind()
+    return MainModule.Fly.Keybind
+end
+
+-- Функция очистки бинда
+function MainModule.ClearFlyKeybind()
+    if MainModule.Fly.KeybindConnection then
+        MainModule.Fly.KeybindConnection:Disconnect()
+        MainModule.Fly.KeybindConnection = nil
+    end
+    
+    if MainModule.Fly.KeybindEndConnection then
+        MainModule.Fly.KeybindEndConnection:Disconnect()
+        MainModule.Fly.KeybindEndConnection = nil
+    end
+    
+    MainModule.Fly.Keybind = Enum.KeyCode.None
+    MainModule.Fly.KeybindStates = {
+        IsHolding = false,
+        WasToggled = false,
+        InputActive = false,
+        LastPressTime = 0
+    }
+end
+
+-- Обновленная функция ToggleFly с поддержкой биндов
 function MainModule.ToggleFly(enabled)
     if enabled then
         MainModule.EnableFlight()
@@ -3123,24 +3543,6 @@ end
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
-    MainModule.Fly.WasRagdollEnabled = MainModule.Misc.BypassRagdollEnabled
-    
-    if MainModule.Misc.BypassRagdollEnabled then
-        MainModule.ToggleBypassRagdoll(false)
-    end
-    
-    MainModule.Fly.Enabled = true
-    
-    if MainModule.Fly.Connection then
-        MainModule.Fly.Connection:Disconnect()
-        MainModule.Fly.Connection = nil
-    end
-    
-    if MainModule.Fly.SpeedChangeConnection then
-        MainModule.Fly.SpeedChangeConnection:Disconnect()
-        MainModule.Fly.SpeedChangeConnection = nil
-    end
-    
     local character = GetCharacter()
     if not character then return end
     
@@ -3148,50 +3550,60 @@ function MainModule.EnableFlight()
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
     
-    MainModule.Fly.OriginalStates = {
+    MainModule.Fly.Enabled = true
+    
+    -- Сохраняем оригинальные состояния
+    MainModule.Fly.OriginalHumanoidStates = {
         WalkSpeed = humanoid.WalkSpeed,
         JumpPower = humanoid.JumpPower,
-        PlatformStand = false
+        AutoRotate = humanoid.AutoRotate,
+        PlatformStand = humanoid.PlatformStand
     }
     
-    MainModule.Fly.FakeParts = {}
-    
-    MainModule.Fly.LastUpdate = tick()
-    MainModule.Fly.LastPosition = rootPart.Position
-    
-    local flightBodyVelocity = Instance.new("BodyVelocity")
-    flightBodyVelocity.Name = "FlightVelocity"
-    flightBodyVelocity.MaxForce = Vector3.new(40000, 40000, 40000)
-    flightBodyVelocity.P = 1250
-    flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-    flightBodyVelocity.Parent = rootPart
-    
-    local flightBodyGyro = Instance.new("BodyGyro")
-    flightBodyGyro.Name = "FlightGyro"
-    flightBodyGyro.MaxTorque = Vector3.new(40000, 40000, 40000)
-    flightBodyGyro.P = 1250
-    flightBodyGyro.D = 250
-    flightBodyGyro.CFrame = rootPart.CFrame
-    flightBodyGyro.Parent = rootPart
-    
-    MainModule.Fly.BodyVelocity = flightBodyVelocity
-    MainModule.Fly.BodyGyro = flightBodyGyro
-    
-    MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
-        if not MainModule.Fly.Enabled or not character or not character.Parent then 
-            if MainModule.Fly.Connection then
-                MainModule.Fly.Connection:Disconnect()
-                MainModule.Fly.Connection = nil
+    -- Сохраняем настройки коллизий
+    if MainModule.Fly.LegCollisionDisable then
+        MainModule.Fly.CharacterCollisions = {}
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                MainModule.Fly.CharacterCollisions[part] = part.CanCollide
+                part.CanCollide = false
             end
+        end
+    end
+    
+    -- Настраиваем физические свойства
+    MainModule.Fly.OriginalContactOffset = rootPart.ContactOffset
+    if MainModule.Fly.ContactOffsetModified then
+        rootPart.ContactOffset = 0.01
+    end
+    
+    MainModule.Fly.OriginalCollisionFidelity = rootPart.CollisionFidelity
+    rootPart.CollisionFidelity = Enum.CollisionFidelity.Box
+    
+    -- Создаем BodyVelocity и BodyGyro
+    MainModule.Fly.BodyVelocity = CreateStealthBodyVelocity(rootPart)
+    MainModule.Fly.BodyGyro = CreateStealthBodyGyro(rootPart)
+    
+    -- Сбрасываем историю скорости
+    MainModule.Fly.VelocityHistory = {}
+    MainModule.Fly.SmoothVelocity = Vector3.new(0, 0, 0)
+    MainModule.Fly.LastVelocityUpdate = tick()
+    
+    -- Основной цикл полета
+    MainModule.Fly.Connection = RunService.Heartbeat:Connect(function(deltaTime)
+        if not MainModule.Fly.Enabled or not character or not character.Parent then 
+            MainModule.DisableFlight()
             return 
         end
         
         rootPart = GetRootPart(character)
-        if not rootPart then return end
+        humanoid = GetHumanoid(character)
+        if not (rootPart and humanoid) then return end
         
         local Camera = workspace.CurrentCamera
         if not Camera then return end
         
+        -- Получаем направление движения
         local moveDirection = Vector3.new(0, 0, 0)
         local isMoving = false
         
@@ -3203,7 +3615,6 @@ function MainModule.EnableFlight()
             moveDirection = moveDirection - Camera.CFrame.LookVector
             isMoving = true
         end
-        
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then
             moveDirection = moveDirection - Camera.CFrame.RightVector
             isMoving = true
@@ -3212,7 +3623,6 @@ function MainModule.EnableFlight()
             moveDirection = moveDirection + Camera.CFrame.RightVector
             isMoving = true
         end
-        
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
             moveDirection = moveDirection + Vector3.new(0, 1, 0)
             isMoving = true
@@ -3227,188 +3637,249 @@ function MainModule.EnableFlight()
                 moveDirection = moveDirection.Unit
             end
             
-            local targetVelocity = moveDirection * 50
+            local targetVelocity = moveDirection * MainModule.Fly.Speed
             
-            if flightBodyVelocity then
-                flightBodyVelocity.Velocity = targetVelocity
+            -- Применяем скрытные техники
+            targetVelocity = ApplyJitterToVelocity(targetVelocity)
+            targetVelocity = CalculateSmoothedVelocity(targetVelocity)
+            targetVelocity = ApplyAntiLagCompensation(rootPart, targetVelocity)
+            
+            -- Обновляем BodyVelocity
+            if MainModule.Fly.BodyVelocity and MainModule.Fly.BodyVelocity.Parent then
+                MainModule.Fly.BodyVelocity.Velocity = targetVelocity
             end
             
-            if flightBodyGyro then
-                flightBodyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + Camera.CFrame.LookVector)
+            -- Обновляем BodyGyro для стабилизации
+            if MainModule.Fly.BodyGyro and MainModule.Fly.BodyGyro.Parent then
+                MainModule.Fly.BodyGyro.CFrame = CFrame.new(
+                    rootPart.Position,
+                    rootPart.Position + Camera.CFrame.LookVector
+                )
             end
             
+            -- Скрываем состояние полета
             humanoid.PlatformStand = false
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+            humanoid.AutoRotate = true
             
-            rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-        else
-            if flightBodyVelocity then
-                flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            end
-            
-            if flightBodyGyro then
-                flightBodyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + Vector3.new(0, 0, 1))
-            end
-            
-            rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-        end
-        
-        local currentTime = tick()
-        if currentTime - MainModule.Fly.LastUpdate > 0.1 then
-            MainModule.Fly.LastUpdate = currentTime
-            
-            for _, part in ipairs(MainModule.Fly.FakeParts) do
-                part:Destroy()
-            end
-            MainModule.Fly.FakeParts = {}
-            
-            local fakePart = Instance.new("Part")
-            fakePart.Name = "FakeFlightGround"
-            fakePart.Size = Vector3.new(4, 1, 4)
-            fakePart.Transparency = 1
-            fakePart.Anchored = true
-            fakePart.CanCollide = true
-            fakePart.Position = rootPart.Position - Vector3.new(0, 3, 0)
-            fakePart.Parent = workspace
-            table.insert(MainModule.Fly.FakeParts, fakePart)
-            
-            MainModule.Fly.LastPosition = rootPart.Position
-            
-            if humanoid then
+            if MainModule.Fly.HumanoidStateOverride then
                 humanoid:ChangeState(Enum.HumanoidStateType.Running)
-                humanoid.PlatformStand = false
-                humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
-                humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
+            end
+            
+            -- Сбрасываем лишнюю скорость
+            rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            
+        else
+            -- Когда не двигаемся, плавно останавливаемся
+            if MainModule.Fly.BodyVelocity and MainModule.Fly.BodyVelocity.Parent then
+                MainModule.Fly.BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            end
+            
+            if MainModule.Fly.BodyGyro and MainModule.Fly.BodyGyro.Parent then
+                MainModule.Fly.BodyGyro.CFrame = rootPart.CFrame
             end
         end
+        
+        -- Применяем скрытные техники
+        PerformRaycastSpam(character, rootPart)
+        OptimizeNetworkPackets()
+        SimulateNaturalMovement(rootPart, humanoid)
+        
+        -- Обновляем таймеры
+        MainModule.Fly.LastUpdate = tick()
     end)
     
-    MainModule.Fly.SpeedChangeConnection = RunService.Heartbeat:Connect(function()
-        if not MainModule.Fly.Enabled then return end
-        
-        local rootPart = GetRootPart(character)
-        if not rootPart then return end
-        
-        local currentTime = tick()
-        if currentTime - MainModule.Fly.LastGroundCheck > 2 then
-            MainModule.Fly.LastGroundCheck = currentTime
-            
-            local fakeGround = Instance.new("Part")
-            fakeGround.Name = "FlyGroundCheck"
-            fakeGround.Size = Vector3.new(10, 1, 10)
-            fakeGround.Transparency = 1
-            fakeGround.Anchored = true
-            fakeGround.CanCollide = true
-            fakeGround.Position = rootPart.Position - Vector3.new(0, 3, 0)
-            fakeGround.Parent = workspace
-            
-            task.delay(0.5, function()
-                if fakeGround and fakeGround.Parent then
-                    fakeGround:Destroy()
-                end
-            end)
-        end
-    end)
-    
-    if MainModule.Fly.HumanoidDiedConnection then
-        MainModule.Fly.HumanoidDiedConnection:Disconnect()
-    end
+    -- Обработка смерти персонажа
     MainModule.Fly.HumanoidDiedConnection = humanoid.Died:Connect(function()
         MainModule.DisableFlight()
     end)
     
-    if MainModule.Fly.CharacterAddedConnection then
-        MainModule.Fly.CharacterAddedConnection:Disconnect()
-    end
+    -- Обработка смены персонажа
     MainModule.Fly.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newCharacter)
-        task.wait(1)
+        task.wait(0.5)
         
-        if MainModule.Fly.Enabled then
-            task.wait(0.5)
-            MainModule.DisableFlight()
-            task.wait(0.1)
+        if MainModule.Fly.KeybindStates.IsHolding then
+            task.wait(0.2)
             MainModule.EnableFlight()
         end
     end)
     
-    MainModule.Fly.LastGroundCheck = tick()
+    -- Обработка изменения скорости
+    MainModule.Fly.SpeedChangeConnection = RunService.Heartbeat:Connect(function()
+        if not MainModule.Fly.Enabled then return end
+        
+        local currentTime = tick()
+        if currentTime - MainModule.Fly.LastVelocityUpdate > 0.5 then
+            MainModule.Fly.LastVelocityUpdate = currentTime
+            
+            if MainModule.Fly.StealthMode.RandomVelocitySpikes then
+                if currentTime - MainModule.Fly.StealthMode.LastSpikeTime > MainModule.Fly.StealthMode.VelocitySpikeInterval then
+                    MainModule.Fly.StealthMode.LastSpikeTime = currentTime
+                    
+                    if MainModule.Fly.BodyVelocity and MainModule.Fly.BodyVelocity.Parent then
+                        local spike = Vector3.new(
+                            (math.random() * 2 - 1) * MainModule.Fly.StealthMode.SpikeMagnitude,
+                            (math.random() * 2 - 1) * MainModule.Fly.StealthMode.SpikeMagnitude * 0.3,
+                            (math.random() * 2 - 1) * MainModule.Fly.StealthMode.SpikeMagnitude
+                        )
+                        
+                        MainModule.Fly.BodyVelocity.Velocity = MainModule.Fly.BodyVelocity.Velocity + spike
+                        
+                        task.wait(0.05)
+                        
+                        if MainModule.Fly.BodyVelocity and MainModule.Fly.BodyVelocity.Parent then
+                            MainModule.Fly.BodyVelocity.Velocity = MainModule.Fly.BodyVelocity.Velocity - spike
+                        end
+                    end
+                end
+            end
+        end
+    end)
 end
 
 function MainModule.DisableFlight()
     if not MainModule.Fly.Enabled then return end
     
     MainModule.Fly.Enabled = false
+    MainModule.Fly.KeybindStates.IsHolding = false
+    MainModule.Fly.KeybindStates.InputActive = false
     
-    if MainModule.Fly.Connection then
-        MainModule.Fly.Connection:Disconnect()
-        MainModule.Fly.Connection = nil
+    -- Отключаем все соединения
+    local connections = {
+        MainModule.Fly.Connection,
+        MainModule.Fly.SpeedChangeConnection,
+        MainModule.Fly.HumanoidDiedConnection,
+        MainModule.Fly.CharacterAddedConnection
+    }
+    
+    for _, connection in pairs(connections) do
+        if connection then
+            connection:Disconnect()
+        end
     end
     
-    if MainModule.Fly.SpeedChangeConnection then
-        MainModule.Fly.SpeedChangeConnection:Disconnect()
-        MainModule.Fly.SpeedChangeConnection = nil
-    end
+    MainModule.Fly.Connection = nil
+    MainModule.Fly.SpeedChangeConnection = nil
+    MainModule.Fly.HumanoidDiedConnection = nil
+    MainModule.Fly.CharacterAddedConnection = nil
     
-    if MainModule.Fly.HumanoidDiedConnection then
-        MainModule.Fly.HumanoidDiedConnection:Disconnect()
-        MainModule.Fly.HumanoidDiedConnection = nil
-    end
-    
-    if MainModule.Fly.CharacterAddedConnection then
-        MainModule.Fly.CharacterAddedConnection:Disconnect()
-        MainModule.Fly.CharacterAddedConnection = nil
-    end
-    
+    -- Восстанавливаем физические свойства
     local character = GetCharacter()
     if character then
         local rootPart = GetRootPart(character)
         if rootPart then
-            local bv = rootPart:FindFirstChild("FlightVelocity")
-            if bv then
+            -- Удаляем BodyVelocity
+            local bv = rootPart:FindFirstChildOfClass("BodyVelocity")
+            if bv and string.find(bv.Name, "StealthVelocity") then
                 bv:Destroy()
             end
             
-            local bg = rootPart:FindFirstChild("FlightGyro")
-            if bg then
+            -- Удаляем BodyGyro
+            local bg = rootPart:FindFirstChildOfClass("BodyGyro")
+            if bg and string.find(bg.Name, "StealthGyro") then
                 bg:Destroy()
+            end
+            
+            -- Восстанавливаем оригинальные настройки
+            if MainModule.Fly.OriginalContactOffset then
+                rootPart.ContactOffset = MainModule.Fly.OriginalContactOffset
+            end
+            
+            if MainModule.Fly.OriginalCollisionFidelity then
+                rootPart.CollisionFidelity = MainModule.Fly.OriginalCollisionFidelity
             end
             
             rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         end
         
-        local humanoid = GetHumanoid(character)
-        if humanoid then
-            humanoid.PlatformStand = false
+        -- Восстанавливаем коллизии
+        if MainModule.Fly.LegCollisionDisable then
+            for part, canCollide in pairs(MainModule.Fly.CharacterCollisions) do
+                if part and part.Parent then
+                    part.CanCollide = canCollide
+                end
+            end
+            MainModule.Fly.CharacterCollisions = {}
         end
-    end
-    
-    if MainModule.Fly.FakeParts then
-        for _, part in ipairs(MainModule.Fly.FakeParts) do
+        
+        -- Восстанавливаем Massless
+        for part, wasMassless in pairs(MainModule.Fly.MasslessParts) do
             if part and part.Parent then
-                part:Destroy()
+                part.Massless = wasMassless
             end
         end
-        MainModule.Fly.FakeParts = {}
-    end
-    
-    if MainModule.Fly.OriginalStates and character then
+        MainModule.Fly.MasslessParts = {}
+        
+        -- Восстанавливаем состояния Humanoid
         local humanoid = GetHumanoid(character)
-        if humanoid then
-            humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
-            humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
+        if humanoid and MainModule.Fly.OriginalHumanoidStates then
+            humanoid.WalkSpeed = MainModule.Fly.OriginalHumanoidStates.WalkSpeed or 16
+            humanoid.JumpPower = MainModule.Fly.OriginalHumanoidStates.JumpPower or 50
+            humanoid.AutoRotate = MainModule.Fly.OriginalHumanoidStates.AutoRotate ~= nil and MainModule.Fly.OriginalHumanoidStates.AutoRotate or true
+            humanoid.PlatformStand = MainModule.Fly.OriginalHumanoidStates.PlatformStand ~= nil and MainModule.Fly.OriginalHumanoidStates.PlatformStand or false
+            
+            humanoid:ChangeState(Enum.HumanoidStateType.Running)
         end
     end
-    MainModule.Fly.OriginalStates = nil
     
-    if MainModule.Fly.WasRagdollEnabled then
-        MainModule.ToggleBypassRagdoll(true)
-        MainModule.Fly.WasRagdollEnabled = false
-    end
+    -- Очищаем данные
+    MainModule.Fly.OriginalHumanoidStates = {}
+    MainModule.Fly.VelocityHistory = {}
+    MainModule.Fly.SmoothVelocity = Vector3.new(0, 0, 0)
+    MainModule.Fly.VelocityJitter = Vector3.new(0, 0, 0)
 end
 
+-- Функция установки скорости полета
 function MainModule.SetFlySpeed(speed)
-    return 50
+    if typeof(speed) == "number" and speed > 0 then
+        MainModule.Fly.Speed = math.clamp(speed, 1, 500)
+        return MainModule.Fly.Speed
+    end
+    return 39
 end
+
+-- Функция изменения режима бинда
+function MainModule.SetFlyKeybindMode(mode)
+    if mode == "Toggle" or mode == "Hold" then
+        MainModule.Fly.KeybindMode = mode
+        
+        -- Переустанавливаем бинд с новым режимом
+        if MainModule.Fly.Keybind ~= Enum.KeyCode.None then
+            local currentKeybind = MainModule.Fly.Keybind
+            MainModule.ClearFlyKeybind()
+            MainModule.SetFlyKeybind(currentKeybind, mode)
+        end
+        
+        return true
+    end
+    return false
+end
+
+-- Функция проверки активности бинда
+function MainModule.IsFlyKeybindActive()
+    return MainModule.Fly.KeybindStates.InputActive
+end
+
+-- Функция получения состояния полета
+function MainModule.GetFlyState()
+    return {
+        Enabled = MainModule.Fly.Enabled,
+        Speed = MainModule.Fly.Speed,
+        Keybind = MainModule.Fly.Keybind,
+        KeybindMode = MainModule.Fly.KeybindMode,
+        IsHolding = MainModule.Fly.KeybindStates.IsHolding,
+        AntiDetection = MainModule.Fly.AntiDetectionEnabled
+    }
+end
+
+-- Инициализация системы биндов при загрузке
+task.spawn(function()
+    task.wait(1)
+    
+    -- Автоматическая установка бинда если нужно
+    if MainModule.Fly.Keybind ~= Enum.KeyCode.None then
+        MainModule.SetFlyKeybind(MainModule.Fly.Keybind, MainModule.Fly.KeybindMode)
+    end
+end)
 
 local function saveOriginalState(character)
     if not character then return end
@@ -4316,3 +4787,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
