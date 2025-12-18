@@ -514,7 +514,7 @@ local function KillEnemy(enemyName)
             }
         }
         local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("FiredGunClient")
-        remote:FireServer(unpack(args))
+        remote:FireServer(table.unpack(args))  -- Используем table.unpack вместо unpack
     end)
 end
 
@@ -3759,4 +3759,5 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
