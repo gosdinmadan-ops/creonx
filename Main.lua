@@ -492,8 +492,10 @@ local function KillEnemy(enemyName)
         local enemyTag = enemy:FindFirstChild("Enemy")
         local deadTag = enemy:FindFirstChild("Dead")
         if not enemyTag or deadTag then return end
+        
         local gun = GetPlayerGun()
         if not gun then return end
+        
         local args = {
             gun,
             {
@@ -513,7 +515,7 @@ local function KillEnemy(enemyName)
         }
         local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("FiredGunClient")
         remote:FireServer(unpack(args))
-    end
+    end)
 end
 
 local function showNotification(title, text, duration)
@@ -523,7 +525,7 @@ local function showNotification(title, text, duration)
             Text = text or "",
             Duration = duration or 3
         })
-    end
+    end)
 end
 
 -- AutoDodge новая логика
@@ -3757,3 +3759,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
