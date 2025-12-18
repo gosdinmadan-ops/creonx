@@ -137,8 +137,8 @@ MainModule.Fly = {
         AdaptiveOptimization = true
     },
     
-    -- Система биндов
-    Keybind = Enum.KeyCode.None,
+    -- Система биндов (по умолчанию Insert)
+    Keybind = Enum.KeyCode.Insert,
     KeybindConnection = nil,
     KeybindEndConnection = nil,
     ToggleDebounce = false,
@@ -3446,6 +3446,10 @@ end
 
 -- Функция для установки бинда
 function MainModule.SetFlyKeybind(keyCode, mode)
+    if keyCode == nil then
+        keyCode = Enum.KeyCode.Insert
+    end
+    
     if typeof(keyCode) == "EnumItem" and keyCode.EnumType == Enum.KeyCode then
         -- Отключаем предыдущие соединения
         if MainModule.Fly.KeybindConnection then
@@ -3522,7 +3526,7 @@ function MainModule.ClearFlyKeybind()
         MainModule.Fly.KeybindEndConnection = nil
     end
     
-    MainModule.Fly.Keybind = Enum.KeyCode.None
+    MainModule.Fly.Keybind = Enum.KeyCode.Insert
     MainModule.Fly.KeybindStates = {
         IsHolding = false,
         WasToggled = false,
@@ -3843,7 +3847,7 @@ function MainModule.SetFlyKeybindMode(mode)
         MainModule.Fly.KeybindMode = mode
         
         -- Переустанавливаем бинд с новым режимом
-        if MainModule.Fly.Keybind ~= Enum.KeyCode.None then
+        if MainModule.Fly.Keybind ~= Enum.KeyCode.Insert then
             local currentKeybind = MainModule.Fly.Keybind
             MainModule.ClearFlyKeybind()
             MainModule.SetFlyKeybind(currentKeybind, mode)
@@ -3871,14 +3875,29 @@ function MainModule.GetFlyState()
     }
 end
 
--- Инициализация системы биндов при загрузке
+-- Автоматическая инициализация бинда при загрузке
 task.spawn(function()
-    task.wait(1)
+    task.wait(2)
     
-    -- Автоматическая установка бинда если нужно
-    if MainModule.Fly.Keybind ~= Enum.KeyCode.None then
-        MainModule.SetFlyKeybind(MainModule.Fly.Keybind, MainModule.Fly.KeybindMode)
+    print("[Fly Module] Инициализация бинда на Insert...")
+    MainModule.SetFlyKeybind(Enum.KeyCode.Insert, "Toggle")
+    
+    -- Дополнительная защита от повторной инициализации
+    if not MainModule.Fly.KeybindConnection then
+        MainModule.Fly.KeybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            if gameProcessed then return end
+            
+            if input.KeyCode == Enum.KeyCode.Insert then
+                local currentTime = tick()
+                if currentTime - MainModule.Fly.LastToggleTime > MainModule.Fly.ToggleCooldown then
+                    MainModule.Fly.LastToggleTime = currentTime
+                    MainModule.ToggleFly(not MainModule.Fly.Enabled)
+                end
+            end
+        end)
     end
+    
+    print("[Fly Module] Бинд успешно установлен на Insert")
 end)
 
 local function saveOriginalState(character)
@@ -4787,4 +4806,5 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
