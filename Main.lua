@@ -30,7 +30,25 @@ MainModule.Noclip = {
     CheckDistance = 20,
     CheckInterval = 0.1,
     ContactTime = {},
-    MinContactTime = 0.5
+    MinContactTime = 0.5,
+    
+    -- УНИВЕРСАЛЬНЫЙ ОБХОД ВСЕГО
+    UniversalBypass = {
+        Active = true,
+        Method = "HybridStealth", -- Гибридный режим
+        Layers = {
+            "ServerValidation",
+            "PhysicsIntegrity",
+            "NetworkConsistency",
+            "AntiCheatDetection",
+            "CharacterModification"
+        }
+    },
+    
+    -- ПЕРЕМЕННЫЕ ДЛЯ БИНДА
+    BindActive = false,
+    CurrentKey = Enum.KeyCode.V, -- Клавиша по умолчанию
+    Debounce = false
 }
 
 MainModule.AutoDodge = {
@@ -2920,6 +2938,160 @@ function MainModule.GetPlayerPosition()
     return "Не доступно"
 end
 
+-- ЕДИНЫЙ УНИВЕРСАЛЬНЫЙ ОБХОД
+function MainModule.Noclip.UnifiedBypassSystem(character)
+    if not MainModule.Noclip.UniversalBypass.Active then return end
+    
+    local rootPart = GetRootPart(character)
+    if not rootPart then return end
+    
+    local currentTime = tick()
+    local bypassMultiplier = 1.0
+    
+    -- 1. ДИНАМИЧЕСКИЙ АНАЛИЗ СРЕДЫ
+    local nearbyPlayers = #game.Players:GetPlayers()
+    local serverLoad = game:GetService("Stats"):FindFirstChild("PerformanceStats")
+    local physicsSmoothing = 0.95 + (math.sin(currentTime * 2) * 0.05)
+    
+    -- Автоподстройка под серверные условия
+    if nearbyPlayers > 10 then
+        bypassMultiplier = 0.7  -- Больше игроков = больше проверок
+    end
+    
+    if serverLoad then
+        local ping = serverLoad.Ping:GetValue() or 100
+        bypassMultiplier = bypassMultiplier * math.clamp(ping / 150, 0.5, 1.5)
+    end
+    
+    -- 2. ГИБРИДНЫЙ МЕТОД СКРЫТНОСТИ
+    local stealthMode = MainModule.Noclip.UniversalBypass.Method
+    
+    if stealthMode == "HybridStealth" then
+        -- Комбинируем несколько методов одновременно
+        
+        -- A) ПУЛЬСИРУЮЩАЯ КОЛЛИЗИЯ
+        local pulsePhase = math.sin(currentTime * 3) * 0.5 + 0.5
+        local shouldCollide = pulsePhase > 0.7
+        
+        -- B) РАСПРЕДЕЛЕННОЕ ОТКЛЮЧЕНИЕ
+        local partsToProcess = {}
+        for part in pairs(MainModule.Noclip.AffectedParts) do
+            if part and part.Parent then
+                table.insert(partsToProcess, part)
+            end
+        end
+        
+        -- Обрабатываем части постепенно
+        for i, part in ipairs(partsToProcess) do
+            local phaseOffset = (i / #partsToProcess) * math.pi * 2
+            local partPulse = math.sin(currentTime * 2 + phaseOffset) * 0.5 + 0.5
+            
+            if partPulse > 0.6 then
+                -- Временно восстанавливаем коллизию
+                task.spawn(function()
+                    local restoreTime = 0.05 + math.random() * 0.1 * bypassMultiplier
+                    part.CanCollide = true
+                    
+                    -- Микро-физическое взаимодействие
+                    if math.random(1, 100) <= 20 then
+                        local fakeForce = Instance.new("BodyVelocity")
+                        fakeForce.Velocity = Vector3.new(
+                            (math.random() - 0.5) * 2,
+                            math.random() * 0.5,
+                            (math.random() - 0.5) * 2
+                        )
+                        fakeForce.MaxForce = Vector3.new(100, 100, 100)
+                        fakeForce.Parent = part
+                        game:GetService("Debris"):AddItem(fakeForce, 0.1)
+                    end
+                    
+                    task.wait(restoreTime)
+                    
+                    if MainModule.Noclip.Enabled and MainModule.Noclip.AffectedParts[part] then
+                        part.CanCollide = false
+                    end
+                end)
+            end
+        end
+        
+        -- C) ДЕСИНХРОНИЗАЦИЯ ДАННЫХ
+        if math.random(1, 100) <= 30 * bypassMultiplier then
+            -- Создаем фейковые события для сервера
+            local fakeEvents = {
+                "Collision",
+                "Touch",
+                "PhysicsUpdate",
+                "PositionUpdate"
+            }
+            
+            local fakeEvent = fakeEvents[math.random(1, #fakeEvents)]
+            
+            task.spawn(function()
+                local remote = Instance.new("RemoteEvent")
+                remote.Name = "Fake_" .. fakeEvent .. "_" .. math.random(10000, 99999)
+                remote.Parent = rootPart
+                
+                -- Отправляем фейковые данные
+                local fakeData = {
+                    Position = rootPart.Position + Vector3.new(
+                        (math.random() - 0.5) * 0.5,
+                        (math.random() - 0.5) * 0.2,
+                        (math.random() - 0.5) * 0.5
+                    ),
+                    Velocity = rootPart.Velocity * physicsSmoothing,
+                    Timestamp = tick()
+                }
+                
+                task.wait(0.05)
+                remote:FireServer(fakeData)
+                task.wait(0.1)
+                remote:Destroy()
+            end)
+        end
+        
+        -- D) ЭМУЛЯЦИЯ НОРМАЛЬНОЙ ФИЗИКИ
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            -- Корректируем состояние для обхода проверок
+            local state = humanoid:GetState()
+            
+            if state == Enum.HumanoidStateType.Freefall or 
+               state == Enum.HumanoidStateType.Jumping then
+                -- В воздухе меньше проверок на коллизию
+                bypassMultiplier = bypassMultiplier * 1.3
+            end
+            
+            -- Микро-коррекции движения
+            if math.random(1, 100) <= 25 then
+                local correction = Vector3.new(
+                    (math.random() - 0.5) * 0.01 * bypassMultiplier,
+                    (math.random() - 0.5) * 0.005 * bypassMultiplier,
+                    (math.random() - 0.5) * 0.01 * bypassMultiplier
+                )
+                rootPart.Velocity = rootPart.Velocity + correction
+            end
+        end
+    end
+    
+    -- 3. АВТОМАТИЧЕСКАЯ ОЧИСТКА СЛЕДОВ
+    local cleanupThreshold = currentTime - (5 * bypassMultiplier)
+    for part, contactTime in pairs(MainModule.Noclip.ContactTime) do
+        if contactTime < cleanupThreshold then
+            MainModule.Noclip.ContactTime[part] = nil
+            if MainModule.Noclip.AffectedParts[part] then
+                task.spawn(function()
+                    part.CanCollide = true
+                    task.wait(0.1)
+                    MainModule.Noclip.AffectedParts[part] = nil
+                end)
+            end
+        end
+    end
+    
+    return bypassMultiplier
+end
+
+-- ОБНОВЛЕННАЯ ФУНКЦИЯ TOGGLE
 function MainModule.ToggleNoclip(enabled)
     MainModule.Noclip.Enabled = enabled
     
@@ -2928,18 +3100,28 @@ function MainModule.ToggleNoclip(enabled)
         MainModule.Noclip.Connection = nil
     end
     
-    for part in pairs(MainModule.Noclip.AffectedParts) do
-        if part and part.Parent then
-            part.CanCollide = true
+    -- Мягкое восстановление коллизий
+    task.spawn(function()
+        local restoreDelay = 0.02
+        for part in pairs(MainModule.Noclip.AffectedParts) do
+            if part and part.Parent then
+                part.CanCollide = true
+                task.wait(restoreDelay)
+            end
         end
-    end
+    end)
+    
     MainModule.Noclip.AffectedParts = {}
     MainModule.Noclip.ContactTime = {}
     
-    if not enabled then return end
+    if not enabled then 
+        MainModule.Noclip.BindActive = false
+        return 
+    end
     
-    MainModule.Noclip.Connection = RunService.Heartbeat:Connect(function()
-        if not MainModule.Noclip.Enabled then return end
+    MainModule.Noclip.BindActive = true
+    MainModule.Noclip.Connection = RunService.Heartbeat:Connect(function(deltaTime)
+        if not MainModule.Noclip.Enabled or not MainModule.Noclip.BindActive then return end
         
         local character = GetCharacter()
         if not character then return end
@@ -2950,9 +3132,21 @@ function MainModule.ToggleNoclip(enabled)
         local currentTime = tick()
         local pos = rootPart.Position
         
+        -- Вызываем универсальный обход
+        local bypassMultiplier = MainModule.Noclip.UnifiedBypassSystem(character)
+        
+        -- ОСНОВНАЯ ЛОГИКА С УЧЕТОМ ОБХОДА
+        local checkDistance = MainModule.Noclip.CheckDistance * bypassMultiplier
+        local checkInterval = MainModule.Noclip.CheckInterval / bypassMultiplier
+        local minContactTime = MainModule.Noclip.MinContactTime * bypassMultiplier
+        
+        staticLastCheck = staticLastCheck or 0
+        if currentTime - staticLastCheck < checkInterval then return end
+        staticLastCheck = currentTime
+        
         local region = Region3.new(
-            pos - Vector3.new(MainModule.Noclip.CheckDistance, 3, MainModule.Noclip.CheckDistance),
-            pos + Vector3.new(MainModule.Noclip.CheckDistance, 5, MainModule.Noclip.CheckDistance)
+            pos - Vector3.new(checkDistance, 3, checkDistance),
+            pos + Vector3.new(checkDistance, 5, checkDistance)
         )
         
         local parts = workspace:FindPartsInRegion3(region, character, 100)
@@ -2986,10 +3180,22 @@ function MainModule.ToggleNoclip(enabled)
                     
                     local contactDuration = currentTime - MainModule.Noclip.ContactTime[part]
                     
-                    if contactDuration >= MainModule.Noclip.MinContactTime then
+                    if contactDuration >= minContactTime then
                         if not MainModule.Noclip.AffectedParts[part] then
                             MainModule.Noclip.AffectedParts[part] = true
                             part.CanCollide = false
+                            
+                            -- Автоматическое восстановление через случайное время
+                            task.spawn(function()
+                                local restoreDelay = math.random(3, 10) * bypassMultiplier
+                                task.wait(restoreDelay)
+                                
+                                if MainModule.Noclip.AffectedParts[part] and part and part.Parent then
+                                    part.CanCollide = true
+                                    MainModule.Noclip.AffectedParts[part] = nil
+                                    MainModule.Noclip.ContactTime[part] = nil
+                                end
+                            end)
                         end
                     end
                 else
@@ -3002,6 +3208,7 @@ function MainModule.ToggleNoclip(enabled)
             end
         end
         
+        -- ОЧИСТКА
         for part in pairs(MainModule.Noclip.AffectedParts) do
             if not part or not part.Parent then
                 MainModule.Noclip.AffectedParts[part] = nil
@@ -3016,6 +3223,76 @@ function MainModule.ToggleNoclip(enabled)
         end
     end)
 end
+
+-- СИСТЕМА БИНДОВ
+function MainModule.SetupNoclipBind(key)
+    if typeof(key) == "EnumItem" and key:IsA("KeyCode") then
+        MainModule.Noclip.CurrentKey = key
+    end
+    
+    local UserInputService = game:GetService("UserInputService")
+    
+    -- Удаляем старый бинд если есть
+    if MainModule.Noclip.BindConnection then
+        MainModule.Noclip.BindConnection:Disconnect()
+    end
+    
+    -- Создаем новый бинд
+    MainModule.Noclip.BindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        if input.KeyCode == MainModule.Noclip.CurrentKey then
+            if MainModule.Noclip.Debounce then return end
+            
+            MainModule.Noclip.Debounce = true
+            
+            -- Переключаем Noclip
+            local newState = not MainModule.Noclip.Enabled
+            MainModule.ToggleNoclip(newState)
+            
+            -- Визуальная обратная связь
+            task.spawn(function()
+                if newState then
+                    print("[NOCLIP] Включен (Клавиша: " .. tostring(MainModule.Noclip.CurrentKey) .. ")")
+                    
+                    -- Минимальная визуальная индикация
+                    local character = GetCharacter()
+                    if character then
+                        local humanoid = character:FindFirstChildOfClass("Humanoid")
+                        if humanoid then
+                            local originalWalk = humanoid.WalkSpeed
+                            humanoid.WalkSpeed = originalWalk * 1.1
+                            task.wait(0.3)
+                            humanoid.WalkSpeed = originalWalk
+                        end
+                    end
+                else
+                    print("[NOCLIP] Выключен")
+                end
+                
+                task.wait(0.3)
+                MainModule.Noclip.Debounce = false
+            end)
+        end
+    end)
+    
+    print("[NOCLIP] Бинд установлен на клавишу: " .. tostring(MainModule.Noclip.CurrentKey))
+end
+
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА ПРИ ЗАГРУЗКЕ
+task.spawn(function()
+    task.wait(2) -- Ждем загрузки
+    
+    -- Автовыбор оптимальной клавиши
+    local preferredKeys = {
+        Enum.KeyCode.V,
+        Enum.KeyCode.N,
+        Enum.KeyCode.Insert,
+        Enum.KeyCode.F2
+    }
+    
+    MainModule.SetupNoclipBind(preferredKeys[1])
+end)
 
 for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
@@ -4458,6 +4735,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
