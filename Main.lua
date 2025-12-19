@@ -80,31 +80,6 @@ MainModule.Fly = {
     LastPosition = Vector3.zero
 }
 
--- Ultra Stealth Fly Module - Минималистичный и максимально скрытный
-MainModule.Fly = {
-    Enabled = false,
-    Speed = 39,
-    Connection = nil,
-    BodyVelocity = nil,
-    LastUpdate = 0,
-    OriginalWalkSpeed = 16,
-    BindKey = Enum.KeyCode.Insert,
-    BindConnection = nil,
-    AntiCheatEnabled = true,
-    VelocityRandomization = false, -- Выключено для стабильности
-    GroundCheckInterval = 0,
-    HumanoidDiedConnection = nil,
-    CharacterAddedConnection = nil,
-    VelocityHistory = {},
-    LastVelocityChange = 0,
-    IsFlying = false,
-    NoGyro = true, -- Без гироскопа для свободы вращения
-    SmoothingFactor = 0.85, -- Фактор сглаживания
-    MaxVelocityChange = 15, -- Максимальное изменение скорости за кадр
-    AntiStuckEnabled = true,
-    LastPosition = Vector3.zero
-}
-
 -- Таблица байпасов
 local BypassMethods = {
     NetworkOwnership = function(rootPart)
@@ -4483,6 +4458,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
