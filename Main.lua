@@ -55,69 +55,54 @@ MainModule.AutoDodge = {
     RangeUpdateInterval = 0.5
 }
 
--- Улучшенный Fly Module с усиленной скрытностью и байпасами
--- ВНИМАНИЕ: Только для образовательных целей на приватных серверах
-
+-- Ultra Stealth Fly Module - Минималистичный и максимально скрытный
 MainModule.Fly = {
     Enabled = false,
-    Speed = 39, -- Оптимальная скорость для естественного движения
+    Speed = 39,
     Connection = nil,
     BodyVelocity = nil,
-    BodyGyro = nil,
+    LastUpdate = 0,
+    OriginalWalkSpeed = 16,
+    BindKey = Enum.KeyCode.Insert,
+    BindConnection = nil,
+    AntiCheatEnabled = true,
+    VelocityRandomization = false, -- Выключено для стабильности
+    GroundCheckInterval = 0,
     HumanoidDiedConnection = nil,
     CharacterAddedConnection = nil,
-    SpeedChangeConnection = nil,
-    RenderConnection = nil,
-    PhysicsConnection = nil,
-    StealthConnection = nil,
-    LastUpdate = 0,
-    LastPosition = Vector3.new(0, 0, 0),
-    OriginalStates = {},
-    FakeParts = {},
+    VelocityHistory = {},
+    LastVelocityChange = 0,
     IsFlying = false,
-    BindKey = Enum.KeyCode.Insert, -- Клавиша по умолчанию
-    IsBinding = false,
+    NoGyro = true, -- Без гироскопа для свободы вращения
+    SmoothingFactor = 0.85, -- Фактор сглаживания
+    MaxVelocityChange = 15, -- Максимальное изменение скорости за кадр
+    AntiStuckEnabled = true,
+    LastPosition = Vector3.zero
+}
+
+-- Ultra Stealth Fly Module - Минималистичный и максимально скрытный
+MainModule.Fly = {
+    Enabled = false,
+    Speed = 39,
+    Connection = nil,
+    BodyVelocity = nil,
+    LastUpdate = 0,
+    OriginalWalkSpeed = 16,
+    BindKey = Enum.KeyCode.Insert,
     BindConnection = nil,
-    VelocityNoiseEnabled = true, -- Добавляет случайный шум к скорости для обхода детекта
-    FakePhysicsEnabled = true, -- Эмулирует физику для обхода античитов
-    AntiCheatBypassEnabled = true, -- Основной байпас
-    SmoothMovement = true, -- Плавное движение
-    MovementHistory = {}, -- История движений для анализа
-    LastVelocityCheck = 0,
-    GroundCheckCounter = 0,
-    NetworkOwnershipTime = 0,
-    TeleportProtectionEnabled = true,
-    HumanoidStateProtection = true,
-    AntiStuckProtection = true,
-    LastStuckCheck = 0,
-    FakeGravitySimulation = false, -- Симуляция гравитации
-    VelocityRandomization = {
-        Enabled = true,
-        MinFactor = 0.95,
-        MaxFactor = 1.05,
-        UpdateInterval = 0.3
-    },
-    CameraSmoothing = {
-        Enabled = true,
-        Smoothness = 0.15
-    },
-    AntiCheatPatterns = {
-        -- Паттерны для обхода античитов
-        VelocityPatterns = {
-            "LinearVelocityCheck",
-            "VelocitySpikeDetection",
-            "AntiFlyVelocityMonitor",
-            "BodyVelocityDetector",
-            "NetworkOwnershipCheck"
-        },
-        CharacterPatterns = {
-            "CharacterModifiedCheck",
-            "HumanoidStateMonitor",
-            "AntiNoclipDetector",
-            "PhysicsIntegrityCheck",
-            "CFrameVelocityMismatch"
-        }
-    }
+    AntiCheatEnabled = true,
+    VelocityRandomization = false, -- Выключено для стабильности
+    GroundCheckInterval = 0,
+    HumanoidDiedConnection = nil,
+    CharacterAddedConnection = nil,
+    VelocityHistory = {},
+    LastVelocityChange = 0,
+    IsFlying = false,
+    NoGyro = true, -- Без гироскопа для свободы вращения
+    SmoothingFactor = 0.85, -- Фактор сглаживания
+    MaxVelocityChange = 15, -- Максимальное изменение скорости за кадр
+    AntiStuckEnabled = true,
+    LastPosition = Vector3.zero
 }
 
 -- Таблица байпасов
@@ -3239,291 +3224,150 @@ function MainModule.TeleportToHider()
     return true
 end
 
+-- Создаем рандомайзер для естественных отклонений
+local Randomizer = Random.new(tick())
 
--- Таблица байпасов
-local BypassMethods = {
-    NetworkOwnership = function(rootPart)
-        -- Безопасное получение сетевого владения
-        if rootPart and rootPart:IsA("BasePart") then
-            pcall(function()
-                rootPart:SetNetworkOwner(nil)
-                task.wait(0.05)
-                rootPart:SetNetworkOwner(LocalPlayer)
-            end)
-        end
-    end,
-    
-    VelocityNormalization = function(velocity)
-        -- Нормализация скорости для обхода детектов
-        if not velocity then return Vector3.new(0, 0, 0) end
-        
-        -- Добавление случайного шума
-        local randomFactor = Random.new(tick()):NextNumber(0.98, 1.02)
-        return velocity * randomFactor
-    end,
-    
-    CharacterIntegrity = function(character)
-        -- Проверка целостности персонажа
-        if not character then return false end
-        
-        -- Проверка на наличие подозрительных изменений
-        local rootPart = character:FindFirstChild("HumanoidRootPart")
-        if rootPart then
-            -- Удаление возможных маркеров античита
-            for _, obj in pairs(rootPart:GetChildren()) do
-                if obj.Name:find("AntiCheat") or obj.Name:find("Detector") then
-                    pcall(function() obj:Destroy() end)
-                end
-            end
-        end
-        return true
-    end,
-    
-    PhysicsIntegrity = function(rootPart)
-        -- Байпас проверок физики
-        if not rootPart then return end
-        
-        -- Симуляция естественной физики
-        local velocity = rootPart.AssemblyLinearVelocity
-        if velocity.Magnitude > 100 then
-            -- Нормализация высокой скорости
-            rootPart.AssemblyLinearVelocity = velocity.Unit * math.min(velocity.Magnitude, 85)
-        end
-    end,
-    
-    AntiStuck = function(rootPart, lastPosition)
-        -- Защита от застревания
-        if not rootPart or not lastPosition then return false end
-        
-        local distance = (rootPart.Position - lastPosition).Magnitude
-        if distance < 0.1 then
-            -- Персонаж застрял, применяем корректировку
-            rootPart.AssemblyLinearVelocity = Vector3.new(
-                Random.new():NextNumber(-5, 5),
-                2,
-                Random.new():NextNumber(-5, 5)
-            )
-            return true
-        end
-        return false
-    end,
-    
-    PatternEvasion = function()
-        -- Обход паттернов античитов
-        local patterns = MainModule.Fly.AntiCheatPatterns
-        
-        -- Случайная задержка для нарушения паттернов
-        local delay = Random.new():NextNumber(0.01, 0.05)
-        task.wait(delay)
-        
-        -- Изменение порядка операций
-        if Random.new():NextInteger(1, 10) > 5 then
-            task.wait(0.02)
-        end
-    end
-}
-
--- Вспомогательные функции
-local function GetCharacter()
-    return LocalPlayer.Character
-end
-
-local function GetHumanoid(character)
-    return character and character:FindFirstChildOfClass("Humanoid")
-end
-
-local function GetRootPart(character)
-    if character then
-        local humanoid = GetHumanoid(character)
-        if humanoid then
-            return humanoid.RootPart or character:FindFirstChild("HumanoidRootPart")
-        end
-    end
-    return nil
-end
-
-local function CleanupFlightObjects()
-    -- Очистка всех объектов полета
-    local character = GetCharacter()
-    if character then
-        local rootPart = GetRootPart(character)
-        if rootPart then
-            for _, obj in pairs(rootPart:GetChildren()) do
-                if obj.Name == "FlightVelocity" or obj.Name == "FlightGyro" or 
-                   obj.Name:find("Fly") or obj.Name:find("Flight") then
-                    pcall(function() obj:Destroy() end)
-                end
-            end
-        end
-    end
-    
-    -- Очистка поддельных частей
-    if MainModule.Fly.FakeParts then
-        for _, part in ipairs(MainModule.Fly.FakeParts) do
-            pcall(function() part:Destroy() end)
-        end
-        MainModule.Fly.FakeParts = {}
-    end
-end
-
-local function ApplyVelocityBypass(velocity, rootPart)
-    -- Применение байпасов к скорости
-    if not MainModule.Fly.AntiCheatBypassEnabled then
+-- Байпас античита: метод минимальных изменений
+local function ApplyAntiCheatBypass(rootPart, velocity)
+    if not MainModule.Fly.AntiCheatEnabled then
         return velocity
     end
     
-    -- Байпас паттернов
-    BypassMethods.PatternEvasion()
+    -- Метод 1: Периодическое сброс сетевого владения (очень редко)
+    if tick() - MainModule.Fly.LastUpdate > 10 then
+        pcall(function()
+            rootPart:SetNetworkOwner(nil)
+            task.wait(0.01)
+            rootPart:SetNetworkOwner(LocalPlayer)
+        end)
+    end
     
-    -- Нормализация скорости
-    local processedVelocity = BypassMethods.VelocityNormalization(velocity)
-    
-    -- Применение рандомизации
-    if MainModule.Fly.VelocityRandomization.Enabled then
-        local randomFactor = Random.new():NextNumber(
-            MainModule.Fly.VelocityRandomization.MinFactor,
-            MainModule.Fly.VelocityRandomization.MaxFactor
+    -- Метод 2: Небольшие естественные отклонения
+    if Randomizer:NextInteger(1, 100) > 95 then -- Только 5% времени
+        local randomOffset = Vector3.new(
+            Randomizer:NextNumber(-0.5, 0.5),
+            Randomizer:NextNumber(-0.5, 0.5),
+            Randomizer:NextNumber(-0.5, 0.5)
         )
-        processedVelocity = processedVelocity * randomFactor
+        velocity = velocity + randomOffset
     end
     
-    -- Проверка физики
-    if rootPart then
-        BypassMethods.PhysicsIntegrity(rootPart)
-    end
-    
-    return processedVelocity
-end
-
-local function UpdateMovementHistory(position, velocity)
-    -- Обновление истории движений для анализа
-    table.insert(MainModule.Fly.MovementHistory, {
-        Time = tick(),
-        Position = position,
-        Velocity = velocity
-    })
-    
-    -- Ограничение размера истории
-    if #MainModule.Fly.MovementHistory > 50 then
-        table.remove(MainModule.Fly.MovementHistory, 1)
-    end
-end
-
-local function CheckForStuck(position)
-    -- Проверка на застревание
-    local currentTime = tick()
-    if currentTime - MainModule.Fly.LastStuckCheck > 1 then
-        MainModule.Fly.LastStuckCheck = currentTime
-        
-        if #MainModule.Fly.MovementHistory >= 3 then
-            local recentPositions = {}
-            for i = math.max(1, #MainModule.Fly.MovementHistory - 2), #MainModule.Fly.MovementHistory do
-                table.insert(recentPositions, MainModule.Fly.MovementHistory[i].Position)
-            end
-            
-            local maxDistance = 0
-            for i = 1, #recentPositions - 1 do
-                local distance = (recentPositions[i] - recentPositions[i + 1]).Magnitude
-                maxDistance = math.max(maxDistance, distance)
-            end
-            
-            return maxDistance < 0.5
+    -- Метод 3: Ограничение резких изменений скорости
+    local lastVelocity = MainModule.Fly.VelocityHistory[#MainModule.Fly.VelocityHistory]
+    if lastVelocity then
+        local velocityChange = (velocity - lastVelocity).Magnitude
+        if velocityChange > MainModule.Fly.MaxVelocityChange then
+            -- Плавное изменение скорости
+            local direction = (velocity - lastVelocity).Unit
+            velocity = lastVelocity + (direction * MainModule.Fly.MaxVelocityChange)
         end
     end
+    
+    -- Обновляем историю скоростей
+    table.insert(MainModule.Fly.VelocityHistory, velocity)
+    if #MainModule.Fly.VelocityHistory > 30 then
+        table.remove(MainModule.Fly.VelocityHistory, 1)
+    end
+    
+    return velocity
+end
+
+-- Проверка на застревание
+local function CheckAndFixStuck(rootPart, currentPos)
+    if not MainModule.Fly.AntiStuckEnabled then return false end
+    
+    local lastPos = MainModule.Fly.LastPosition
+    MainModule.Fly.LastPosition = currentPos
+    
+    if lastPos == Vector3.zero then return false end
+    
+    local distance = (currentPos - lastPos).Magnitude
+    if distance < 0.1 and tick() - MainModule.Fly.LastVelocityChange > 0.5 then
+        -- Персонаж застрял, аккуратно выталкиваем
+        local randomPush = Vector3.new(
+            Randomizer:NextNumber(-3, 3),
+            Randomizer:NextNumber(1, 3),
+            Randomizer:NextNumber(-3, 3)
+        )
+        rootPart.Velocity = randomPush
+        return true
+    end
+    
     return false
 end
 
--- Основные функции Fly Module
-function MainModule.ToggleFly(enabled)
-    if enabled then
-        MainModule.EnableFlight()
-    else
-        MainModule.DisableFlight()
+-- Функция бинда клавиши
+function MainModule.BindFlyKey(keyCode)
+    if MainModule.Fly.BindConnection then
+        MainModule.Fly.BindConnection:Disconnect()
+        MainModule.Fly.BindConnection = nil
     end
+    
+    MainModule.Fly.BindKey = keyCode or Enum.KeyCode.Insert
+    
+    MainModule.Fly.BindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        if input.KeyCode == MainModule.Fly.BindKey then
+            MainModule.ToggleFly(not MainModule.Fly.Enabled)
+        end
+    end)
+    
+    return MainModule.Fly.BindKey
 end
 
+-- Включение флая
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
-    print("[Fly] Enabling flight with advanced stealth...")
-    
-    -- Инициализация
-    MainModule.Fly.Enabled = true
-    MainModule.Fly.IsFlying = true
-    
-    -- Очистка предыдущих соединений
-    CleanupFlightObjects()
+    print("[Fly] Enabling stealth flight...")
     
     local character = GetCharacter()
     if not character then 
-        MainModule.Fly.Enabled = false
+        warn("[Fly] No character found")
         return 
-    end
-    
-    -- Применение байпаса целостности персонажа
-    if not BypassMethods.CharacterIntegrity(character) then
-        warn("[Fly] Character integrity check failed!")
-        MainModule.Fly.Enabled = false
-        return
     end
     
     local humanoid = GetHumanoid(character)
     local rootPart = GetRootPart(character)
     
     if not (humanoid and rootPart) then
-        MainModule.Fly.Enabled = false
+        warn("[Fly] No humanoid or root part found")
         return
     end
     
-    -- Сохранение оригинальных состояний
-    MainModule.Fly.OriginalStates = {
-        WalkSpeed = humanoid.WalkSpeed,
-        JumpPower = humanoid.JumpPower,
-        PlatformStand = humanoid.PlatformStand,
-        AutoRotate = humanoid.AutoRotate
-    }
+    -- Сохраняем оригинальные значения
+    MainModule.Fly.OriginalWalkSpeed = humanoid.WalkSpeed
+    MainModule.Fly.Enabled = true
+    MainModule.Fly.IsFlying = true
+    MainModule.Fly.LastPosition = rootPart.Position
     
-    -- Настройка человечка для полета
-    humanoid.PlatformStand = false
+    -- Отключаем автоматическое вращение
     humanoid.AutoRotate = false
     
-    -- Создание физических объектов для полета
+    -- Создаем BodyVelocity (минимальный профиль)
     local flightBodyVelocity = Instance.new("BodyVelocity")
-    flightBodyVelocity.Name = "FlightVelocity"
-    flightBodyVelocity.MaxForce = Vector3.new(100000, 100000, 100000)
-    flightBodyVelocity.P = 12500
+    flightBodyVelocity.Name = "BV_Stealth"
+    flightBodyVelocity.MaxForce = Vector3.new(40000, 40000, 40000)
+    flightBodyVelocity.P = 1250
     flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
     
-    local flightBodyGyro = Instance.new("BodyGyro")
-    flightBodyGyro.Name = "FlightGyro"
-    flightBodyGyro.MaxTorque = Vector3.new(100000, 100000, 100000)
-    flightBodyGyro.P = 12500
-    flightBodyGyro.D = 500
-    
-    -- Безопасная установка родителя
+    -- Безопасно назначаем родителя
     pcall(function()
         flightBodyVelocity.Parent = rootPart
-        flightBodyGyro.Parent = rootPart
     end)
     
     MainModule.Fly.BodyVelocity = flightBodyVelocity
-    MainModule.Fly.BodyGyro = flightBodyGyro
+    MainModule.Fly.VelocityHistory = {}
     
-    -- Получение сетевого владения
-    BypassMethods.NetworkOwnership(rootPart)
-    
-    -- Основное соединение для полета
+    -- Основной цикл флая
     MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
-        if not MainModule.Fly.Enabled then 
-            return 
-        end
-        
-        character = GetCharacter()
-        if not character or not character.Parent then 
+        if not MainModule.Fly.Enabled or not character or not character.Parent then 
             MainModule.DisableFlight()
             return 
         end
         
+        -- Обновляем ссылки
         rootPart = GetRootPart(character)
         humanoid = GetHumanoid(character)
         
@@ -3535,149 +3379,78 @@ function MainModule.EnableFlight()
         local Camera = workspace.CurrentCamera
         if not Camera then return end
         
-        -- Обработка ввода для движения
-        local moveDirection = Vector3.new(0, 0, 0)
-        local isMoving = false
+        -- Получаем направление от камеры
+        local lookVector = Camera.CFrame.LookVector
+        local rightVector = Camera.CFrame.RightVector
         
-        -- W/S - вперед/назад
+        -- Вычисляем вектор движения
+        local moveDirection = Vector3.new(0, 0, 0)
+        
+        -- Обработка клавиш движения
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-            moveDirection = moveDirection + Camera.CFrame.LookVector
-            isMoving = true
+            moveDirection = moveDirection + lookVector
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-            moveDirection = moveDirection - Camera.CFrame.LookVector
-            isMoving = true
+            moveDirection = moveDirection - lookVector
         end
-        
-        -- A/D - влево/вправо
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-            moveDirection = moveDirection - Camera.CFrame.RightVector
-            isMoving = true
+            moveDirection = moveDirection - rightVector
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-            moveDirection = moveDirection + Camera.CFrame.RightVector
-            isMoving = true
+            moveDirection = moveDirection + rightVector
         end
-        
-        -- Space/Shift - вверх/вниз
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
             moveDirection = moveDirection + Vector3.new(0, 1, 0)
-            isMoving = true
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
             moveDirection = moveDirection - Vector3.new(0, 1, 0)
-            isMoving = true
         end
         
-        if isMoving then
-            -- Нормализация направления
-            if moveDirection.Magnitude > 0 then
-                moveDirection = moveDirection.Unit
-            end
+        -- Нормализуем направление если есть движение
+        if moveDirection.Magnitude > 0 then
+            moveDirection = moveDirection.Unit
+            local targetVelocity = moveDirection * MainModule.Fly.Speed
             
-            -- Расчет скорости с учетом настроек
-            local speed = MainModule.Fly.Speed
-            local targetVelocity = moveDirection * speed
+            -- Применяем байпас античита
+            targetVelocity = ApplyAntiCheatBypass(rootPart, targetVelocity)
             
-            -- Применение байпасов
-            targetVelocity = ApplyVelocityBypass(targetVelocity, rootPart)
+            -- Плавное изменение скорости
+            local currentVelocity = flightBodyVelocity.Velocity
+            local smoothedVelocity = currentVelocity:Lerp(targetVelocity, MainModule.Fly.SmoothingFactor)
             
-            -- Плавное движение
-            if MainModule.Fly.SmoothMovement then
-                local currentVelocity = flightBodyVelocity.Velocity
-                local smoothedVelocity = currentVelocity:Lerp(targetVelocity, 0.5)
-                flightBodyVelocity.Velocity = smoothedVelocity
-            else
-                flightBodyVelocity.Velocity = targetVelocity
-            end
+            -- Устанавливаем скорость
+            flightBodyVelocity.Velocity = smoothedVelocity
             
-            -- Обновление гироскопа для направления
-            if MainModule.Fly.CameraSmoothing.Enabled then
-                local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + Camera.CFrame.LookVector)
-                flightBodyGyro.CFrame = flightBodyGyro.CFrame:Lerp(targetCFrame, MainModule.Fly.CameraSmoothing.Smoothness)
-            else
-                flightBodyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + Camera.CFrame.LookVector)
-            end
+            -- Обновляем время последнего изменения скорости
+            MainModule.Fly.LastVelocityChange = tick()
             
-            -- Управление состоянием человечка
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
-            
-            -- Обновление истории движений
-            UpdateMovementHistory(rootPart.Position, targetVelocity)
-            
-            -- Проверка на застревание
-            if MainModule.Fly.AntiStuckProtection then
-                if CheckForStuck(rootPart.Position) then
-                    BypassMethods.AntiStuck(rootPart, MainModule.Fly.LastPosition)
-                end
-                MainModule.Fly.LastPosition = rootPart.Position
-            end
-            
-            -- Периодический байпас сетевого владения
-            local currentTime = tick()
-            if currentTime - MainModule.Fly.NetworkOwnershipTime > 5 then
-                BypassMethods.NetworkOwnership(rootPart)
-                MainModule.Fly.NetworkOwnershipTime = currentTime
-            end
-        else
-            -- Когда не двигаемся, плавно останавливаемся
-            if MainModule.Fly.SmoothMovement then
-                flightBodyVelocity.Velocity = flightBodyVelocity.Velocity * 0.8
-                if flightBodyVelocity.Velocity.Magnitude < 0.1 then
-                    flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-                end
-            else
-                flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            end
-            
-            flightBodyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + Vector3.new(0, 0, 1))
-        end
-        
-        -- Нормализация скорости корневой части
-        rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-    end)
-    
-    -- Соединение для проверки физики
-    MainModule.Fly.PhysicsConnection = RunService.Stepped:Connect(function()
-        if not MainModule.Fly.Enabled then return end
-        
-        character = GetCharacter()
-        if not character then return end
-        
-        rootPart = GetRootPart(character)
-        if not rootPart then return end
-        
-        -- Байпас проверок физики
-        BypassMethods.PhysicsIntegrity(rootPart)
-        
-        -- Периодическая очистка маркеров античита
-        if tick() - MainModule.Fly.LastVelocityCheck > 3 then
-            MainModule.Fly.LastVelocityCheck = tick()
-            
-            for _, obj in pairs(rootPart:GetChildren()) do
-                if obj:IsA("BodyVelocity") and obj ~= flightBodyVelocity then
-                    pcall(function() obj:Destroy() end)
-                end
-            end
-        end
-    end)
-    
-    -- Соединение для скрытности
-    MainModule.Fly.StealthConnection = RunService.RenderStepped:Connect(function()
-        if not MainModule.Fly.Enabled then return end
-        
-        character = GetCharacter()
-        if not character then return end
-        
-        humanoid = GetHumanoid(character)
-        if not humanoid then return end
-        
-        -- Маскировка состояния человечка
-        if MainModule.Fly.HumanoidStateProtection then
+            -- Маскируем состояние humanoid
             if humanoid:GetState() == Enum.HumanoidStateType.Freefall then
                 humanoid:ChangeState(Enum.HumanoidStateType.Running)
             end
+            
+            -- Проверяем и исправляем застревание
+            CheckAndFixStuck(rootPart, rootPart.Position)
+            
+            -- Сбрасываем AssemblyLinearVelocity (очень осторожно)
+            if tick() - MainModule.Fly.LastUpdate > 0.1 then
+                pcall(function()
+                    rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    MainModule.Fly.LastUpdate = tick()
+                end)
+            end
+        else
+            -- Плавная остановка
+            flightBodyVelocity.Velocity = flightBodyVelocity.Velocity * 0.7
+            
+            -- Полная остановка при малой скорости
+            if flightBodyVelocity.Velocity.Magnitude < 0.5 then
+                flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            end
         end
+        
+        -- Поддерживаем человечка в нейтральном состоянии
+        humanoid.PlatformStand = false
     end)
     
     -- Обработка смерти персонажа
@@ -3696,9 +3469,10 @@ function MainModule.EnableFlight()
         end
     end)
     
-    print("[Fly] Flight enabled successfully with stealth protection")
+    print("[Fly] Stealth flight enabled successfully")
 end
 
+-- Выключение флая
 function MainModule.DisableFlight()
     if not MainModule.Fly.Enabled then return end
     
@@ -3707,20 +3481,10 @@ function MainModule.DisableFlight()
     MainModule.Fly.Enabled = false
     MainModule.Fly.IsFlying = false
     
-    -- Отключение всех соединений
+    -- Отключаем соединения
     if MainModule.Fly.Connection then
         MainModule.Fly.Connection:Disconnect()
         MainModule.Fly.Connection = nil
-    end
-    
-    if MainModule.Fly.PhysicsConnection then
-        MainModule.Fly.PhysicsConnection:Disconnect()
-        MainModule.Fly.PhysicsConnection = nil
-    end
-    
-    if MainModule.Fly.StealthConnection then
-        MainModule.Fly.StealthConnection:Disconnect()
-        MainModule.Fly.StealthConnection = nil
     end
     
     if MainModule.Fly.HumanoidDiedConnection then
@@ -3733,139 +3497,85 @@ function MainModule.DisableFlight()
         MainModule.Fly.CharacterAddedConnection = nil
     end
     
-    -- Восстановление персонажа
+    -- Восстанавливаем персонажа
     local character = GetCharacter()
     if character then
-        local rootPart = GetRootPart(character)
-        if rootPart then
-            -- Безопасное удаление объектов полета
-            for _, obj in pairs(rootPart:GetChildren()) do
-                if obj.Name == "FlightVelocity" or obj.Name == "FlightGyro" then
-                    pcall(function() obj:Destroy() end)
-                end
-            end
-            
-            -- Сброс физики
-            rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            rootPart.Velocity = Vector3.new(0, 0, 0)
+        local humanoid = GetHumanoid(character)
+        if humanoid then
+            humanoid.AutoRotate = true
+            humanoid.WalkSpeed = MainModule.Fly.OriginalWalkSpeed
+            humanoid.PlatformStand = false
         end
         
-        -- Восстановление человечка
-        local humanoid = GetHumanoid(character)
-        if humanoid and MainModule.Fly.OriginalStates then
-            humanoid.PlatformStand = MainModule.Fly.OriginalStates.PlatformStand or false
-            humanoid.AutoRotate = MainModule.Fly.OriginalStates.AutoRotate or true
-            humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed or 16
-            humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower or 50
+        local rootPart = GetRootPart(character)
+        if rootPart then
+            -- Удаляем BodyVelocity
+            local bv = rootPart:FindFirstChild("BV_Stealth")
+            if bv then
+                bv:Destroy()
+            end
+            
+            -- Сбрасываем физику
+            pcall(function()
+                rootPart.Velocity = Vector3.new(0, 0, 0)
+                rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                rootPart.RotVelocity = Vector3.new(0, 0, 0)
+            end)
         end
     end
     
-    -- Очистка
-    CleanupFlightObjects()
-    MainModule.Fly.OriginalStates = nil
-    MainModule.Fly.MovementHistory = {}
+    -- Очищаем историю
+    MainModule.Fly.VelocityHistory = {}
+    MainModule.Fly.BodyVelocity = nil
     
     print("[Fly] Flight disabled successfully")
 end
 
+function MainModule.ToggleFly(enabled)
+    if enabled then
+        MainModule.EnableFlight()
+    else
+        MainModule.DisableFlight()
+    end
+end
+
 function MainModule.SetFlySpeed(speed)
     if type(speed) == "number" and speed > 0 then
-        MainModule.Fly.Speed = math.min(speed, 100) -- Ограничение максимальной скорости
+        MainModule.Fly.Speed = math.min(speed, 50) -- Ограничение для скрытности
         return MainModule.Fly.Speed
     end
     return 39
 end
 
--- Функция для бинда клавиши
-function MainModule.BindFlyKey(keyCode)
-    if MainModule.Fly.BindConnection then
-        MainModule.Fly.BindConnection:Disconnect()
-    end
-    
-    MainModule.Fly.BindKey = keyCode or Enum.KeyCode.Insert
-    
-    MainModule.Fly.BindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        
-        if input.KeyCode == MainModule.Fly.BindKey then
-            MainModule.ToggleFly(not MainModule.Fly.Enabled)
+-- Функции настройки
+function MainModule.ConfigureFly(options)
+    if options then
+        if options.Speed then
+            MainModule.SetFlySpeed(options.Speed)
         end
-    end)
-    
-    return MainModule.Fly.BindKey
-end
-
--- Функция для настройки скрытности
-function MainModule.ConfigureFlyStealth(options)
-    if options.VelocityRandomization ~= nil then
-        MainModule.Fly.VelocityRandomization.Enabled = options.VelocityRandomization
+        if options.AntiCheat ~= nil then
+            MainModule.Fly.AntiCheatEnabled = options.AntiCheat
+        end
+        if options.Smoothing then
+            MainModule.Fly.SmoothingFactor = math.clamp(options.Smoothing, 0.1, 0.95)
+        end
     end
-    
-    if options.SmoothMovement ~= nil then
-        MainModule.Fly.SmoothMovement = options.SmoothMovement
-    end
-    
-    if options.AntiCheatBypass ~= nil then
-        MainModule.Fly.AntiCheatBypassEnabled = options.AntiCheatBypass
-    end
-    
-    if options.CameraSmoothing ~= nil then
-        MainModule.Fly.CameraSmoothing.Enabled = options.CameraSmoothing
-    end
-    
-    return MainModule.Fly
 end
 
 -- Инициализация бинда по умолчанию
 task.spawn(function()
-    task.wait(2)
+    task.wait(3)
     MainModule.BindFlyKey(MainModule.Fly.BindKey)
-    print("[Fly] Bind initialized to:", MainModule.Fly.BindKey.Name)
+    print("[Fly] Bind key set to:", MainModule.Fly.BindKey.Name)
 end)
 
--- Дополнительные утилиты
-function MainModule.GetFlyStatus()
-    return {
-        Enabled = MainModule.Fly.Enabled,
-        Speed = MainModule.Fly.Speed,
-        IsFlying = MainModule.Fly.IsFlying,
-        BindKey = MainModule.Fly.BindKey.Name,
-        StealthMode = MainModule.Fly.AntiCheatBypassEnabled
-    }
-end
-
-function MainModule.ResetFly()
-    MainModule.DisableFlight()
-    task.wait(0.1)
-    CleanupFlightObjects()
-    MainModule.Fly.MovementHistory = {}
-    print("[Fly] Completely reset")
-end
-
--- Защита от утечек памяти
-local function SetupMemoryProtection()
-    local lastCleanup = tick()
-    
-    game:GetService("Players").PlayerRemoving:Connect(function(player)
-        if player == LocalPlayer then
-            MainModule.ResetFly()
-        end
-    end)
-    
-    workspace.DescendantRemoving:Connect(function(descendant)
-        if descendant.Name == "FlightVelocity" or descendant.Name == "FlightGyro" then
-            if MainModule.Fly.Enabled then
-                task.wait(0.05)
-                if MainModule.Fly.Enabled then
-                    MainModule.EnableFlight()
-                end
-            end
-        end
-    end)
-end
-
--- Инициализация защиты
-task.spawn(SetupMemoryProtection)
+-- Автоматическая защита
+game:GetService("Players").LocalPlayer.CharacterAdded:Connect(function()
+    if MainModule.Fly.Enabled then
+        task.wait(0.5)
+        MainModule.DisableFlight()
+    end
+end)
 
 local function saveOriginalState(character)
     if not character then return end
@@ -4773,6 +4483,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
