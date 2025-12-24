@@ -24,15 +24,17 @@ MainModule.SpeedHack = {
 
 MainModule.Noclip = {
     Enabled = false,
-    NoCollideParts = {}, -- Части, у которых отключили коллизии
-    OriginalCollisions = {}, -- Оригинальные CanCollide
-    CheckInterval = 0.1,
+    NoCollideParts = {},
+    OriginalCollisions = {},
+    CheckInterval = 0.08, -- Чаще проверяем
     LastCheck = 0,
-    Radius = 6,
+    SearchRadius = 15, -- Увеличил радиус поиска
     Connection = nil,
-    GroundParts = {}, -- ТОЛЬКО части прямо под ногами (не отключаем)
-    FootRayDistance = 2.5 -- Насколько далеко ищем пол под ногами
+    GroundParts = {},
+    FootRayDistance = 3,
+    ProcessedRegions = {} -- Для оптимизации
 }
+
 
 MainModule.AutoDodge = {
     Enabled = false,
@@ -2986,43 +2988,63 @@ function MainModule.ToggleAutoDodge(enabled)
     end
 end
 
--- Находим ТОЛЬКО часть прямо под ногами (то, на чём стоим)
-local function FindGroundUnderFeet()
+-- Находим ВСЁ что под ногами (не только прямо под)
+local function FindAllGroundParts()
     MainModule.Noclip.GroundParts = {}
     
     local character = GetCharacter()
     if not character then return end
     
-    -- Ищем любую часть ног
-    local footPart = character:FindFirstChild("LeftFoot") or 
-                     character:FindFirstChild("Left Leg") or
-                     character:FindFirstChild("RightFoot") or 
-                     character:FindFirstChild("Right Leg") or
-                     character:FindFirstChild("LowerTorso")
+    -- Все возможные части ног/тела для raycast
+    local raycastPoints = {}
     
-    if not footPart or not footPart:IsA("BasePart") then return end
+    -- Нижние части персонажа
+    local lowerParts = {
+        character:FindFirstChild("LeftFoot"),
+        character:FindFirstChild("Left Leg"),
+        character:FindFirstChild("RightFoot"),
+        character:FindFirstChild("Right Leg"),
+        character:FindFirstChild("LowerTorso"),
+        character:FindFirstChild("HumanoidRootPart"),
+        character:FindFirstChild("Torso")
+    }
     
-    -- Raycast ПРЯМО вниз от нижней точки ноги
-    local rayOrigin = footPart.Position - Vector3.new(0, footPart.Size.Y/2, 0)
-    local rayDirection = Vector3.new(0, -MainModule.Noclip.FootRayDistance, 0)
+    -- Добавляем точки для raycast
+    for _, part in ipairs(lowerParts) do
+        if part and part:IsA("BasePart") then
+            -- Несколько точек под частью
+            local size = part.Size
+            table.insert(raycastPoints, part.Position - Vector3.new(0, size.Y/2, 0))
+            table.insert(raycastPoints, part.Position - Vector3.new(size.X/3, size.Y/2, size.Z/3))
+            table.insert(raycastPoints, part.Position - Vector3.new(-size.X/3, size.Y/2, -size.Z/3))
+        end
+    end
     
+    -- Raycast из всех точек
     local raycastParams = RaycastParams.new()
     raycastParams.FilterDescendantsInstances = {character}
     raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
     
-    local raycastResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-    
-    if raycastResult then
-        local groundPart = raycastResult.Instance
-        if groundPart:IsA("BasePart") and groundPart.CanCollide then
-            -- ЗАПОМИНАЕМ ТОЛЬКО ЭТУ ЧАСТЬ
-            MainModule.Noclip.GroundParts[groundPart] = true
+    for _, point in ipairs(raycastPoints) do
+        local raycastResult = workspace:Raycast(point, Vector3.new(0, -MainModule.Noclip.FootRayDistance, 0), raycastParams)
+        if raycastResult then
+            local part = raycastResult.Instance
+            if part:IsA("BasePart") and part.CanCollide then
+                MainModule.Noclip.GroundParts[part] = true
+                
+                -- Добавляем ВСЕ связанные части (весь пол/платформа)
+                for _, connectedPart in pairs(part:GetConnectedParts()) do
+                    if connectedPart:IsA("BasePart") then
+                        MainModule.Noclip.GroundParts[connectedPart] = true
+                    end
+                end
+            end
         end
     end
 end
 
--- Находим ВСЕ части в радиусе (кроме той что под ногами)
-local function GetAllPartsInRadius()
+-- Находим ВСЕ коллизионные части в большом радиусе
+local function FindAllCollidableParts()
     local character = GetCharacter()
     if not character then return {} end
     
@@ -3031,43 +3053,93 @@ local function GetAllPartsInRadius()
     if not humanoidRootPart then return {} end
     
     local position = humanoidRootPart.Position
-    local radius = MainModule.Noclip.Radius
+    local radius = MainModule.Noclip.SearchRadius
     
-    -- Создаём Region3 для поиска
-    local region = Region3.new(
+    -- Ищем в несколько этапов чтобы охватить больше
+    local allParts = {}
+    
+    -- Этап 1: Большой регион вокруг
+    local mainRegion = Region3.new(
         position - Vector3.new(radius, radius, radius),
         position + Vector3.new(radius, radius, radius)
     )
     
-    -- Игнорируем персонажа
-    local parts = workspace:FindPartsInRegion3WithIgnoreList(region, {character}, 100)
-    local result = {}
+    local partsInRegion = workspace:FindPartsInRegion3WithIgnoreList(mainRegion, {character}, 200)
     
-    for _, part in ipairs(parts) do
+    for _, part in ipairs(partsInRegion) do
         if part:IsA("BasePart") and part.CanCollide then
-            -- Пропускаем ТОЛЬКО часть под ногами
-            if not MainModule.Noclip.GroundParts[part] then
-                result[part] = true
+            allParts[part] = true
+        end
+    end
+    
+    -- Этап 2: Дополнительные регионы спереди/сзади (для стен)
+    local directions = {
+        Vector3.new(radius, 0, 0),   -- Вправо
+        Vector3.new(-radius, 0, 0),  -- Влево
+        Vector3.new(0, 0, radius),   -- Вперёд
+        Vector3.new(0, 0, -radius)   -- Назад
+    }
+    
+    for _, dir in ipairs(directions) do
+        local regionCenter = position + dir
+        local region = Region3.new(
+            regionCenter - Vector3.new(radius/2, radius/2, radius/2),
+            regionCenter + Vector3.new(radius/2, radius/2, radius/2)
+        )
+        
+        local moreParts = workspace:FindPartsInRegion3WithIgnoreList(region, {character}, 50)
+        for _, part in ipairs(moreParts) do
+            if part:IsA("BasePart") and part.CanCollide then
+                allParts[part] = true
             end
         end
     end
     
-    return result
+    return allParts
 end
 
--- Отключаем коллизии у части (делаем проходимой)
-local function DisableCollisions(part)
-    if not part or not part.Parent then return end
+-- Отключаем коллизии у ВСЕГО кроме пола под ногами
+local function DisableAllCollisions()
+    local character = GetCharacter()
+    if not character then return end
     
-    -- НИКОГДА не отключаем часть под ногами!
-    if MainModule.Noclip.GroundParts[part] then
-        return
+    -- 1. Находим ВСЁ под ногами
+    FindAllGroundParts()
+    
+    -- 2. Находим ВСЕ коллизионные части в радиусе
+    local allParts = FindAllCollidableParts()
+    
+    -- 3. Отключаем коллизии у ВСЕХ частей, кроме пола под ногами
+    for part, _ in pairs(allParts) do
+        -- Пропускаем ТОЛЬКО если это точно пол под ногами
+        if not MainModule.Noclip.GroundParts[part] then
+            if not MainModule.Noclip.OriginalCollisions[part] then
+                MainModule.Noclip.OriginalCollisions[part] = part.CanCollide
+                part.CanCollide = false
+                MainModule.Noclip.NoCollideParts[part] = true
+            end
+        else
+            -- Если это пол под ногами, ВОССТАНАВЛИВАЕМ если случайно отключили
+            if MainModule.Noclip.OriginalCollisions[part] then
+                RestoreCollisions(part)
+            end
+        end
     end
     
-    if not MainModule.Noclip.OriginalCollisions[part] then
-        MainModule.Noclip.OriginalCollisions[part] = part.CanCollide
-        part.CanCollide = false
-        MainModule.Noclip.NoCollideParts[part] = true
+    -- 4. Восстанавливаем части которые больше не в радиусе И не под ногами
+    for part, _ in pairs(MainModule.Noclip.NoCollideParts) do
+        if not part or not part.Parent then
+            RestoreCollisions(part)
+        else
+            local humanoidRootPart = character:FindFirstChild("HumanoidRootPart") or 
+                                     character:FindFirstChild("Torso")
+            if humanoidRootPart then
+                local distance = (part.Position - humanoidRootPart.Position).Magnitude
+                if distance > MainModule.Noclip.SearchRadius * 2 and not MainModule.Noclip.GroundParts[part] then
+                    RestoreCollisions(part)
+                end
+            end
+        end
     end
 end
 
@@ -3080,8 +3152,8 @@ local function RestoreCollisions(part)
     end
 end
 
--- Основная функция: ВСЁ проходимо, кроме пола под ногами
-local function ProcessCustomNoclip()
+-- Основной цикл - АГРЕССИВНЫЙ
+local function ProcessAggressiveNoclip()
     if not MainModule.Noclip.Enabled then return end
     
     local currentTime = tick()
@@ -3090,30 +3162,20 @@ local function ProcessCustomNoclip()
     end
     MainModule.Noclip.LastCheck = currentTime
     
-    -- 1. Находим часть под ногами
-    FindGroundUnderFeet()
+    -- АГРЕССИВНО отключаем ВСЁ
+    DisableAllCollisions()
     
-    -- 2. Получаем ВСЕ части в радиусе
-    local allParts = GetAllPartsInRadius()
-    
-    -- 3. Отключаем коллизии у ВСЕХ частей, кроме пола под ногами
-    for part, _ in pairs(allParts) do
-        DisableCollisions(part)
-    end
-    
-    -- 4. Восстанавливаем части которые вышли из радиуса
-    for part, _ in pairs(MainModule.Noclip.NoCollideParts) do
-        if not part or not part.Parent then
-            RestoreCollisions(part)
-        else
-            local character = GetCharacter()
-            if character then
-                local humanoidRootPart = character:FindFirstChild("HumanoidRootPart") or 
-                                         character:FindFirstChild("Torso")
-                if humanoidRootPart then
-                    local distance = (part.Position - humanoidRootPart.Position).Magnitude
-                    if distance > MainModule.Noclip.Radius * 1.5 then
-                        RestoreCollisions(part)
+    -- Дополнительно: отключаем коллизии у ВСЕХ новых частей которые появляются
+    local character = GetCharacter()
+    if character then
+        for _, part in pairs(workspace:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                -- Пропускаем только если это персонаж или пол под ногами
+                if not part:IsDescendantOf(character) and not MainModule.Noclip.GroundParts[part] then
+                    if not MainModule.Noclip.OriginalCollisions[part] then
+                        MainModule.Noclip.OriginalCollisions[part] = part.CanCollide
+                        part.CanCollide = false
+                        MainModule.Noclip.NoCollideParts[part] = true
                     end
                 end
             end
@@ -3121,7 +3183,7 @@ local function ProcessCustomNoclip()
     end
 end
 
--- Включаем/выключаем наш кастомный ноклип
+-- Включаем/выключаем АГРЕССИВНЫЙ ноклип
 function MainModule.ToggleNoclip(enabled)
     if MainModule.Noclip.Enabled == enabled then return end
     
@@ -3133,64 +3195,70 @@ function MainModule.ToggleNoclip(enabled)
     end
     
     if not enabled then
-        -- Восстанавливаем ВСЕ коллизии
+        -- Восстанавливаем ВСЁ
         for part, _ in pairs(MainModule.Noclip.NoCollideParts) do
             if part and part.Parent then
                 RestoreCollisions(part)
             end
         end
         
-        -- Очищаем всё
         MainModule.Noclip.NoCollideParts = {}
         MainModule.Noclip.OriginalCollisions = {}
         MainModule.Noclip.GroundParts = {}
         
-        ShowNotification("Custom Noclip", "Disabled", 2)
+        ShowNotification("AGGRESSIVE Noclip", "DISABLED", 2)
         return
     end
     
-    ShowNotification("Custom Noclip", "Enabled", 2)
+    ShowNotification("AGGRESSIVE Noclip", "ENABLED", 2)
     
-    -- Запускаем основной цикл
+    -- Запускаем СУПЕР АГРЕССИВНЫЙ цикл
     MainModule.Noclip.Connection = RunService.Heartbeat:Connect(function()
-        ProcessCustomNoclip()
+        ProcessAggressiveNoclip()
     end)
     
     -- При смене персонажа
     LocalPlayer.CharacterAdded:Connect(function()
-        task.wait(0.5)
+        task.wait(0.3)
         if MainModule.Noclip.Enabled then
-            -- Очищаем при смене персонажа
             MainModule.Noclip.GroundParts = {}
+            -- Немедленно применяем снова
+            task.wait(0.1)
+            ProcessAggressiveNoclip()
         end
     end)
 end
 
--- Функция проверки для отладки
-function MainModule.DebugGroundCheck()
-    local character = GetCharacter()
-    if not character then return end
+-- Функция для принудительного отключения ВСЕХ коллизий (экстренная)
+function MainModule.ForceDisableAllCollisions()
+    if not MainModule.Noclip.Enabled then return end
     
-    local footPart = character:FindFirstChild("LeftFoot") or character:FindFirstChild("Left Leg")
-    if footPart then
-        local rayOrigin = footPart.Position - Vector3.new(0, footPart.Size.Y/2, 0)
-        local rayDirection = Vector3.new(0, -2.5, 0)
-        
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterDescendantsInstances = {character}
-        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-        
-        local raycastResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-        
-        if raycastResult then
-            ShowNotification("Ground Check", "Standing on: " .. raycastResult.Instance.Name, 3)
-        else
-            ShowNotification("Ground Check", "Not standing on anything", 3)
+    ShowNotification("FORCE", "Disabling ALL collisions", 2)
+    
+    for _, part in pairs(workspace:GetDescendants()) do
+        if part:IsA("BasePart") and part.CanCollide then
+            local character = GetCharacter()
+            if not character or not part:IsDescendantOf(character) then
+                if not MainModule.Noclip.OriginalCollisions[part] then
+                    MainModule.Noclip.OriginalCollisions[part] = part.CanCollide
+                    part.CanCollide = false
+                    MainModule.Noclip.NoCollideParts[part] = true
+                end
+            end
         end
     end
 end
 
--- Автоматическая очистка при удалении частей
+-- Дебаг: показываем сколько частей отключено
+function MainModule.DebugCollisionCount()
+    local count = 0
+    for _ in pairs(MainModule.Noclip.NoCollideParts) do
+        count = count + 1
+    end
+    ShowNotification("Disabled Parts", "Count: " .. count, 3)
+end
+
+-- Автоматическая очистка
 workspace.DescendantRemoving:Connect(function(obj)
     if obj:IsA("BasePart") and MainModule.Noclip.OriginalCollisions[obj] then
         RestoreCollisions(obj)
@@ -4040,6 +4108,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
