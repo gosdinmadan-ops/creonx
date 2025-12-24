@@ -595,43 +595,81 @@ function MainModule.ToggleFreeDash(enabled)
             end
         end
         
-        -- Вместо Destroy - перехватываем вызов
-        local remote = ReplicatedStorage:FindFirstChild("Remotes")
-        if remote then
-            remote = remote:FindFirstChild("DashRequest")
-            if remote then
-                -- Сохраняем оригинальный FireServer
-                MainModule.FreeDash.OriginalFireServer = remote.FireServer
+        -- Перехватываем все Remote события
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if remotes then
+            local dashRemote = remotes:FindFirstChild("DashRequest")
+            if dashRemote then
+                -- Сохраняем оригинальный Remote для клонирования
+                MainModule.FreeDash.OriginalRemote = dashRemote:Clone()
                 
-                -- Подменяем функцию
-                remote.FireServer = function(self, ...)
-                    -- Просто ничего не делаем или возвращаем успешный результат
+                -- Подменяем FireServer
+                local originalFire = dashRemote.FireServer
+                dashRemote.FireServer = function(self, ...)
+                    -- Мгновенно уничтожаем Remote
+                    if dashRemote and dashRemote.Parent then
+                        dashRemote:Destroy()
+                        
+                        -- Немедленно создаем новый (невидимый восстановитель)
+                        task.spawn(function()
+                            task.wait(0.01) -- Минимальная задержка
+                            if MainModule.FreeDash.Enabled and MainModule.FreeDash.OriginalRemote then
+                                local newRemote = MainModule.FreeDash.OriginalRemote:Clone()
+                                newRemote.Parent = remotes
+                                newRemote.Name = "DashRequest"
+                                
+                                -- Снова подменяем его FireServer
+                                local originalFire2 = newRemote.FireServer
+                                newRemote.FireServer = function(self2, ...)
+                                    if newRemote and newRemote.Parent then
+                                        newRemote:Destroy()
+                                        task.spawn(function()
+                                            task.wait(0.01)
+                                            if MainModule.FreeDash.Enabled then
+                                                local newRemote2 = MainModule.FreeDash.OriginalRemote:Clone()
+                                                newRemote2.Parent = remotes
+                                                newRemote2.Name = "DashRequest"
+                                                -- Рекурсивно продолжаем цепь...
+                                                MainModule.HookDashRemote(newRemote2)
+                                            end
+                                        end)
+                                    end
+                                    return true
+                                end
+                                
+                                MainModule.FreeDash.CurrentRemote = newRemote
+                            end
+                        end)
+                    end
                     return true
                 end
                 
-                MainModule.FreeDash.RemoteHooked = true
+                MainModule.FreeDash.CurrentRemote = dashRemote
             end
         end
     else
-        local boosts = LocalPlayer:FindFirstChild("Boosts")
-        if boosts then
-            local fasterSprint = boosts:FindFirstChild("Faster Sprint")
-            if fasterSprint then
-                fasterSprint.Value = MainModule.FreeDash.OriginalSprintValue
-            end
-        end
-        
-        -- Восстанавливаем оригинальный Remote
-        if MainModule.FreeDash.RemoteHooked then
-            local remote = ReplicatedStorage:FindFirstChild("Remotes")
-            if remote then
-                remote = remote:FindFirstChild("DashRequest")
-                if remote and MainModule.FreeDash.OriginalFireServer then
-                    remote.FireServer = MainModule.FreeDash.OriginalFireServer
+        -- Восстановление оригинального поведения...
+    end
+end
+
+-- Вспомогательная функция для подмены
+function MainModule.HookDashRemote(remote)
+    local originalFire = remote.FireServer
+    remote.FireServer = function(self, ...)
+        if remote and remote.Parent then
+            remote:Destroy()
+            task.spawn(function()
+                task.wait(0.01)
+                if MainModule.FreeDash.Enabled and MainModule.FreeDash.OriginalRemote then
+                    local newRemote = MainModule.FreeDash.OriginalRemote:Clone()
+                    newRemote.Parent = remote.Parent
+                    newRemote.Name = "DashRequest"
+                    MainModule.HookDashRemote(newRemote)
+                    MainModule.FreeDash.CurrentRemote = newRemote
                 end
-            end
-            MainModule.FreeDash.RemoteHooked = false
+            end)
         end
+        return true
     end
 end
 
@@ -4072,6 +4110,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
