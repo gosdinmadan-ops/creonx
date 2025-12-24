@@ -71,9 +71,7 @@ MainModule.Fly = {
     OriginalStates = nil,
     LastPhysicsCheck = 0,
     PhysicsCheckInterval = 0.3,
-    IsAntiCheatBypass = false,
-    GravityForce = 196.2, -- Стандартная гравитация Roblox
-    CurrentVerticalVelocity = 0
+    IsAntiCheatBypass = false
 }
 
 MainModule.AutoQTE = {
@@ -595,81 +593,22 @@ function MainModule.ToggleFreeDash(enabled)
             end
         end
         
-        -- Перехватываем все Remote события
-        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-        if remotes then
-            local dashRemote = remotes:FindFirstChild("DashRequest")
-            if dashRemote then
-                -- Сохраняем оригинальный Remote для клонирования
-                MainModule.FreeDash.OriginalRemote = dashRemote:Clone()
-                
-                -- Подменяем FireServer
-                local originalFire = dashRemote.FireServer
-                dashRemote.FireServer = function(self, ...)
-                    -- Мгновенно уничтожаем Remote
-                    if dashRemote and dashRemote.Parent then
-                        dashRemote:Destroy()
-                        
-                        -- Немедленно создаем новый (невидимый восстановитель)
-                        task.spawn(function()
-                            task.wait(0.01) -- Минимальная задержка
-                            if MainModule.FreeDash.Enabled and MainModule.FreeDash.OriginalRemote then
-                                local newRemote = MainModule.FreeDash.OriginalRemote:Clone()
-                                newRemote.Parent = remotes
-                                newRemote.Name = "DashRequest"
-                                
-                                -- Снова подменяем его FireServer
-                                local originalFire2 = newRemote.FireServer
-                                newRemote.FireServer = function(self2, ...)
-                                    if newRemote and newRemote.Parent then
-                                        newRemote:Destroy()
-                                        task.spawn(function()
-                                            task.wait(0.01)
-                                            if MainModule.FreeDash.Enabled then
-                                                local newRemote2 = MainModule.FreeDash.OriginalRemote:Clone()
-                                                newRemote2.Parent = remotes
-                                                newRemote2.Name = "DashRequest"
-                                                -- Рекурсивно продолжаем цепь...
-                                                MainModule.HookDashRemote(newRemote2)
-                                            end
-                                        end)
-                                    end
-                                    return true
-                                end
-                                
-                                MainModule.FreeDash.CurrentRemote = newRemote
-                            end
-                        end)
-                    end
-                    return true
-                end
-                
-                MainModule.FreeDash.CurrentRemote = dashRemote
+        local remote = ReplicatedStorage:FindFirstChild("Remotes")
+        if remote then
+            remote = remote:FindFirstChild("DashRequest")
+            if remote then
+                remote:Destroy()
+                MainModule.FreeDash.RemoteDestroyed = true
             end
         end
     else
-        -- Восстановление оригинального поведения...
-    end
-end
-
--- Вспомогательная функция для подмены
-function MainModule.HookDashRemote(remote)
-    local originalFire = remote.FireServer
-    remote.FireServer = function(self, ...)
-        if remote and remote.Parent then
-            remote:Destroy()
-            task.spawn(function()
-                task.wait(0.01)
-                if MainModule.FreeDash.Enabled and MainModule.FreeDash.OriginalRemote then
-                    local newRemote = MainModule.FreeDash.OriginalRemote:Clone()
-                    newRemote.Parent = remote.Parent
-                    newRemote.Name = "DashRequest"
-                    MainModule.HookDashRemote(newRemote)
-                    MainModule.FreeDash.CurrentRemote = newRemote
-                end
-            end)
+        local boosts = LocalPlayer:FindFirstChild("Boosts")
+        if boosts then
+            local fasterSprint = boosts:FindFirstChild("Faster Sprint")
+            if fasterSprint then
+                fasterSprint.Value = MainModule.FreeDash.OriginalSprintValue
+            end
         end
-        return true
     end
 end
 
@@ -1237,331 +1176,149 @@ end
 
 function MainModule.ToggleESP(enabled)
     MainModule.Misc.ESPEnabled = enabled
-    
-    -- Очищаем существующие подключения
     if MainModule.ESP.MainConnection then
         MainModule.ESP.MainConnection:Disconnect()
         MainModule.ESP.MainConnection = nil
     end
-    
-    if MainModule.ESP.CharacterConnections then
-        for player, connection in pairs(MainModule.ESP.CharacterConnections) do
-            if connection then
-                pcall(function() connection:Disconnect() end)
-            end
-        end
-        MainModule.ESP.CharacterConnections = {}
-    else
-        MainModule.ESP.CharacterConnections = {}
-    end
-    
     MainModule.ClearESP()
-    
     if enabled then
-        -- Создаем папку для ESP
         MainModule.ESP.Folder = Instance.new("Folder")
         MainModule.ESP.Folder.Name = "CreonXESP"
         MainModule.ESP.Folder.Parent = CoreGui
-        
-        -- Функция для безопасного обновления ESP игрока
-        local function SafeUpdatePlayerESP(player)
+        local function UpdatePlayerESP(player)
             if not player or player == LocalPlayer then return end
-            
-            -- Очищаем старый ESP перед обновлением
-            local espData = MainModule.ESP.Players[player]
-            if espData then
-                if espData.Highlight then
-                    espData.Highlight:Destroy()
-                end
-                if espData.Billboard then
-                    espData.Billboard:Destroy()
-                end
-                MainModule.ESP.Players[player] = nil
-            end
-            
-            -- Добавляем задержку для избежания лагов при возрождении
-            task.wait(0.3)
-            
-            -- Проверяем, что ESP все еще включен
-            if not MainModule.Misc.ESPEnabled then return end
-            
             local character = player.Character
             if not character then return end
-            
-            -- Ждем появления нужных частей персонажа
-            local humanoid, rootPart
-            for i = 1, 30 do -- 30 попыток = 3 секунды
-                humanoid = GetHumanoid(character)
-                rootPart = GetRootPart(character)
-                
-                if humanoid and rootPart then
-                    break
-                end
-                task.wait(0.1)
+            local humanoid = GetHumanoid(character)
+            local rootPart = GetRootPart(character)
+            if not (humanoid and rootPart and humanoid.Health > 0) then return end
+            local localCharacter = GetCharacter()
+            local localRoot = localCharacter and GetRootPart(localCharacter)
+            local espData = MainModule.ESP.Players[player]
+            if not espData then
+                espData = {
+                    Player = player,
+                    Highlight = nil,
+                    Billboard = nil,
+                    Label = nil
+                }
+                MainModule.ESP.Players[player] = espData
             end
-            
-            if not (humanoid and rootPart) then return end
-            
-            -- Создаем новый ESP
-            espData = {
-                Player = player,
-                Highlight = nil,
-                Billboard = nil,
-                Label = nil,
-                LastHealth = humanoid.Health,
-                IsAlive = humanoid.Health > 0
-            }
-            
-            MainModule.ESP.Players[player] = espData
-            
-            -- Создаем Highlight
-            espData.Highlight = Instance.new("Highlight")
-            espData.Highlight.Name = player.Name .. "_ESP"
-            espData.Highlight.Adornee = character
-            espData.Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            espData.Highlight.Enabled = MainModule.Misc.ESPHighlight
-            espData.Highlight.Parent = MainModule.ESP.Folder
-            
-            -- Функция для обновления цвета и видимости
-            local function UpdateESPAppearance()
-                if not espData.Highlight or not espData.Highlight.Parent then return end
-                
-                if IsHider(player) and MainModule.Misc.ESPHiders then
-                    espData.Highlight.FillColor = Color3.fromRGB(0, 255, 0)
-                    espData.Highlight.OutlineColor = Color3.fromRGB(0, 200, 0)
-                    espData.Highlight.Enabled = true
-                elseif IsSeeker(player) and MainModule.Misc.ESPSeekers then
-                    espData.Highlight.FillColor = Color3.fromRGB(255, 0, 0)
-                    espData.Highlight.OutlineColor = Color3.fromRGB(200, 0, 0)
-                    espData.Highlight.Enabled = true
-                elseif MainModule.Misc.ESPPlayers then
-                    espData.Highlight.FillColor = Color3.fromRGB(0, 120, 255)
-                    espData.Highlight.OutlineColor = Color3.fromRGB(0, 100, 200)
-                    espData.Highlight.Enabled = true
-                else
-                    espData.Highlight.Enabled = false
-                end
-                
-                espData.Highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
-                espData.Highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+            if not espData.Highlight then
+                espData.Highlight = Instance.new("Highlight")
+                espData.Highlight.Name = player.Name .. "_ESP"
+                espData.Highlight.Adornee = character
+                espData.Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                espData.Highlight.Enabled = MainModule.Misc.ESPHighlight
+                espData.Highlight.Parent = MainModule.ESP.Folder
             end
-            
-            -- Функция для обновления текста
-            local function UpdateESPText()
-                if not espData.Billboard or not espData.Billboard.Parent then return end
-                
-                local localCharacter = GetCharacter()
-                local localRoot = localCharacter and GetRootPart(localCharacter)
-                
-                if MainModule.Misc.ESPNames and espData.Label then
-                    local distanceText = ""
-                    if MainModule.Misc.ESPDistance and localRoot and rootPart then
-                        local distance = math.floor(GetDistance(rootPart.Position, localRoot.Position))
-                        distanceText = string.format(" [%dm]", distance)
-                    end
-                    
-                    local healthText = string.format("HP: %d/%d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
-                    local nameText = player.DisplayName or player.Name
-                    
-                    espData.Label.Text = string.format("%s\n%s%s", nameText, healthText, distanceText)
+            if IsHider(player) and MainModule.Misc.ESPHiders then
+                espData.Highlight.FillColor = Color3.fromRGB(0, 255, 0)
+                espData.Highlight.OutlineColor = Color3.fromRGB(0, 200, 0)
+            elseif IsSeeker(player) and MainModule.Misc.ESPSeekers then
+                espData.Highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                espData.Highlight.OutlineColor = Color3.fromRGB(200, 0, 0)
+            elseif MainModule.Misc.ESPPlayers then
+                espData.Highlight.FillColor = Color3.fromRGB(0, 120, 255)
+                espData.Highlight.OutlineColor = Color3.fromRGB(0, 100, 200)
+            else
+                espData.Highlight.Enabled = false
+            end
+            espData.Highlight.FillTransparency = MainModule.Misc.ESPFillTransparency
+            espData.Highlight.OutlineTransparency = MainModule.Misc.ESPOutlineTransparency
+            if MainModule.Misc.ESPNames then
+                if not espData.Billboard then
+                    espData.Billboard = Instance.new("BillboardGui")
+                    espData.Billboard.Name = player.Name .. "_Text"
+                    espData.Billboard.Adornee = rootPart
+                    espData.Billboard.AlwaysOnTop = true
+                    espData.Billboard.Size = UDim2.new(0, 200, 0, 50)
+                    espData.Billboard.StudsOffset = Vector3.new(0, 3, 0)
+                    espData.Billboard.Parent = MainModule.ESP.Folder
+                    espData.Label = Instance.new("TextLabel")
+                    espData.Label.Size = UDim2.new(1, 0, 1, 0)
+                    espData.Label.BackgroundTransparency = 1
                     espData.Label.TextColor3 = espData.Highlight.FillColor
                     espData.Label.TextSize = MainModule.Misc.ESPTextSize
+                    espData.Label.Font = Enum.Font.GothamBold
+                    espData.Label.TextStrokeColor3 = Color3.new(0, 0, 0)
+                    espData.Label.TextStrokeTransparency = 0.5
+                    espData.Label.Parent = espData.Billboard
                 end
-            end
-            
-            -- Создаем Billboard для текста
-            if MainModule.Misc.ESPNames then
-                espData.Billboard = Instance.new("BillboardGui")
-                espData.Billboard.Name = player.Name .. "_Text"
-                espData.Billboard.Adornee = rootPart
-                espData.Billboard.AlwaysOnTop = true
-                espData.Billboard.Size = UDim2.new(0, 200, 0, 50)
-                espData.Billboard.StudsOffset = Vector3.new(0, 3, 0)
-                espData.Billboard.Parent = MainModule.ESP.Folder
-                
-                espData.Label = Instance.new("TextLabel")
-                espData.Label.Size = UDim2.new(1, 0, 1, 0)
-                espData.Label.BackgroundTransparency = 1
+                espData.Billboard.Enabled = true
+                local distanceText = ""
+                if MainModule.Misc.ESPDistance and localRoot then
+                    local distance = math.floor(GetDistance(rootPart.Position, localRoot.Position))
+                    distanceText = string.format(" [%dm]", distance)
+                end
+                local healthText = string.format("HP: %d/%d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
+                local nameText = player.DisplayName or player.Name
+                espData.Label.Text = string.format("%s\n%s%s", nameText, healthText, distanceText)
                 espData.Label.TextColor3 = espData.Highlight.FillColor
                 espData.Label.TextSize = MainModule.Misc.ESPTextSize
-                espData.Label.Font = Enum.Font.GothamBold
-                espData.Label.TextStrokeColor3 = Color3.new(0, 0, 0)
-                espData.Label.TextStrokeTransparency = 0.5
-                espData.Label.Parent = espData.Billboard
-                
-                UpdateESPText()
-            end
-            
-            -- Обновляем внешний вид
-            UpdateESPAppearance()
-            
-            -- Отслеживаем смерть и возрождение
-            local function OnHealthChanged(newHealth)
-                if not espData then return end
-                
-                local wasAlive = espData.IsAlive
-                espData.IsAlive = newHealth > 0
-                espData.LastHealth = newHealth
-                
-                -- Если игрок умер, скрываем ESP
-                if not espData.IsAlive then
-                    if espData.Highlight then
-                        espData.Highlight.Enabled = false
-                    end
-                    if espData.Billboard then
-                        espData.Billboard.Enabled = false
-                    end
-                -- Если игрок возродился, показываем ESP
-                elseif wasAlive ~= espData.IsAlive and espData.IsAlive then
-                    task.wait(0.2) -- Небольшая задержка для стабилизации
-                    UpdateESPAppearance()
-                    if espData.Billboard then
-                        espData.Billboard.Enabled = true
-                    end
-                    UpdateESPText()
-                end
-            end
-            
-            -- Подписываемся на изменение здоровья
-            local healthConnection = humanoid.HealthChanged:Connect(OnHealthChanged)
-            MainModule.ESP.CharacterConnections[player] = healthConnection
-            
-            -- Также отслеживаем Died событие
-            local diedConnection = humanoid.Died:Connect(function()
-                task.wait(0.5) -- Даем время на анимацию смерти
-                OnHealthChanged(0)
-            end)
-            
-            -- Отслеживаем удаление персонажа
-            local characterRemoving
-            characterRemoving = character.AncestryChanged:Connect(function()
-                if not character or not character.Parent then
-                    -- Очищаем ESP при удалении персонажа
-                    if espData then
-                        if espData.Highlight then
-                            espData.Highlight:Destroy()
-                        end
-                        if espData.Billboard then
-                            espData.Billboard:Destroy()
-                        end
-                        MainModule.ESP.Players[player] = nil
-                    end
-                    
-                    -- Отключаем соединения
-                    if healthConnection then
-                        healthConnection:Disconnect()
-                    end
-                    if diedConnection then
-                        diedConnection:Disconnect()
-                    end
-                    if characterRemoving then
-                        characterRemoving:Disconnect()
-                    end
-                end
-            end)
-        end
-        
-        -- Обработчик для добавления нового персонажа
-        local function SetupPlayerESP(player)
-            if MainModule.ESP.CharacterConnections[player] then
-                MainModule.ESP.CharacterConnections[player]:Disconnect()
-            end
-            
-            local characterAddedConnection
-            characterAddedConnection = player.CharacterAdded:Connect(function(character)
-                -- Отключаем старый обработчик
-                if characterAddedConnection then
-                    characterAddedConnection:Disconnect()
-                end
-                
-                -- Запускаем обновление ESP с задержкой
-                task.spawn(function()
-                    SafeUpdatePlayerESP(player)
-                end)
-                
-                -- Настраиваем новый обработчик для следующего возрождения
-                SetupPlayerESP(player)
-            end)
-            
-            -- Если у игрока уже есть персонаж, настраиваем ESP
-            if player.Character then
-                task.spawn(function()
-                    SafeUpdatePlayerESP(player)
-                end)
+            elseif espData.Billboard then
+                espData.Billboard.Enabled = false
             end
         end
-        
-        -- Настраиваем ESP для всех существующих игроков
         for _, player in pairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
-                task.spawn(function()
-                    SetupPlayerESP(player)
+                UpdatePlayerESP(player)
+                player.CharacterAdded:Connect(function()
+                    task.wait(0.5)
+                    UpdatePlayerESP(player)
                 end)
             end
         end
-        
-        -- Обработчик для новых игроков
         MainModule.ESP.Connections.PlayerAdded = Players.PlayerAdded:Connect(function(player)
             if MainModule.Misc.ESPEnabled and player ~= LocalPlayer then
-                task.wait(1) -- Даем время на загрузку
-                task.spawn(function()
-                    SetupPlayerESP(player)
-                end)
+                task.wait(0.5)
+                UpdatePlayerESP(player)
             end
         end)
-        
-        -- Основной цикл обновления (с оптимизацией)
-        MainModule.ESP.MainConnection = RunService.Heartbeat:Connect(function()
+        MainModule.ESP.MainConnection = RunService.RenderStepped:Connect(function()
             if not MainModule.Misc.ESPEnabled then return end
-            
-            -- Используем debounce для предотвращения лагов
-            local currentTime = tick()
-            if not MainModule.ESP.LastUpdate then
-                MainModule.ESP.LastUpdate = currentTime
-            end
-            
-            -- Обновляем не чаще чем раз в 0.1 секунды
-            if currentTime - MainModule.ESP.LastUpdate >= 0.1 then
-                MainModule.ESP.LastUpdate = currentTime
-                
-                -- Обновляем только видимые ESP
-                for player, espData in pairs(MainModule.ESP.Players) do
-                    if player and player.Parent and player.Character then
-                        -- Быстрое обновление текста (расстояния и здоровья)
-                        if espData.Billboard and espData.Billboard.Enabled then
-                            local character = player.Character
-                            local humanoid = GetHumanoid(character)
-                            local rootPart = GetRootPart(character)
-                            
-                            if humanoid and rootPart and humanoid.Health > 0 then
-                                local localCharacter = GetCharacter()
-                                local localRoot = localCharacter and GetRootPart(localCharacter)
-                                
-                                if localRoot then
-                                    local distance = math.floor(GetDistance(rootPart.Position, localRoot.Position))
-                                    local healthText = string.format("HP: %d/%d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
-                                    local nameText = player.DisplayName or player.Name
-                                    
-                                    espData.Label.Text = string.format("%s\n%s [%dm]", nameText, healthText, distance)
-                                end
-                            end
-                        end
-                    else
-                        -- Очищаем неактивных игроков
-                        if espData.Highlight then
-                            SafeDestroy(espData.Highlight)
-                        end
-                        if espData.Billboard then
-                            SafeDestroy(espData.Billboard)
-                        end
-                        MainModule.ESP.Players[player] = nil
+            for player, espData in pairs(MainModule.ESP.Players) do
+                if player and player.Parent and player.Character then
+                    UpdatePlayerESP(player)
+                else
+                    if espData.Highlight then
+                        SafeDestroy(espData.Highlight)
                     end
+                    if espData.Billboard then
+                        SafeDestroy(espData.Billboard)
+                    end
+                    MainModule.ESP.Players[player] = nil
                 end
             end
         end)
-        
-        -- Инициализируем время последнего обновления
-        MainModule.ESP.LastUpdate = tick()
+    end
+end
+
+function MainModule.ClearESP()
+    for player, espData in pairs(MainModule.ESP.Players) do
+        if espData.Highlight then
+            SafeDestroy(espData.Highlight)
+        end
+        if espData.Billboard then
+            SafeDestroy(espData.Billboard)
+        end
+    end
+    MainModule.ESP.Players = {}
+    if MainModule.ESP.Connections then
+        for name, connection in pairs(MainModule.ESP.Connections) do
+            if connection then
+                pcall(function() connection:Disconnect() end)
+                MainModule.ESP.Connections[name] = nil
+            end
+        end
+    end
+    if MainModule.ESP.Folder then
+        SafeDestroy(MainModule.ESP.Folder)
+        MainModule.ESP.Folder = nil
+    end
+    if MainModule.ESP.MainConnection then
+        MainModule.ESP.MainConnection:Disconnect()
+        MainModule.ESP.MainConnection = nil
     end
 end
 
@@ -3230,12 +2987,11 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
--- Улучшенный Fly с правильной физикой и гравитацией
+-- Улучшенный максимально скрытный Fly
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
     MainModule.Fly.Enabled = true
-    MainModule.Fly.CurrentVerticalVelocity = 0
     
     -- Отключаем все предыдущие соединения
     if MainModule.Fly.Connection then
@@ -3255,52 +3011,37 @@ function MainModule.EnableFlight()
         WalkSpeed = humanoid.WalkSpeed,
         JumpPower = humanoid.JumpPower,
         AutoRotate = humanoid.AutoRotate,
-        PlatformStand = humanoid.PlatformStand,
-        UseJumpPower = humanoid.UseJumpPower
+        PlatformStand = humanoid.PlatformStand
     }
     
-    -- Настраиваем человечка для полета
+    -- Отключаем авто-ротацию для лучшего контроля
     humanoid.AutoRotate = false
     humanoid.PlatformStand = false
-    humanoid.UseJumpPower = false
     
-    -- Создаем BodyGyro для контроля вращения
+    -- Создаем BodyGyro для контроля вращения (очень скрытный)
     local flightBodyGyro = Instance.new("BodyGyro")
     flightBodyGyro.Name = "HumanoidRootPartGyro"
-    flightBodyGyro.MaxTorque = Vector3.new(50000, 50000, 50000)
-    flightBodyGyro.P = 12000
-    flightBodyGyro.D = 1000
+    flightBodyGyro.MaxTorque = Vector3.new(0, 0, 0) -- Начальное значение
+    flightBodyGyro.P = 1000
+    flightBodyGyro.D = 50
     flightBodyGyro.CFrame = rootPart.CFrame
     flightBodyGyro.Parent = rootPart
     
     -- Создаем BodyVelocity для движения
     local flightBodyVelocity = Instance.new("BodyVelocity")
     flightBodyVelocity.Name = "HumanoidRootPartVelocity"
-    flightBodyVelocity.MaxForce = Vector3.new(10000, 0, 10000) -- Y = 0 чтобы не мешать гравитации
-    flightBodyVelocity.P = 1250
+    flightBodyVelocity.MaxForce = Vector3.new(1, 1, 1) * 1000 -- Начальное низкое значение
+    flightBodyVelocity.P = 125
     flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
     flightBodyVelocity.Parent = rootPart
-    
-    -- Создаем отдельный BodyVelocity для вертикального контроля
-    local verticalBodyVelocity = Instance.new("BodyVelocity")
-    verticalBodyVelocity.Name = "VerticalControl"
-    verticalBodyVelocity.MaxForce = Vector3.new(0, 10000, 0) -- Только по Y
-    verticalBodyVelocity.P = 1250
-    verticalBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-    verticalBodyVelocity.Parent = rootPart
     
     MainModule.Fly.BodyVelocity = flightBodyVelocity
     MainModule.Fly.BodyGyro = flightBodyGyro
     
     MainModule.Fly.LastPhysicsCheck = tick()
     
-    -- Переменные для плавного управления
-    local targetVerticalSpeed = 0
-    local currentVerticalSpeed = 0
-    local verticalAcceleration = 50
-    
     -- Основной цикл полета
-    MainModule.Fly.Connection = RunService.Heartbeat:Connect(function(deltaTime)
+    MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
         if not MainModule.Fly.Enabled or not character or not character.Parent then 
             if MainModule.Fly.Connection then
                 MainModule.Fly.Connection:Disconnect()
@@ -3319,44 +3060,52 @@ function MainModule.EnableFlight()
         local lookVector = Camera.CFrame.LookVector
         local cameraCFrame = Camera.CFrame
         
-        -- Обновляем BodyGyro чтобы персонаж смотрел туда же куда и камера (только по горизонтали)
+        -- Обновляем BodyGyro чтобы персонаж смотрел туда же куда и камера
         if flightBodyGyro then
-            local horizontalLook = Vector3.new(lookVector.X, 0, lookVector.Z)
-            if horizontalLook.Magnitude > 0.01 then
-                local targetCFrame = CFrame.new(
-                    rootPart.Position, 
-                    rootPart.Position + horizontalLook.Unit
-                )
-                flightBodyGyro.CFrame = targetCFrame
-            end
-            
-            -- Анти-детект: периодически меняем параметры
+            -- Плавное изменение параметров для скрытности
             local currentTime = tick()
             if currentTime - MainModule.Fly.LastPhysicsCheck > MainModule.Fly.PhysicsCheckInterval then
                 MainModule.Fly.LastPhysicsCheck = currentTime
-                flightBodyGyro.P = math.random(11000, 13000)
-                flightBodyGyro.D = math.random(800, 1200)
+                
+                -- Случайное изменение параметров для обхода античита
+                flightBodyGyro.MaxTorque = Vector3.new(
+                    math.random(9000, 11000),
+                    math.random(9000, 11000),
+                    math.random(9000, 11000)
+                )
+                flightBodyGyro.P = math.random(800, 1200)
+                
+                flightBodyVelocity.MaxForce = Vector3.new(
+                    math.random(8000, 12000),
+                    math.random(8000, 12000),
+                    math.random(8000, 12000)
+                )
+                flightBodyVelocity.P = math.random(100, 150)
             end
+            
+            -- Плавное вращение к направлению камеры
+            local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + Vector3.new(lookVector.X, 0, lookVector.Z))
+            flightBodyGyro.CFrame = targetCFrame
         end
         
-        -- Определяем горизонтальное направление движения
+        -- Определяем направление движения
         local moveDirection = Vector3.new(0, 0, 0)
-        local isMovingHorizontally = false
+        local isMoving = false
         
-        -- Управление полетом по горизонтали
+        -- Управление полетом (только горизонтальное)
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then
             local flatLookVector = Vector3.new(lookVector.X, 0, lookVector.Z)
             if flatLookVector.Magnitude > 0 then
                 moveDirection = moveDirection + flatLookVector.Unit
             end
-            isMovingHorizontally = true
+            isMoving = true
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.S) then
             local flatLookVector = Vector3.new(lookVector.X, 0, lookVector.Z)
             if flatLookVector.Magnitude > 0 then
                 moveDirection = moveDirection - flatLookVector.Unit
             end
-            isMovingHorizontally = true
+            isMoving = true
         end
         
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then
@@ -3365,7 +3114,7 @@ function MainModule.EnableFlight()
             if flatRightVector.Magnitude > 0 then
                 moveDirection = moveDirection - flatRightVector.Unit
             end
-            isMovingHorizontally = true
+            isMoving = true
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.D) then
             local rightVector = cameraCFrame.RightVector
@@ -3373,99 +3122,70 @@ function MainModule.EnableFlight()
             if flatRightVector.Magnitude > 0 then
                 moveDirection = moveDirection + flatRightVector.Unit
             end
-            isMovingHorizontally = true
+            isMoving = true
         end
         
-        -- Вертикальное управление (только при активном желании)
-        local wantsToGoUp = UserInputService:IsKeyDown(Enum.KeyCode.Space)
-        local wantsToGoDown = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or 
-                             UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
-        
-        -- Определяем целевую вертикальную скорость
-        if wantsToGoUp then
-            targetVerticalSpeed = MainModule.Fly.Speed * 0.8  -- Медленнее чем горизонтально
-        elseif wantsToGoDown then
-            targetVerticalSpeed = -MainModule.Fly.Speed * 0.8
-        else
-            -- Если не нажаты клавиши, стремимся к 0 вертикальной скорости
-            targetVerticalSpeed = 0
+        -- Вертикальное управление (неявное через вектор взгляда)
+        local verticalControl = 0
+        if math.abs(lookVector.Y) > 0.3 then
+            verticalControl = lookVector.Y * 0.7
+            isMoving = true
         end
         
-        -- Плавное изменение вертикальной скорости
-        if currentVerticalSpeed < targetVerticalSpeed then
-            currentVerticalSpeed = math.min(currentVerticalSpeed + verticalAcceleration * deltaTime, targetVerticalSpeed)
-        elseif currentVerticalSpeed > targetVerticalSpeed then
-            currentVerticalSpeed = math.max(currentVerticalSpeed - verticalAcceleration * deltaTime, targetVerticalSpeed)
-        end
-        
-        -- Применяем горизонтальное движение
-        if isMovingHorizontally then
-            -- Нормализуем направление
+        if isMoving then
+            -- Нормализуем горизонтальное направление
             if moveDirection.Magnitude > 0 then
                 moveDirection = moveDirection.Unit
             end
             
-            -- Устанавливаем горизонтальную скорость
-            local horizontalVelocity = moveDirection * MainModule.Fly.Speed
+            -- Комбинируем горизонтальное и вертикальное движение
+            local finalDirection = Vector3.new(
+                moveDirection.X,
+                verticalControl,
+                moveDirection.Z
+            )
+            
+            if finalDirection.Magnitude > 0 then
+                finalDirection = finalDirection.Unit
+            end
+            
+            -- Устанавливаем скорость движения
+            local targetVelocity = finalDirection * MainModule.Fly.Speed
             
             if flightBodyVelocity then
-                flightBodyVelocity.Velocity = Vector3.new(
-                    horizontalVelocity.X,
-                    0,  -- Оставляем Y = 0 для BodyVelocity
-                    horizontalVelocity.Z
-                )
+                flightBodyVelocity.Velocity = targetVelocity
             end
+            
+            -- Устанавливаем состояние для анимаций
+            humanoid:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
+            
+            -- Очень важный момент: имитируем нормальную физику
+            rootPart.AssemblyLinearVelocity = targetVelocity * 0.3
+            rootPart.Velocity = targetVelocity * 0.2
+            
         else
-            -- Останавливаем горизонтальное движение
+            -- Если не двигаемся, плавно останавливаемся
             if flightBodyVelocity then
                 flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
             end
-        end
-        
-        -- Применяем вертикальное движение
-        if verticalBodyVelocity then
-            verticalBodyVelocity.Velocity = Vector3.new(0, currentVerticalSpeed, 0)
-        end
-        
-        -- Имитация гравитации и физики
-        if not (wantsToGoUp or wantsToGoDown) and currentVerticalSpeed == 0 then
-            -- Если не двигаемся вертикально, применяем легкую гравитацию для реалистичности
-            rootPart.Velocity = Vector3.new(
-                rootPart.Velocity.X,
-                rootPart.Velocity.Y * 0.95, -- Плавное замедление
-                rootPart.Velocity.Z
-            )
-        end
-        
-        -- Устанавливаем состояние для анимаций
-        if isMovingHorizontally or math.abs(currentVerticalSpeed) > 1 then
-            humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
-            humanoid.PlatformStand = true
-        else
+            
+            -- Плавный сброс скоростей
+            rootPart.AssemblyLinearVelocity = rootPart.AssemblyLinearVelocity * 0.9
+            rootPart.Velocity = rootPart.Velocity * 0.9
+            
             humanoid:ChangeState(Enum.HumanoidStateType.Physics)
-            humanoid.PlatformStand = false
         end
         
-        -- Анти-детект: периодически меняем параметры BodyVelocity
-        local currentTime = tick()
-        if currentTime - MainModule.Fly.LastPhysicsCheck > 0.5 then
-            MainModule.Fly.LastPhysicsCheck = currentTime
+        -- Анти-детект: имитируем нормальное поведение
+        if humanoid then
+            humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
+            humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
             
-            if flightBodyVelocity then
-                flightBodyVelocity.P = math.random(1000, 1500)
-            end
-            
-            if verticalBodyVelocity then
-                verticalBodyVelocity.P = math.random(1000, 1500)
+            -- Периодически меняем состояние для реалистичности
+            if math.random(1, 100) == 1 then
+                humanoid:ChangeState(Enum.HumanoidStateType.Running)
             end
         end
-        
-        -- Имитируем нормальное поведение через AssemblyLinearVelocity
-        rootPart.AssemblyLinearVelocity = Vector3.new(
-            rootPart.AssemblyLinearVelocity.X * 0.9,
-            rootPart.AssemblyLinearVelocity.Y * 0.95,
-            rootPart.AssemblyLinearVelocity.Z * 0.9
-        )
     end)
     
     -- Обработка смерти персонажа
@@ -3520,14 +3240,11 @@ function MainModule.DisableFlight()
             local bv = rootPart:FindFirstChild("HumanoidRootPartVelocity")
             if bv then bv:Destroy() end
             
-            local vb = rootPart:FindFirstChild("VerticalControl")
-            if vb then vb:Destroy() end
-            
             -- Удаляем BodyGyro
             local bg = rootPart:FindFirstChild("HumanoidRootPartGyro")
             if bg then bg:Destroy() end
             
-            -- Возвращаем нормальную физику
+            -- Плавный сброс физических параметров
             rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             rootPart.Velocity = Vector3.new(0, 0, 0)
         end
@@ -3540,7 +3257,6 @@ function MainModule.DisableFlight()
                 humanoid.PlatformStand = MainModule.Fly.OriginalStates.PlatformStand
                 humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
                 humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
-                humanoid.UseJumpPower = MainModule.Fly.OriginalStates.UseJumpPower
             end
             
             -- Возвращаем нормальное состояние
@@ -3551,7 +3267,6 @@ function MainModule.DisableFlight()
     MainModule.Fly.OriginalStates = nil
     MainModule.Fly.BodyVelocity = nil
     MainModule.Fly.BodyGyro = nil
-    MainModule.Fly.CurrentVerticalVelocity = 0
 end
 
 function MainModule.ToggleFly(enabled)
@@ -4110,19 +3825,3 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
