@@ -27,11 +27,12 @@ MainModule.Noclip = {
     NoclipParts = {},
     AntiCheatProtection = true,
     LastUpdate = 0,
-    UpdateInterval = 0.1,
+    UpdateInterval = 0.15, -- Увеличен интервал для меньшей активности
     OriginalCollisions = {},
     Connection = nil,
     DefaultHotkey = nil,
-    CurrentHotkey = nil
+    CurrentHotkey = nil,
+    ProcessingDelay = 0.05 -- Задержка между обработкой частей
 }
 
 MainModule.AutoDodge = {
@@ -2986,7 +2987,7 @@ function MainModule.ToggleAutoDodge(enabled)
     end
 end
 
--- Новая улучшенная функция ToggleNoclip
+-- Улучшенная скрытная функция ToggleNoclip
 function MainModule.ToggleNoclip(enabled)
     MainModule.Noclip.Enabled = enabled
     
@@ -2995,73 +2996,156 @@ function MainModule.ToggleNoclip(enabled)
         MainModule.Noclip.Connection = nil
     end
     
+    -- Восстанавливаем коллизии постепенно и незаметно
     for part, _ in pairs(MainModule.Noclip.NoclipParts) do
-        if part and part.Parent then
-            part.CanCollide = true
+        if part and part.Parent and MainModule.Noclip.OriginalCollisions[part] then
+            part.CanCollide = MainModule.Noclip.OriginalCollisions[part]
         end
     end
     MainModule.Noclip.NoclipParts = {}
     MainModule.Noclip.OriginalCollisions = {}
     
     if not enabled then
-        ShowNotification("Noclip", "Disabled", 3)
+        task.wait(0.1) -- Небольшая задержка перед уведомлением
+        ShowNotification("Noclip", "Disabled", 2)
         return
     end
     
-    ShowNotification("Noclip", "Enabled", 3)
+    task.wait(0.2) -- Задержка перед включением
+    ShowNotification("Noclip", "Enabled", 2)
     
-    local function NoclipLoop()
+    local function StealthNoclipLoop()
         local character = GetCharacter()
         if not character then return end
         
+        -- Собираем все части заранее
+        local parts = {}
         for _, child in pairs(character:GetDescendants()) do
             if child:IsA("BasePart") and child.CanCollide == true then
-                if not MainModule.Noclip.OriginalCollisions[child] then
-                    MainModule.Noclip.OriginalCollisions[child] = true
+                table.insert(parts, child)
+            end
+        end
+        
+        -- Обрабатываем части с разными задержками для меньшей заметности
+        for i, part in ipairs(parts) do
+            if not MainModule.Noclip.OriginalCollisions[part] then
+                MainModule.Noclip.OriginalCollisions[part] = true
+            end
+            
+            -- Разные задержки для разных частей
+            local delay = (i % 3 == 0) and 0.03 or 0.01
+            task.wait(delay)
+            
+            -- Отключаем только если нужно
+            if part.CanCollide then
+                part.CanCollide = false
+                MainModule.Noclip.NoclipParts[part] = true
+            end
+        end
+        
+        -- Также обрабатываем человеческие части отдельно
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            for _, partName in ipairs({"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"}) do
+                local part = character:FindFirstChild(partName)
+                if part and part:IsA("BasePart") and part.CanCollide then
+                    task.wait(0.02)
+                    if not MainModule.Noclip.OriginalCollisions[part] then
+                        MainModule.Noclip.OriginalCollisions[part] = true
+                    end
+                    part.CanCollide = false
+                    MainModule.Noclip.NoclipParts[part] = true
                 end
-                
-                if MainModule.Noclip.AntiCheatProtection then
-                    local randomDelay = math.random(1, 3) / 100
-                    task.wait(randomDelay)
-                end
-                
-                child.CanCollide = false
-                MainModule.Noclip.NoclipParts[child] = true
             end
         end
     end
     
-    MainModule.Noclip.Connection = RunService.Heartbeat:Connect(function()
+    -- Используем Stepped вместо Heartbeat для меньшей частоты обновлений
+    MainModule.Noclip.Connection = RunService.Stepped:Connect(function()
         if not MainModule.Noclip.Enabled then return end
         
         local currentTime = tick()
         if currentTime - MainModule.Noclip.LastUpdate >= MainModule.Noclip.UpdateInterval then
             MainModule.Noclip.LastUpdate = currentTime
-            NoclipLoop()
+            
+            -- Случайный интервал для усложнения обнаружения
+            local randomWait = math.random(10, 25) / 100
+            task.wait(randomWait)
+            
+            -- Запускаем в отдельной корутине
+            task.spawn(StealthNoclipLoop)
         end
     end)
     
+    -- Меньше активных слушателей событий
     local character = GetCharacter()
     if character then
-        character.DescendantAdded:Connect(function(child)
+        -- Обработка новых частей с большой задержкой
+        local descendantConnection
+        descendantConnection = character.DescendantAdded:Connect(function(child)
             if MainModule.Noclip.Enabled and child:IsA("BasePart") then
-                task.wait(0.1)
-                if child.CanCollide then
+                -- Большая задержка перед обработкой новой части
+                task.wait(math.random(5, 15) / 10)
+                if child and child.CanCollide then
+                    if not MainModule.Noclip.OriginalCollisions[child] then
+                        MainModule.Noclip.OriginalCollisions[child] = true
+                    end
                     child.CanCollide = false
                     MainModule.Noclip.NoclipParts[child] = true
                 end
             end
         end)
+        
+        -- Очистка при отключении
+        MainModule.Noclip.CleanupConnections = function()
+            if descendantConnection then
+                descendantConnection:Disconnect()
+            end
+        end
     end
     
-    LocalPlayer.CharacterAdded:Connect(function(newChar)
-        task.wait(1)
+    -- Меньше агрессивная обработка смены персонажа
+    local charAddedConnection
+    charAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
+        task.wait(math.random(15, 30) / 10) -- Случайная задержка 1.5-3 секунды
+        
         if MainModule.Noclip.Enabled then
+            -- Перезапускаем плавно
             MainModule.ToggleNoclip(false)
-            task.wait(0.1)
+            task.wait(0.3)
             MainModule.ToggleNoclip(true)
         end
     end)
+    
+    -- Сохраняем соединение для очистки
+    MainModule.Noclip.CharAddedConnection = charAddedConnection
+end
+
+-- Функция для плавного отключения
+function MainModule.SafeDisableNoclip()
+    if MainModule.Noclip.Enabled then
+        -- Постепенное восстановление коллизий
+        for part, _ in pairs(MainModule.Noclip.NoclipParts) do
+            if part and part.Parent then
+                task.wait(0.05) -- Задержка между частями
+                if MainModule.Noclip.OriginalCollisions[part] then
+                    part.CanCollide = MainModule.Noclip.OriginalCollisions[part]
+                end
+            end
+        end
+        
+        -- Очистка
+        if MainModule.Noclip.CleanupConnections then
+            MainModule.Noclip.CleanupConnections()
+        end
+        
+        if MainModule.Noclip.CharAddedConnection then
+            MainModule.Noclip.CharAddedConnection:Disconnect()
+        end
+        
+        MainModule.Noclip.Enabled = false
+        ShowNotification("Noclip", "Safely Disabled", 2)
+    end
 end
 
 -- Новая улучшенная функция Fly
@@ -3907,3 +3991,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
