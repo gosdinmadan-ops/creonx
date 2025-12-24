@@ -24,15 +24,15 @@ MainModule.SpeedHack = {
 
 MainModule.Noclip = {
     Enabled = false,
-    NoclipParts = {},
-    AntiCheatProtection = true,
-    LastUpdate = 0,
-    UpdateInterval = 0.15, -- Увеличен интервал для меньшей активности
-    OriginalCollisions = {},
+    TransparencyParts = {}, -- Только те части, которые мы сделали прозрачными
+    OriginalTransparency = {}, -- Оригинальная прозрачность
+    CheckInterval = 0.2, -- Интервал проверки (редкий для экономии ресурсов)
+    LastCheck = 0,
+    Radius = 15,
     Connection = nil,
-    DefaultHotkey = nil,
-    CurrentHotkey = nil,
-    ProcessingDelay = 0.05 -- Задержка между обработкой частей
+    TouchedParts = {}, -- Части, к которым прикоснулись ноги
+    TouchedTime = {}, -- Время прикосновения
+    FootParts = {} -- Части ног для определения контакта
 }
 
 MainModule.AutoDodge = {
@@ -2987,8 +2987,149 @@ function MainModule.ToggleAutoDodge(enabled)
     end
 end
 
--- Улучшенная скрытная функция ToggleNoclip
+-- Быстрая функция для получения позиции персонажа
+local function GetCharacterPosition()
+    local character = GetCharacter()
+    if not character then return nil end
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+    return humanoidRootPart and humanoidRootPart.Position
+end
+
+-- Получаем части ног
+local function GetFootParts(character)
+    local parts = {}
+    local leftLeg = character:FindFirstChild("Left Leg") or character:FindFirstChild("LeftFoot")
+    local rightLeg = character:FindFirstChild("Right Leg") or character:FindFirstChild("RightFoot")
+    
+    if leftLeg and leftLeg:IsA("BasePart") then
+        table.insert(parts, leftLeg)
+    end
+    if rightLeg and rightLeg:IsA("BasePart") then
+        table.insert(parts, rightLeg)
+    end
+    
+    -- Также добавляем нижнюю часть туловища
+    local lowerTorso = character:FindFirstChild("LowerTorso")
+    if lowerTorso and lowerTorso:IsA("BasePart") then
+        table.insert(parts, lowerTorso)
+    end
+    
+    return parts
+end
+
+-- Проверяем, прикоснулась ли часть к объекту
+local function CheckTouchedParts()
+    local character = GetCharacter()
+    if not character then return end
+    
+    -- Получаем части ног один раз
+    if #MainModule.Noclip.FootParts == 0 then
+        MainModule.Noclip.FootParts = GetFootParts(character)
+    end
+    
+    local currentTime = tick()
+    
+    -- Проверяем прикосновения для каждой части ноги
+    for _, footPart in ipairs(MainModule.Noclip.FootParts) do
+        if footPart and footPart.Parent then
+            -- Получаем все части, с которыми соприкасается нога
+            for _, part in ipairs(workspace:GetPartsInPart(footPart)) do
+                if part:IsA("BasePart") and part.CanCollide then
+                    MainModule.Noclip.TouchedParts[part] = true
+                    MainModule.Noclip.TouchedTime[part] = currentTime
+                    
+                    -- Немедленно возвращаем прозрачность если часть касается ног
+                    if MainModule.Noclip.OriginalTransparency[part] then
+                        part.Transparency = MainModule.Noclip.OriginalTransparency[part]
+                        MainModule.Noclip.TransparencyParts[part] = nil
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Очищаем старые прикосновения (старше 0.5 секунды)
+    for part, touchTime in pairs(MainModule.Noclip.TouchedTime) do
+        if currentTime - touchTime > 0.5 then
+            MainModule.Noclip.TouchedParts[part] = nil
+            MainModule.Noclip.TouchedTime[part] = nil
+        end
+    end
+end
+
+-- Функция для восстановления прозрачности
+local function RestoreTransparency(part)
+    if MainModule.Noclip.OriginalTransparency[part] then
+        part.Transparency = MainModule.Noclip.OriginalTransparency[part]
+        MainModule.Noclip.OriginalTransparency[part] = nil
+        MainModule.Noclip.TransparencyParts[part] = nil
+    end
+end
+
+-- Основная функция обработки
+local function ProcessTransparency()
+    if not MainModule.Noclip.Enabled then return end
+    
+    local currentTime = tick()
+    if currentTime - MainModule.Noclip.LastCheck < MainModule.Noclip.CheckInterval then
+        return
+    end
+    MainModule.Noclip.LastCheck = currentTime
+    
+    local position = GetCharacterPosition()
+    if not position then return end
+    
+    -- Сначала проверяем прикосновения
+    CheckTouchedParts()
+    
+    -- Находим все части в радиусе
+    local region = Region3.new(
+        position - Vector3.new(MainModule.Noclip.Radius, MainModule.Noclip.Radius, MainModule.Noclip.Radius),
+        position + Vector3.new(MainModule.Noclip.Radius, MainModule.Noclip.Radius, MainModule.Noclip.Radius)
+    )
+    
+    -- Используем оптимизированный поиск
+    local parts = workspace:FindPartsInRegion3WithIgnoreList(
+        region, 
+        {GetCharacter()}, -- Игнорируем персонажа
+        100 -- Максимальное количество частей
+    )
+    
+    -- Обрабатываем только видимые коллизионные части
+    for _, part in ipairs(parts) do
+        if part:IsA("BasePart") and part.CanCollide and part.Transparency < 0.8 then
+            -- Пропускаем части, к которым прикоснулись ноги
+            if MainModule.Noclip.TouchedParts[part] then
+                RestoreTransparency(part)
+                continue
+            end
+            
+            -- Делаем прозрачным только если еще не сделали
+            if not MainModule.Noclip.OriginalTransparency[part] then
+                MainModule.Noclip.OriginalTransparency[part] = part.Transparency
+                part.Transparency = 0.8 -- Прозрачность, но не полная невидимость
+                MainModule.Noclip.TransparencyParts[part] = true
+            end
+        end
+    end
+    
+    -- Восстанавливаем прозрачность для частей вне радиуса
+    for part, _ in pairs(MainModule.Noclip.TransparencyParts) do
+        if not part or not part.Parent then
+            RestoreTransparency(part)
+        elseif (part.Position - position).Magnitude > MainModule.Noclip.Radius then
+            -- Проверяем не касается ли часть ног перед восстановлением
+            if not MainModule.Noclip.TouchedParts[part] then
+                RestoreTransparency(part)
+            end
+        end
+    end
+end
+
+-- Включаем/выключаем режим
 function MainModule.ToggleNoclip(enabled)
+    if MainModule.Noclip.Enabled == enabled then return end
+    
     MainModule.Noclip.Enabled = enabled
     
     if MainModule.Noclip.Connection then
@@ -2996,155 +3137,48 @@ function MainModule.ToggleNoclip(enabled)
         MainModule.Noclip.Connection = nil
     end
     
-    -- Восстанавливаем коллизии постепенно и незаметно
-    for part, _ in pairs(MainModule.Noclip.NoclipParts) do
-        if part and part.Parent and MainModule.Noclip.OriginalCollisions[part] then
-            part.CanCollide = MainModule.Noclip.OriginalCollisions[part]
-        end
-    end
-    MainModule.Noclip.NoclipParts = {}
-    MainModule.Noclip.OriginalCollisions = {}
-    
     if not enabled then
-        task.wait(0.1) -- Небольшая задержка перед уведомлением
+        -- Восстанавливаем все прозрачности
+        for part, _ in pairs(MainModule.Noclip.TransparencyParts) do
+            if part and part.Parent then
+                RestoreTransparency(part)
+            end
+        end
+        
+        -- Очищаем таблицы
+        MainModule.Noclip.TransparencyParts = {}
+        MainModule.Noclip.OriginalTransparency = {}
+        MainModule.Noclip.TouchedParts = {}
+        MainModule.Noclip.TouchedTime = {}
+        MainModule.Noclip.FootParts = {}
+        
         ShowNotification("Noclip", "Disabled", 2)
         return
     end
     
-    task.wait(0.2) -- Задержка перед включением
     ShowNotification("Noclip", "Enabled", 2)
     
-    local function StealthNoclipLoop()
-        local character = GetCharacter()
-        if not character then return end
-        
-        -- Собираем все части заранее
-        local parts = {}
-        for _, child in pairs(character:GetDescendants()) do
-            if child:IsA("BasePart") and child.CanCollide == true then
-                table.insert(parts, child)
-            end
-        end
-        
-        -- Обрабатываем части с разными задержками для меньшей заметности
-        for i, part in ipairs(parts) do
-            if not MainModule.Noclip.OriginalCollisions[part] then
-                MainModule.Noclip.OriginalCollisions[part] = true
-            end
-            
-            -- Разные задержки для разных частей
-            local delay = (i % 3 == 0) and 0.03 or 0.01
-            task.wait(delay)
-            
-            -- Отключаем только если нужно
-            if part.CanCollide then
-                part.CanCollide = false
-                MainModule.Noclip.NoclipParts[part] = true
-            end
-        end
-        
-        -- Также обрабатываем человеческие части отдельно
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            for _, partName in ipairs({"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"}) do
-                local part = character:FindFirstChild(partName)
-                if part and part:IsA("BasePart") and part.CanCollide then
-                    task.wait(0.02)
-                    if not MainModule.Noclip.OriginalCollisions[part] then
-                        MainModule.Noclip.OriginalCollisions[part] = true
-                    end
-                    part.CanCollide = false
-                    MainModule.Noclip.NoclipParts[part] = true
-                end
-            end
-        end
-    end
-    
-    -- Используем Stepped вместо Heartbeat для меньшей частоты обновлений
+    -- Основной цикл с низкой частотой для экономии ресурсов
     MainModule.Noclip.Connection = RunService.Stepped:Connect(function()
-        if not MainModule.Noclip.Enabled then return end
-        
-        local currentTime = tick()
-        if currentTime - MainModule.Noclip.LastUpdate >= MainModule.Noclip.UpdateInterval then
-            MainModule.Noclip.LastUpdate = currentTime
-            
-            -- Случайный интервал для усложнения обнаружения
-            local randomWait = math.random(10, 25) / 100
-            task.wait(randomWait)
-            
-            -- Запускаем в отдельной корутине
-            task.spawn(StealthNoclipLoop)
-        end
+        ProcessTransparency()
     end)
     
-    -- Меньше активных слушателей событий
-    local character = GetCharacter()
-    if character then
-        -- Обработка новых частей с большой задержкой
-        local descendantConnection
-        descendantConnection = character.DescendantAdded:Connect(function(child)
-            if MainModule.Noclip.Enabled and child:IsA("BasePart") then
-                -- Большая задержка перед обработкой новой части
-                task.wait(math.random(5, 15) / 10)
-                if child and child.CanCollide then
-                    if not MainModule.Noclip.OriginalCollisions[child] then
-                        MainModule.Noclip.OriginalCollisions[child] = true
-                    end
-                    child.CanCollide = false
-                    MainModule.Noclip.NoclipParts[child] = true
-                end
-            end
-        end)
-        
-        -- Очистка при отключении
-        MainModule.Noclip.CleanupConnections = function()
-            if descendantConnection then
-                descendantConnection:Disconnect()
-            end
-        end
-    end
-    
-    -- Меньше агрессивная обработка смены персонажа
-    local charAddedConnection
-    charAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
-        task.wait(math.random(15, 30) / 10) -- Случайная задержка 1.5-3 секунды
-        
+    -- Обработка смены персонажа
+    LocalPlayer.CharacterAdded:Connect(function()
+        task.wait(1)
         if MainModule.Noclip.Enabled then
-            -- Перезапускаем плавно
-            MainModule.ToggleNoclip(false)
-            task.wait(0.3)
-            MainModule.ToggleNoclip(true)
+            -- Сбрасываем данные о ногах при смене персонажа
+            MainModule.Noclip.FootParts = {}
+            MainModule.Noclip.TouchedParts = {}
+            MainModule.Noclip.TouchedTime = {}
         end
     end)
-    
-    -- Сохраняем соединение для очистки
-    MainModule.Noclip.CharAddedConnection = charAddedConnection
 end
 
--- Функция для плавного отключения
+-- Функция для безопасного выхода
 function MainModule.SafeDisableNoclip()
     if MainModule.Noclip.Enabled then
-        -- Постепенное восстановление коллизий
-        for part, _ in pairs(MainModule.Noclip.NoclipParts) do
-            if part and part.Parent then
-                task.wait(0.05) -- Задержка между частями
-                if MainModule.Noclip.OriginalCollisions[part] then
-                    part.CanCollide = MainModule.Noclip.OriginalCollisions[part]
-                end
-            end
-        end
-        
-        -- Очистка
-        if MainModule.Noclip.CleanupConnections then
-            MainModule.Noclip.CleanupConnections()
-        end
-        
-        if MainModule.Noclip.CharAddedConnection then
-            MainModule.Noclip.CharAddedConnection:Disconnect()
-        end
-        
-        MainModule.Noclip.Enabled = false
-        ShowNotification("Noclip", "Safely Disabled", 2)
+        MainModule.ToggleNoclip(false)
     end
 end
 
@@ -3991,4 +4025,5 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
