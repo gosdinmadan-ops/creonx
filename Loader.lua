@@ -51,7 +51,7 @@ local function LoadKeys()
         print("Using default keys. Error: " .. tostring(result))
         keysData = {
             keys = {
-                ["TESTKEY123456789"] = 0  -- 0 means infinite time
+                ["testedkeysop202"] = 0  -- 0 means infinite time
             },
             blacklist = {}
         }
