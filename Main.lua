@@ -30,9 +30,6 @@ MainModule.Noclip = {
     LastCheck = 0,
     Radius = 6,
     Connection = nil,
-    TouchedParts = {},
-    TouchedTime = {},
-    FootParts = {},
     FixedParts = {} -- Части, которые всегда остаются видимыми (под ногами)
 }
 
@@ -2988,57 +2985,86 @@ function MainModule.ToggleAutoDodge(enabled)
     end
 end
 
--- Получаем позицию персонажа и частей ног
-local function GetCharacterData()
+-- Получаем позицию персонажа
+local function GetCharacterPosition()
     local character = GetCharacter()
     if not character then return nil end
     
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
-    if not humanoidRootPart then return nil end
-    
-    -- Получаем части ног
-    local footParts = {}
-    local leftFoot = character:FindFirstChild("LeftFoot") or character:FindFirstChild("Left Leg")
-    local rightFoot = character:FindFirstChild("RightFoot") or character:FindFirstChild("Right Leg")
-    
-    if leftFoot and leftFoot:IsA("BasePart") then
-        table.insert(footParts, leftFoot)
-    end
-    if rightFoot and rightFoot:IsA("BasePart") then
-        table.insert(footParts, rightFoot)
-    end
-    
-    return {
-        position = humanoidRootPart.Position,
-        footParts = footParts,
-        character = character
-    }
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart") or 
+                             character:FindFirstChild("Torso") or
+                             character:FindFirstChild("UpperTorso")
+    return humanoidRootPart and humanoidRootPart.Position
 end
 
 -- Определяем фиксированные части (те, что под ногами)
-local function UpdateFixedParts(characterData)
-    if not characterData then return end
+local function GetFixedPartsUnderFeet()
+    local character = GetCharacter()
+    if not character then return {} end
     
-    MainModule.Noclip.FixedParts = {}
+    local fixedParts = {}
     
-    -- Ищем части под ногами
-    for _, footPart in ipairs(characterData.footParts) do
+    -- Получаем части ног
+    local leftFoot = character:FindFirstChild("LeftFoot") or character:FindFirstChild("Left Leg")
+    local rightFoot = character:FindFirstChild("RightFoot") or character:FindFirstChild("Right Leg")
+    local lowerTorso = character:FindFirstChild("LowerTorso")
+    
+    local footParts = {}
+    if leftFoot and leftFoot:IsA("BasePart") then table.insert(footParts, leftFoot) end
+    if rightFoot and rightFoot:IsA("BasePart") then table.insert(footParts, rightFoot) end
+    if lowerTorso and lowerTorso:IsA("BasePart") then table.insert(footParts, lowerTorso) end
+    
+    -- Проверяем что под ногами
+    for _, footPart in ipairs(footParts) do
         local rayOrigin = footPart.Position
-        local rayDirection = Vector3.new(0, -10, 0) -- Луч вниз на 10 юнитов
-        local raycastResult = workspace:Raycast(rayOrigin, rayDirection)
+        local rayDirection = Vector3.new(0, -5, 0) -- Короткий луч вниз
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterDescendantsInstances = {character}
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        
+        local raycastResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
         
         if raycastResult then
             local part = raycastResult.Instance
             if part:IsA("BasePart") then
-                MainModule.Noclip.FixedParts[part] = true
-                
-                -- Если эта часть была прозрачной, восстанавливаем её
-                if MainModule.Noclip.OriginalProperties[part] then
-                    RestorePartProperties(part)
-                end
+                fixedParts[part] = true
             end
         end
     end
+    
+    return fixedParts
+end
+
+-- Находим части в радиусе (без GetPartsInSphere)
+local function GetPartsInRadius(position, radius)
+    local parts = {}
+    
+    -- Используем Region3 как альтернативу
+    local region = Region3.new(
+        position - Vector3.new(radius, radius, radius),
+        position + Vector3.new(radius, radius, radius)
+    )
+    
+    -- Игнорируем персонажа и других игроков
+    local ignoreList = {GetCharacter()}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character and player ~= LocalPlayer then
+            table.insert(ignoreList, player.Character)
+        end
+    end
+    
+    local foundParts = workspace:FindPartsInRegion3WithIgnoreList(region, ignoreList, 50)
+    
+    -- Фильтруем только коллизионные части
+    for _, part in ipairs(foundParts) do
+        if part:IsA("BasePart") and part.CanCollide then
+            -- Пропускаем слишком маленькие части (декорации)
+            if part.Size.Magnitude > 0.5 then
+                table.insert(parts, part)
+            end
+        end
+    end
+    
+    return parts
 end
 
 -- Сохраняем и изменяем свойства части
@@ -3051,13 +3077,21 @@ local function MakePartTransparent(part)
         MainModule.Noclip.OriginalProperties[part] = {
             Transparency = part.Transparency,
             CanCollide = part.CanCollide,
-            CanTouch = part.CanTouch
+            CanTouch = part.CanTouch,
+            CastShadow = part.CastShadow,
+            Material = part.Material
         }
         
         -- Делаем полностью прозрачным и неколлизионным
         part.Transparency = 1
         part.CanCollide = false
         part.CanTouch = false
+        part.CastShadow = false
+        
+        -- Если это кирпич или бетон, делаем пластиковым для меньшей заметности
+        if part.Material == Enum.Material.Plastic then
+            part.Material = Enum.Material.Plastic
+        end
         
         MainModule.Noclip.TransparencyParts[part] = true
     end
@@ -3067,9 +3101,17 @@ end
 local function RestorePartProperties(part)
     if MainModule.Noclip.OriginalProperties[part] then
         local props = MainModule.Noclip.OriginalProperties[part]
+        
+        -- Восстанавливаем все свойства
         part.Transparency = props.Transparency
         part.CanCollide = props.CanCollide
         part.CanTouch = props.CanTouch
+        part.CastShadow = props.CastShadow
+        
+        -- Восстанавливаем материал только если он не пластик
+        if props.Material ~= Enum.Material.Plastic then
+            part.Material = props.Material
+        end
         
         MainModule.Noclip.OriginalProperties[part] = nil
         MainModule.Noclip.TransparencyParts[part] = nil
@@ -3086,59 +3128,33 @@ local function ProcessTransparency()
     end
     MainModule.Noclip.LastCheck = currentTime
     
-    local characterData = GetCharacterData()
-    if not characterData then return end
+    local position = GetCharacterPosition()
+    if not position then return end
     
     -- Обновляем фиксированные части (под ногами)
-    UpdateFixedParts(characterData)
+    MainModule.Noclip.FixedParts = GetFixedPartsUnderFeet()
     
-    -- Находим все части в маленьком радиусе (6 юнитов)
-    local nearbyParts = {}
-    
-    -- Используем более быстрый метод поиска
-    local characters = {}
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player.Character then
-            table.insert(characters, player.Character)
-        end
-    end
-    
-    -- Ищем статические части в радиусе
-    for _, part in ipairs(workspace:GetPartsInSphere(
-        characterData.position, 
-        MainModule.Noclip.Radius
-    )) do
-        if part:IsA("BasePart") and part.CanCollide and not part:IsDescendantOf(characterData.character) then
-            -- Пропускаем части других игроков
-            local skip = false
-            for _, char in ipairs(characters) do
-                if part:IsDescendantOf(char) then
-                    skip = true
-                    break
-                end
-            end
-            
-            if not skip then
-                table.insert(nearbyParts, part)
-            end
-        end
-    end
+    -- Находим части в радиусе
+    local nearbyParts = GetPartsInRadius(position, MainModule.Noclip.Radius)
     
     -- Делаем найденные части прозрачными
     for _, part in ipairs(nearbyParts) do
         if not MainModule.Noclip.FixedParts[part] then
             MakePartTransparent(part)
+        else
+            -- Если часть под ногами, но мы сделали её прозрачной - восстанавливаем
+            if MainModule.Noclip.OriginalProperties[part] then
+                RestorePartProperties(part)
+            end
         end
     end
     
-    -- Восстанавливаем части вне радиуса и не под ногами
+    -- Восстанавливаем части вне радиуса
     for part, _ in pairs(MainModule.Noclip.TransparencyParts) do
         if not part or not part.Parent then
             RestorePartProperties(part)
-        elseif (part.Position - characterData.position).Magnitude > MainModule.Noclip.Radius then
-            if not MainModule.Noclip.FixedParts[part] then
-                RestorePartProperties(part)
-            end
+        elseif (part.Position - position).Magnitude > MainModule.Noclip.Radius * 1.5 then
+            RestorePartProperties(part)
         end
     end
 end
@@ -3173,8 +3189,8 @@ function MainModule.ToggleNoclip(enabled)
     
     ShowNotification("Noclip", "Enabled", 2)
     
-    -- Запускаем основной цикл
-    MainModule.Noclip.Connection = RunService.Stepped:Connect(function()
+    -- Запускаем основной цикл с Heartbeat для плавности
+    MainModule.Noclip.Connection = RunService.Heartbeat:Connect(function(deltaTime)
         ProcessTransparency()
     end)
     
@@ -3197,8 +3213,24 @@ local function SetupPartCleanup()
     end)
 end
 
+-- Быстрая функция для отладки
+function MainModule.ForceRestoreAll()
+    for part, _ in pairs(MainModule.Noclip.TransparencyParts) do
+        if part and part.Parent then
+            RestorePartProperties(part)
+        end
+    end
+    MainModule.Noclip.TransparencyParts = {}
+    MainModule.Noclip.OriginalProperties = {}
+    MainModule.Noclip.FixedParts = {}
+    ShowNotification("Noclip", "Force Restored All", 2)
+end
+
 -- Инициализация
-SetupPartCleanup()
+task.spawn(function()
+    task.wait(1)
+    SetupPartCleanup()
+end)
 
 -- Новая улучшенная функция Fly
 function MainModule.EnableFlight()
@@ -4043,6 +4075,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
