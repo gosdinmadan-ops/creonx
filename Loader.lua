@@ -5,6 +5,7 @@ local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
+local DataStoreService = game:GetService("DataStoreService")
 local player = Players.LocalPlayer
 
 -- Christmas colors
@@ -21,24 +22,32 @@ local CHRISTMAS_COLORS = {
 -- Admin key
 local ADMIN_KEY = "KEYADMIN20262026LOADING"
 
--- Keys storage (local for now)
+-- Keys storage
 local keysData = {
     keys = {},
     blacklist = {}
 }
 
--- Try to load existing keys from workspace or save them
+-- Try to load from DataStore or use memory
 local function SaveKeys()
     local success, err = pcall(function()
-        -- Try to save to workspace
-        local folder = workspace:FindFirstChild("CreonX_Keys")
+        -- Try DataStore first
+        local dataStore = DataStoreService:GetDataStore("CreonX_Keys")
+        dataStore:SetAsync("KeysData", keysData)
+    end)
+    
+    if not success then
+        -- Fallback to memory with warning
+        warn("Could not save to DataStore, using memory only. Error: " .. tostring(err))
+        -- Можно также сохранить в ReplicatedStorage как запасной вариант
+        local repStorage = game:GetService("ReplicatedStorage")
+        local folder = repStorage:FindFirstChild("CreonX_Keys_Temp")
         if not folder then
             folder = Instance.new("Folder")
-            folder.Name = "CreonX_Keys"
-            folder.Parent = workspace
+            folder.Name = "CreonX_Keys_Temp"
+            folder.Parent = repStorage
         end
         
-        -- Save as JSON string in a StringValue
         local dataValue = folder:FindFirstChild("KeysData")
         if not dataValue then
             dataValue = Instance.new("StringValue")
@@ -47,30 +56,37 @@ local function SaveKeys()
         end
         
         dataValue.Value = HttpService:JSONEncode(keysData)
-    end)
-    
-    if not success then
-        -- If can't save, just use memory
-        warn("Could not save keys data, using memory only")
     end
 end
 
 local function LoadKeys()
     local success, err = pcall(function()
-        local folder = workspace:FindFirstChild("CreonX_Keys")
-        if folder then
-            local dataValue = folder:FindFirstChild("KeysData")
-            if dataValue and dataValue.Value ~= "" then
-                local loadedData = HttpService:JSONDecode(dataValue.Value)
-                if loadedData then
-                    keysData = loadedData
-                end
-            end
+        -- Try DataStore first
+        local dataStore = DataStoreService:GetDataStore("CreonX_Keys")
+        local savedData = dataStore:GetAsync("KeysData")
+        
+        if savedData then
+            keysData = savedData
+            return
         end
     end)
     
     if not success then
-        warn("Could not load keys data, starting fresh")
+        -- Try fallback from ReplicatedStorage
+        local repStorage = game:GetService("ReplicatedStorage")
+        local folder = repStorage:FindFirstChild("CreonX_Keys_Temp")
+        if folder then
+            local dataValue = folder:FindFirstChild("KeysData")
+            if dataValue and dataValue.Value ~= "" then
+                local success2, result = pcall(function()
+                    return HttpService:JSONDecode(dataValue.Value)
+                end)
+                if success2 and result then
+                    keysData = result
+                    return
+                end
+            end
+        end
     end
 end
 
@@ -80,7 +96,7 @@ LoadKeys()
 -- Check if key is valid
 local function IsKeyValid(key)
     -- Check if key is in blacklist
-    for _, blacklistedKey in pairs(keysData.blacklist) do
+    for _, blacklistedKey in pairs(keysData.blacklist or {}) do
         if blacklistedKey == key then
             return false, "Key is blacklisted"
         end
@@ -92,7 +108,7 @@ local function IsKeyValid(key)
     end
     
     -- Check in regular keys
-    for keyData, expiry in pairs(keysData.keys) do
+    for keyData, expiry in pairs(keysData.keys or {}) do
         if keyData == key then
             local currentTime = os.time()
             if expiry > currentTime then
@@ -115,6 +131,10 @@ local function AddNewKey(key)
     if key == ADMIN_KEY then
         return false, "Cannot add admin key"
     end
+    
+    -- Initialize tables if nil
+    keysData.keys = keysData.keys or {}
+    keysData.blacklist = keysData.blacklist or {}
     
     -- Check if key already exists
     for existingKey, _ in pairs(keysData.keys) do
@@ -140,22 +160,22 @@ end
 
 -- Get remaining time for a key
 local function GetKeyRemainingTime(key)
-    local expiry = keysData.keys[key]
-    if expiry then
-        local currentTime = os.time()
-        local remaining = expiry - currentTime
-        
-        if remaining <= 0 then
-            return "Expired"
-        end
-        
-        local hours = math.floor(remaining / 3600)
-        local minutes = math.floor((remaining % 3600) / 60)
-        
-        return string.format("%02d:%02d", hours, minutes)
+    if not keysData.keys or not keysData.keys[key] then
+        return "N/A"
     end
     
-    return "N/A"
+    local expiry = keysData.keys[key]
+    local currentTime = os.time()
+    local remaining = expiry - currentTime
+    
+    if remaining <= 0 then
+        return "Expired"
+    end
+    
+    local hours = math.floor(remaining / 3600)
+    local minutes = math.floor((remaining % 3600) / 60)
+    
+    return string.format("%02d:%02d", hours, minutes)
 end
 
 -- GUI Creation
@@ -364,7 +384,7 @@ end
 local function ShowNotification(text, color)
     local notificationFrame = Instance.new("Frame")
     notificationFrame.Size = UDim2.new(0, 300, 0, 50)
-    notificationFrame.Position = UDim2.new(0.5, -150, 0.8, 0)
+    notificationFrame.Position = UDim2.new(0.5, -150, 0.8, -100) -- Start off-screen
     notificationFrame.BackgroundColor3 = color
     notificationFrame.BackgroundTransparency = 0.3
     notificationFrame.BorderSizePixel = 0
@@ -383,18 +403,24 @@ local function ShowNotification(text, color)
     local label = CreateStyledLabel(notificationFrame, text, UDim2.new(1, 0, 1, 0), UDim2.new(0, 0, 0, 0), false)
     label.TextColor3 = CHRISTMAS_COLORS.WHITE
     
-    TweenService:Create(notificationFrame, TweenInfo.new(0.3), {
+    -- Slide in animation
+    TweenService:Create(notificationFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
         Position = UDim2.new(0.5, -150, 0.8, 0)
     }):Play()
     
+    -- Auto remove after 3 seconds
     task.delay(3, function()
-        TweenService:Create(notificationFrame, TweenInfo.new(0.3), {
-            BackgroundTransparency = 1,
-            Position = UDim2.new(0.5, -150, 0.85, 0)
-        }):Play()
-        task.delay(0.3, function()
-            notificationFrame:Destroy()
-        end)
+        if notificationFrame and notificationFrame.Parent then
+            TweenService:Create(notificationFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                BackgroundTransparency = 1,
+                Position = UDim2.new(0.5, -150, 0.8, -100)
+            }):Play()
+            task.delay(0.3, function()
+                if notificationFrame and notificationFrame.Parent then
+                    notificationFrame:Destroy()
+                end
+            end)
+        end
     end)
     
     return notificationFrame
@@ -403,7 +429,7 @@ end
 -- Function to clear GUI
 local function ClearGUI()
     for _, child in pairs(ScreenGui:GetChildren()) do
-        if child.Name ~= "CreonXLoader" then
+        if child.Name ~= "SnowContainer" then
             child:Destroy()
         end
     end
@@ -470,11 +496,7 @@ local function CreateKeyVerificationGUI()
                 loadstring(game:HttpGet("https://raw.githubusercontent.com/gosdinmadan-ops/creonx/main/Creon.lua", true))()
             end
         else
-            if keyType == "Key expired" or keyType == "Key is blacklisted" then
-                ShowNotification("Key is no longer available!", CHRISTMAS_COLORS.RED)
-            else
-                ShowNotification("Invalid key", CHRISTMAS_COLORS.RED)
-            end
+            ShowNotification(keyType, CHRISTMAS_COLORS.RED)
         end
     end)
 end
@@ -711,56 +733,58 @@ local function CreateKeyListGUI()
     
     -- Add keys to list
     local keyCount = 0
-    for key, expiry in pairs(keysData.keys) do
-        keyCount = keyCount + 1
-        
-        local keyFrame = Instance.new("Frame")
-        keyFrame.Size = UDim2.new(1, 0, 0, 35)
-        keyFrame.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
-        keyFrame.BackgroundTransparency = 0.6
-        keyFrame.BorderSizePixel = 0
-        keyFrame.LayoutOrder = keyCount
-        keyFrame.Parent = scrollingFrame
-        
-        local keyCorner = Instance.new("UICorner")
-        keyCorner.CornerRadius = UDim.new(0, 6)
-        keyCorner.Parent = keyFrame
-        
-        -- Key text (masked)
-        local maskedKey = string.sub(key, 1, 8) .. "..." .. string.sub(key, -8)
-        local keyLabel = CreateStyledLabel(
-            keyFrame,
-            "🔐 " .. maskedKey,
-            UDim2.new(0.6, 0, 1, 0),
-            UDim2.new(0, 10, 0, 0),
-            false
-        )
-        keyLabel.TextXAlignment = Enum.TextXAlignment.Left
-        keyLabel.Font = Enum.Font.GothamSemibold
-        
-        -- Remaining time
-        local remainingTime = GetKeyRemainingTime(key)
-        local timeLabel = CreateStyledLabel(
-            keyFrame,
-            remainingTime,
-            UDim2.new(0.3, 0, 1, 0),
-            UDim2.new(0.65, 0, 0, 0),
-            false
-        )
-        timeLabel.TextXAlignment = Enum.TextXAlignment.Right
-        
-        -- Color code based on remaining time
-        if remainingTime == "Expired" then
-            timeLabel.TextColor3 = CHRISTMAS_COLORS.RED
-        elseif tonumber(string.sub(remainingTime, 1, 2)) < 5 then
-            timeLabel.TextColor3 = CHRISTMAS_COLORS.GOLD
-        else
-            timeLabel.TextColor3 = CHRISTMAS_COLORS.GREEN
+    if keysData.keys then
+        for key, expiry in pairs(keysData.keys) do
+            keyCount = keyCount + 1
+            
+            local keyFrame = Instance.new("Frame")
+            keyFrame.Size = UDim2.new(1, 0, 0, 35)
+            keyFrame.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+            keyFrame.BackgroundTransparency = 0.6
+            keyFrame.BorderSizePixel = 0
+            keyFrame.LayoutOrder = keyCount
+            keyFrame.Parent = scrollingFrame
+            
+            local keyCorner = Instance.new("UICorner")
+            keyCorner.CornerRadius = UDim.new(0, 6)
+            keyCorner.Parent = keyFrame
+            
+            -- Key text (masked)
+            local maskedKey = string.sub(key, 1, 8) .. "..." .. string.sub(key, -8)
+            local keyLabel = CreateStyledLabel(
+                keyFrame,
+                "🔐 " .. maskedKey,
+                UDim2.new(0.6, 0, 1, 0),
+                UDim2.new(0, 10, 0, 0),
+                false
+            )
+            keyLabel.TextXAlignment = Enum.TextXAlignment.Left
+            keyLabel.Font = Enum.Font.GothamSemibold
+            
+            -- Remaining time
+            local remainingTime = GetKeyRemainingTime(key)
+            local timeLabel = CreateStyledLabel(
+                keyFrame,
+                remainingTime,
+                UDim2.new(0.3, 0, 1, 0),
+                UDim2.new(0.65, 0, 0, 0),
+                false
+            )
+            timeLabel.TextXAlignment = Enum.TextXAlignment.Right
+            
+            -- Color code based on remaining time
+            if remainingTime == "Expired" then
+                timeLabel.TextColor3 = CHRISTMAS_COLORS.RED
+            elseif remainingTime ~= "N/A" and tonumber(string.sub(remainingTime, 1, 2)) < 5 then
+                timeLabel.TextColor3 = CHRISTMAS_COLORS.GOLD
+            else
+                timeLabel.TextColor3 = CHRISTMAS_COLORS.GREEN
+            end
         end
     end
     
     -- Add blacklist section
-    if #keysData.blacklist > 0 then
+    if keysData.blacklist and #keysData.blacklist > 0 then
         local separator = Instance.new("Frame")
         separator.Size = UDim2.new(1, 0, 0, 2)
         separator.BackgroundColor3 = CHRISTMAS_COLORS.RED
