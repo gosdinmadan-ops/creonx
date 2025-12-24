@@ -48,6 +48,11 @@ if not success then
     return
 end
 
+-- Устанавливаем стандартную скорость на 39 вместо 16
+if MainModule and MainModule.SpeedHack then
+    MainModule.SpeedHack.CurrentSpeed = 39
+end
+
 -- Переменные для отслеживания статуса AntiFall
 local GlassBridgeAntiFallEnabled = false
 local JumpRopeAntiFallEnabled = false
@@ -61,10 +66,10 @@ local menuHotkey = Enum.KeyCode.M
 local isChoosingMenuKey = false
 local keyChangeButton = nil
 
--- Переменные для биндов
-local FlyHotkey = nil
-local NoclipHotkey = nil
-local KillauraHotkey = nil
+-- Переменные для биндов (берем из MainModule или устанавливаем по умолчанию)
+local FlyHotkey = MainModule.Fly.DefaultHotkey or Enum.KeyCode.X
+local NoclipHotkey = MainModule.Noclip.DefaultHotkey or Enum.KeyCode.V
+local KillauraHotkey = MainModule.Killaura.DefaultHotkey or Enum.KeyCode.C
 local isChoosingFlyKey = false
 local isChoosingNoclipKey = false
 local isChoosingKillauraKey = false
@@ -101,7 +106,7 @@ ScreenGui.ResetOnSpawn = false
 -- Размеры GUI
 local GUI_WIDTH = 860
 local GUI_HEIGHT = 595
-local MOBILE_SCALE = 0.6 -- Уменьшение на 40% для мобильных
+local MOBILE_SCALE = 0.6
 
 -- Для мобильных устройств уменьшаем размер
 if UIS.TouchEnabled then
@@ -134,15 +139,16 @@ for i = 1, 30 do
     })
 end
 
--- Кастомная мышка (только для ПК)
+-- Кастомная мышка (только для ПК) - ПРОСТОЙ ПЛЮСИК
 if not UIS.TouchEnabled then
     CustomCursor.Name = "CustomCursor"
     CustomCursor.Size = UDim2.new(0, 20, 0, 20)
     CustomCursor.BackgroundTransparency = 1
-    CustomCursor.Image = "rbxassetid://12700154929"
+    CustomCursor.Image = "rbxassetid://10747375826" -- Простой плюсик
     CustomCursor.ImageColor3 = CHRISTMAS_COLORS.RED
     CustomCursor.Visible = false
-    CustomCursor.ZIndex = 1000
+    CustomCursor.ZIndex = 10000
+    CustomCursor.AnchorPoint = Vector2.new(0.5, 0.5)
     CustomCursor.Parent = ScreenGui
 end
 
@@ -229,12 +235,10 @@ if UIS.TouchEnabled then
             CustomCursor.Visible = false
         end
     end)
-else
-    -- Для ПК кнопки сворачивания нет
 end
 
 -- УВЕЛИЧИВАЕМ ШИРИНУ ЛЕВОЙ ПАНЕЛИ С ВКЛАДКАМИ
-local TAB_PANEL_WIDTH = 200 -- Увеличенная ширина
+local TAB_PANEL_WIDTH = 200
 
 -- Фрейм для кнопок вкладок с прокруткой
 TabButtons.Size = UDim2.new(0, TAB_PANEL_WIDTH, 1, -40)
@@ -259,7 +263,7 @@ TabScrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
 TabScrolling.Parent = TabButtons
 
 local TabLayout = Instance.new("UIListLayout")
-TabLayout.Padding = UDim.new(0, 8) -- Отступ между вкладками
+TabLayout.Padding = UDim.new(0, 8)
 TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
 TabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     TabScrolling.CanvasSize = UDim2.new(0, 0, 0, TabLayout.AbsoluteContentSize.Y + 10)
@@ -295,7 +299,7 @@ ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 end)
 ContentLayout.Parent = ContentScrolling
 
--- Кнопка для мобильных устройств (Delta Mobile) с улучшенным дизайном
+-- Кнопка для мобильных устройств (Delta Mobile)
 if UIS.TouchEnabled then
     MobileOpenButton.Size = UDim2.new(0, 140, 0, 50)
     MobileOpenButton.Position = UDim2.new(0.5, -70, 0.2, 0)
@@ -317,56 +321,10 @@ if UIS.TouchEnabled then
     mobileStroke.Thickness = 2
     mobileStroke.Parent = MobileOpenButton
     
-    MobileOpenButton.MouseEnter:Connect(function()
-        TweenService:Create(MobileOpenButton, TweenInfo.new(0.2), {
-            BackgroundTransparency = 0.2,
-            TextColor3 = CHRISTMAS_COLORS.GOLD
-        }):Play()
-    end)
-    
-    MobileOpenButton.MouseLeave:Connect(function()
-        TweenService:Create(MobileOpenButton, TweenInfo.new(0.2), {
-            BackgroundTransparency = 0.3,
-            TextColor3 = CHRISTMAS_COLORS.WHITE
-        }):Play()
-    end)
-    
     MobileOpenButton.MouseButton1Click:Connect(function()
         MainFrame.Visible = true
         MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
         MobileOpenButton.Visible = false
-    end)
-    
-    -- Улучшенное перетаскивание для мобильных
-    local mobileDragging = false
-    local mobileDragStart, mobileStartPos
-    
-    MobileOpenButton.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            mobileDragging = true
-            mobileDragStart = input.Position
-            mobileStartPos = MobileOpenButton.Position
-            MobileOpenButton.ZIndex = 10
-        end
-    end)
-    
-    MobileOpenButton.InputChanged:Connect(function(input)
-        if mobileDragging and input.UserInputType == Enum.UserInputType.Touch then
-            local delta = input.Position - mobileDragStart
-            MobileOpenButton.Position = UDim2.new(
-                mobileStartPos.X.Scale, 
-                mobileStartPos.X.Offset + delta.X,
-                mobileStartPos.Y.Scale, 
-                mobileStartPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-    
-    MobileOpenButton.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            mobileDragging = false
-            MobileOpenButton.ZIndex = 1
-        end
     end)
     
     MainFrame.Visible = false
@@ -488,18 +446,6 @@ local function CreateButton(text, isTitle)
         }):Play()
         TweenService:Create(button.UIStroke, TweenInfo.new(0.2), {
             Transparency = 0.3
-        }):Play()
-    end)
-    
-    button.MouseButton1Down:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.1), {
-            BackgroundTransparency = 0.1
-        }):Play()
-    end)
-    
-    button.MouseButton1Up:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.1), {
-            BackgroundTransparency = isTitle and 0.2 or 0.3
         }):Play()
     end)
     
@@ -755,13 +701,23 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
     
     -- Функция изменения бинда
     local function startKeyChange(bindType)
-        if bindType == "fly" and isChoosingFlyKey then return end
-        if bindType == "noclip" and isChoosingNoclipKey then return end
-        if bindType == "killaura" and isChoosingKillauraKey then return end
+        local choosingVariable
         
-        if bindType == "fly" then isChoosingFlyKey = true end
-        if bindType == "noclip" then isChoosingNoclipKey = true end
-        if bindType == "killaura" then isChoosingKillauraKey = true end
+        if bindType == "fly" then 
+            if isChoosingFlyKey then return end
+            isChoosingFlyKey = true
+            choosingVariable = isChoosingFlyKey
+        elseif bindType == "noclip" then 
+            if isChoosingNoclipKey then return end
+            isChoosingNoclipKey = true
+            choosingVariable = isChoosingNoclipKey
+        elseif bindType == "killaura" then 
+            if isChoosingKillauraKey then return end
+            isChoosingKillauraKey = true
+            choosingVariable = isChoosingKillauraKey
+        else
+            return
+        end
         
         bindBtn.Text = "Press a key..."
         bindBtn.BackgroundColor3 = CHRISTMAS_COLORS.GREEN
@@ -805,14 +761,14 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
         
         -- Если 3 секунды не выбрали клавишу - отменяем
         task.delay(3, function()
-            if bindBtn.Text == "Press a key..." then
-                updateButtonText()
-                bindBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
-                bindBtn.BackgroundTransparency = 0.3
-                
+            if choosingVariable then
                 if bindType == "fly" then isChoosingFlyKey = false end
                 if bindType == "noclip" then isChoosingNoclipKey = false end
                 if bindType == "killaura" then isChoosingKillauraKey = false end
+                
+                updateButtonText()
+                bindBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+                bindBtn.BackgroundTransparency = 0.3
                 
                 if connection then
                     connection:Disconnect()
@@ -906,31 +862,6 @@ local function CreateKeybindButton()
     btnStroke.Thickness = 1
     btnStroke.Transparency = 0.3
     btnStroke.Parent = changeBtn
-    
-    -- Анимации для кнопки
-    changeBtn.MouseEnter:Connect(function()
-        if not isChoosingMenuKey then
-            TweenService:Create(changeBtn, TweenInfo.new(0.2), {
-                BackgroundTransparency = 0.2,
-                TextColor3 = CHRISTMAS_COLORS.GOLD
-            }):Play()
-            TweenService:Create(changeBtn.UIStroke, TweenInfo.new(0.2), {
-                Transparency = 0.1
-            }):Play()
-        end
-    end)
-    
-    changeBtn.MouseLeave:Connect(function()
-        if not isChoosingMenuKey then
-            TweenService:Create(changeBtn, TweenInfo.new(0.2), {
-                BackgroundTransparency = 0.3,
-                TextColor3 = CHRISTMAS_COLORS.WHITE
-            }):Play()
-            TweenService:Create(changeBtn.UIStroke, TweenInfo.new(0.2), {
-                Transparency = 0.3
-            }):Play()
-        end
-    end)
     
     -- Функция обновления текста
     local function updateKeyText()
@@ -1062,27 +993,6 @@ local function CreateGuardTypeSelector()
     btnStroke.Transparency = 0.3
     btnStroke.Parent = changeBtn
     
-    -- Анимации для кнопки
-    changeBtn.MouseEnter:Connect(function()
-        TweenService:Create(changeBtn, TweenInfo.new(0.2), {
-            BackgroundTransparency = 0.2,
-            TextColor3 = CHRISTMAS_COLORS.GOLD
-        }):Play()
-        TweenService:Create(changeBtn.UIStroke, TweenInfo.new(0.2), {
-            Transparency = 0.1
-        }):Play()
-    end)
-    
-    changeBtn.MouseLeave:Connect(function()
-        TweenService:Create(changeBtn, TweenInfo.new(0.2), {
-            BackgroundTransparency = 0.3,
-            TextColor3 = CHRISTMAS_COLORS.WHITE
-        }):Play()
-        TweenService:Create(changeBtn.UIStroke, TweenInfo.new(0.2), {
-            Transparency = 0.3
-        }):Play()
-    end)
-    
     -- Циклическое переключение типов
     local guardTypes = {"Circle", "Triangle", "Square"}
     local currentIndex = 1
@@ -1111,6 +1021,19 @@ local function ClearContent()
     for _, child in pairs(ContentScrolling:GetChildren()) do
         if child:IsA("Frame") or child:IsA("TextButton") or child:IsA("TextLabel") then
             child:Destroy()
+        end
+    end
+end
+
+-- Функция для установки биндов в MainModule
+local function SetBindInMainModule(bindType, key)
+    if MainModule then
+        if bindType == "fly" and MainModule.SetFlyHotkey then
+            MainModule.SetFlyHotkey(key)
+        elseif bindType == "noclip" and MainModule.SetNoclipHotkey then
+            MainModule.SetNoclipHotkey(key)
+        elseif bindType == "killaura" and MainModule.SetKillauraHotkey then
+            MainModule.SetKillauraHotkey(key)
         end
     end
 end
@@ -1144,6 +1067,7 @@ local function CreateMainContent()
     -- Fly Bind
     local flyBindContainer, flyBindBtn = CreateBindButton("Fly Bind", FlyHotkey, function(newKey)
         FlyHotkey = newKey
+        SetBindInMainModule("fly", newKey)
         setupFlyListener()
     end, 3)
     
@@ -1161,6 +1085,7 @@ local function CreateMainContent()
     -- Noclip Bind
     local noclipBindContainer, noclipBindBtn = CreateBindButton("Noclip Bind", NoclipHotkey, function(newKey)
         NoclipHotkey = newKey
+        SetBindInMainModule("noclip", newKey)
         setupNoclipListener()
     end, 5)
     
@@ -1186,21 +1111,16 @@ local function CreateMainContent()
         end
     end, 7)
     
-    -- Anti Stun + Anti Ragdoll
+    -- Anti Stun + Anti Ragdoll (УБРАЛИ ПРОВЕРКУ ИНИЦИАЛИЗАЦИИ)
     CreateToggle("Anti Stun + Anti Ragdoll", function() 
         return MainModule and MainModule.Misc and MainModule.Misc.BypassRagdollEnabled or false
     end, function(enabled)
-        if initializing then
-            enabled = false
-            print("Bypass Ragdoll принудительно отключен при инициализации")
-        end
-        
         if MainModule and MainModule.ToggleBypassRagdoll then
             MainModule.ToggleBypassRagdoll(enabled)
         elseif MainModule and MainModule.Misc then
             MainModule.Misc.BypassRagdollEnabled = enabled
         end
-    end, 8, true)
+    end, 8)
     
     -- Instance Interact
     CreateToggle("Instance Interact", function() 
@@ -1271,23 +1191,6 @@ local function CreateCombatContent()
     end, function(enabled)
         if MainModule and MainModule.ToggleKillaura then
             MainModule.ToggleKillaura(enabled)
-            if enabled then
-                if game:GetService("StarterGui") then
-                    game:GetService("StarterGui"):SetCore("SendNotification", {
-                        Title = "Killaura",
-                        Text = "Enabled",
-                        Duration = 3
-                    })
-                end
-            else
-                if game:GetService("StarterGui") then
-                    game:GetService("StarterGui"):SetCore("SendNotification", {
-                        Title = "Killaura",
-                        Text = "Disabled",
-                        Duration = 3
-                    })
-                end
-            end
         elseif MainModule and MainModule.Killaura then
             MainModule.Killaura.Enabled = enabled
         end
@@ -1296,6 +1199,7 @@ local function CreateCombatContent()
     -- Killaura Bind
     local killauraBindContainer, killauraBindBtn = CreateBindButton("Killaura Bind", KillauraHotkey, function(newKey)
         KillauraHotkey = newKey
+        SetBindInMainModule("killaura", newKey)
         setupKillauraListener()
     end, 3)
 end
@@ -1613,13 +1517,10 @@ local function CreateGlassBridgeContent()
     local glassEspBtn = CreateButton("Glass ESP")
     glassEspBtn.LayoutOrder = 2
     glassEspBtn.MouseButton1Click:Connect(function()
-        if MainModule and MainModule.RevealGlassBridge then
-            MainModule.RevealGlassBridge()
-            glassEspBtn.Text = "Glass ESP (Revealed)"
-            glassEspBtn.BackgroundColor3 = CHRISTMAS_COLORS.GREEN
-            task.wait(1)
-            glassEspBtn.Text = "Glass ESP"
-            glassEspBtn.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+        if MainModule and MainModule.ToggleGlassBridgeESP then
+            MainModule.ToggleGlassBridgeESP(not (MainModule.GlassBridge and MainModule.GlassBridge.GlassESPEnabled or false))
+            glassEspBtn.Text = MainModule.GlassBridge and MainModule.GlassBridge.GlassESPEnabled and "Glass ESP (ON)" or "Glass ESP (OFF)"
+            glassEspBtn.BackgroundColor3 = MainModule.GlassBridge and MainModule.GlassBridge.GlassESPEnabled and CHRISTMAS_COLORS.GREEN or Color3.fromRGB(25, 30, 45)
         end
     end)
     
@@ -1750,10 +1651,8 @@ local function CreateLastDinnerContent()
         ZoneKillEnabled = enabled
         if enabled then
             zoneKillTextLabel.Text = "Zone Kill [ON]"
-            print("Zone Kill активирован")
         else
             zoneKillTextLabel.Text = "Zone Kill [OFF]"
-            print("Zone Kill деактивирован")
         end
     end, 2)
 end
@@ -1809,12 +1708,12 @@ end
 local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Sky Squid", "Last Dinner", "Settings"}
 local tabButtons = {}
 
-local TAB_BUTTON_WIDTH_PERCENT = 0.95 -- 95% ширины контейнера
+local TAB_BUTTON_WIDTH_PERCENT = 0.95
 
 for i, name in pairs(tabs) do
     local buttonContainer = Instance.new("Frame")
     buttonContainer.Size = UDim2.new(TAB_BUTTON_WIDTH_PERCENT, 0, 0, 40)
-    buttonContainer.Position = UDim2.new((1 - TAB_BUTTON_WIDTH_PERCENT)/2, 0, 0, (i-1)*48 + 10) -- Центрируем
+    buttonContainer.Position = UDim2.new((1 - TAB_BUTTON_WIDTH_PERCENT)/2, 0, 0, (i-1)*48 + 10)
     buttonContainer.BackgroundTransparency = 1
     buttonContainer.LayoutOrder = i
     buttonContainer.Parent = TabScrolling
@@ -2042,13 +1941,13 @@ local function updateHotkeyListener()
 end
 
 -- Установка начальных слушателей
-setupHotkeyListener()
+updateHotkeyListener()
 
 -- Автоматическое обновление GUI состояния
 local guiUpdateConnection
 guiUpdateConnection = RunService.Heartbeat:Connect(function()
     UpdateAllToggles()
-    task.wait(0.5) -- Обновляем каждые 0.5 секунд
+    task.wait(0.5)
 end)
 
 -- Закрытие при нажатии ESC
@@ -2077,9 +1976,8 @@ end
 
 -- Завершаем инициализацию после создания GUI
 task.spawn(function()
-    task.wait(2) -- Даем время на полную инициализацию
+    task.wait(2)
     initializing = false
-    print("🎄 Creon X v2.5 успешно загружен! 🎅")
 end)
 
 -- Очистка при удалении GUI
@@ -2108,12 +2006,3 @@ end)
 
 -- Отображение сообщения о загрузке
 print("🎄 Creon X v2.5 loaded successfully 🎅")
-print("Menu Hotkey: " .. menuHotkey.Name)
-print("Fly Hotkey: " .. (FlyHotkey and FlyHotkey.Name or "Not set"))
-print("Noclip Hotkey: " .. (NoclipHotkey and NoclipHotkey.Name or "Not set"))
-print("Killaura Hotkey: " .. (KillauraHotkey and KillauraHotkey.Name or "Not set"))
-if not isSupported then
-    warn("Warning: Executor " .. executorName .. " is not officially supported")
-else
-    print("Executor " .. executorName .. " is supported")
-end
