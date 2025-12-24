@@ -65,21 +65,11 @@ MainModule.Fly = {
     Speed = 39,
     Connection = nil,
     BodyVelocity = nil,
-    BodyGyro = nil,
+    LastUpdate = 0,
     HumanoidDiedConnection = nil,
     CharacterAddedConnection = nil,
-    SpeedChangeConnection = nil,
-    WasRagdollEnabled = false,
-    LastUpdate = 0,
-    LastPosition = Vector3.new(0, 0, 0),
     OriginalStates = nil,
-    FakeParts = {},
-    LastGroundCheck = 0,
-    GroundCheckInterval = 2,
-    FakeFloorSize = Vector3.new(10, 1, 10),
-    IsFlying = false,
-    DefaultHotkey = nil,
-    CurrentHotkey = nil
+    IsFlying = false
 }
 
 MainModule.AutoQTE = {
@@ -2995,26 +2985,15 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
--- Новая улучшенная функция Fly
+-- Улучшенный и максимально скрытный Fly
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
-    
-    MainModule.Fly.WasRagdollEnabled = MainModule.Misc.BypassRagdollEnabled
-    
-    if MainModule.Misc.BypassRagdollEnabled then
-        MainModule.ToggleBypassRagdoll(false)
-    end
     
     MainModule.Fly.Enabled = true
     
     if MainModule.Fly.Connection then
         MainModule.Fly.Connection:Disconnect()
         MainModule.Fly.Connection = nil
-    end
-    
-    if MainModule.Fly.SpeedChangeConnection then
-        MainModule.Fly.SpeedChangeConnection:Disconnect()
-        MainModule.Fly.SpeedChangeConnection = nil
     end
     
     local character = GetCharacter()
@@ -3024,35 +3003,29 @@ function MainModule.EnableFlight()
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
     
+    -- Сохраняем оригинальные состояния
     MainModule.Fly.OriginalStates = {
         WalkSpeed = humanoid.WalkSpeed,
         JumpPower = humanoid.JumpPower,
-        PlatformStand = false
+        AutoRotate = humanoid.AutoRotate
     }
     
-    MainModule.Fly.FakeParts = {}
+    -- Отключаем авто-ротацию для лучшего контроля
+    humanoid.AutoRotate = false
     
     MainModule.Fly.LastUpdate = tick()
-    MainModule.Fly.LastPosition = rootPart.Position
     
+    -- Создаем BodyVelocity для полета (максимально скрытный)
     local flightBodyVelocity = Instance.new("BodyVelocity")
-    flightBodyVelocity.Name = "FlightVelocity"
-    flightBodyVelocity.MaxForce = Vector3.new(40000, 40000, 40000)
+    flightBodyVelocity.Name = "MainModuleVelocity"
+    flightBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
     flightBodyVelocity.P = 1250
     flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
     flightBodyVelocity.Parent = rootPart
     
-    local flightBodyGyro = Instance.new("BodyGyro")
-    flightBodyGyro.Name = "FlightGyro"
-    flightBodyGyro.MaxTorque = Vector3.new(40000, 40000, 40000)
-    flightBodyGyro.P = 1250
-    flightBodyGyro.D = 250
-    flightBodyGyro.CFrame = rootPart.CFrame
-    flightBodyGyro.Parent = rootPart
-    
     MainModule.Fly.BodyVelocity = flightBodyVelocity
-    MainModule.Fly.BodyGyro = flightBodyGyro
     
+    -- Основной цикл полета
     MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
         if not MainModule.Fly.Enabled or not character or not character.Parent then 
             if MainModule.Fly.Connection then
@@ -3068,15 +3041,18 @@ function MainModule.EnableFlight()
         local Camera = workspace.CurrentCamera
         if not Camera then return end
         
+        -- Получаем вектор взгляда камеры
+        local lookVector = Camera.CFrame.LookVector
         local moveDirection = Vector3.new(0, 0, 0)
         local isMoving = false
         
+        -- Управление только через W/A/S/D
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-            moveDirection = moveDirection + Camera.CFrame.LookVector
+            moveDirection = moveDirection + lookVector
             isMoving = true
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-            moveDirection = moveDirection - Camera.CFrame.LookVector
+            moveDirection = moveDirection - lookVector
             isMoving = true
         end
         
@@ -3089,103 +3065,68 @@ function MainModule.EnableFlight()
             isMoving = true
         end
         
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            moveDirection = moveDirection + Vector3.new(0, 1, 0)
-            isMoving = true
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-            moveDirection = moveDirection - Vector3.new(0, 1, 0)
-            isMoving = true
-        end
-        
         if isMoving then
+            -- Нормализуем вектор направления
             if moveDirection.Magnitude > 0 then
                 moveDirection = moveDirection.Unit
             end
             
+            -- Учитываем Y-компоненту из вектора взгляда для вертикального движения
+            local verticalComponent = lookVector.Y * 0.5 -- Мягкий контроль высоты
+            moveDirection = Vector3.new(
+                moveDirection.X,
+                verticalComponent,
+                moveDirection.Z
+            )
+            
+            if moveDirection.Magnitude > 0 then
+                moveDirection = moveDirection.Unit
+            end
+            
+            -- Устанавливаем скорость
             local targetVelocity = moveDirection * MainModule.Fly.Speed
             
+            -- Плавное изменение скорости
             if flightBodyVelocity then
                 flightBodyVelocity.Velocity = targetVelocity
             end
             
-            if flightBodyGyro then
-                flightBodyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + Camera.CFrame.LookVector)
-            end
-            
-            humanoid.PlatformStand = false
+            -- Устанавливаем состояние бега для анимаций
             humanoid:ChangeState(Enum.HumanoidStateType.Running)
             
+            -- Сброс физической скорости для скрытности
             rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            
         else
+            -- Если не двигаемся, останавливаемся
             if flightBodyVelocity then
                 flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
             end
             
-            if flightBodyGyro then
-                flightBodyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + Vector3.new(0, 0, 1))
-            end
-            
+            -- Сброс физической скорости
             rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         end
         
+        -- Анти-детект: периодически меняем свойства BodyVelocity
         local currentTime = tick()
-        if currentTime - MainModule.Fly.LastUpdate > 0.1 then
+        if currentTime - MainModule.Fly.LastUpdate > 0.5 then
             MainModule.Fly.LastUpdate = currentTime
             
-            for _, part in ipairs(MainModule.Fly.FakeParts) do
-                part:Destroy()
+            -- Случайное изменение P для сокрытия
+            if flightBodyVelocity and math.random(1, 3) == 1 then
+                flightBodyVelocity.P = math.random(1200, 1300)
             end
-            MainModule.Fly.FakeParts = {}
             
-            local fakePart = Instance.new("Part")
-            fakePart.Name = "FakeFlightGround"
-            fakePart.Size = Vector3.new(4, 1, 4)
-            fakePart.Transparency = 1
-            fakePart.Anchored = true
-            fakePart.CanCollide = true
-            fakePart.Position = rootPart.Position - Vector3.new(0, 3, 0)
-            fakePart.Parent = workspace
-            table.insert(MainModule.Fly.FakeParts, fakePart)
-            
-            MainModule.Fly.LastPosition = rootPart.Position
-            
+            -- Поддерживаем правильное состояние
             if humanoid then
                 humanoid:ChangeState(Enum.HumanoidStateType.Running)
-                humanoid.PlatformStand = false
                 humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
                 humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
             end
         end
     end)
     
-    MainModule.Fly.SpeedChangeConnection = RunService.Heartbeat:Connect(function()
-        if not MainModule.Fly.Enabled then return end
-        
-        local rootPart = GetRootPart(character)
-        if not rootPart then return end
-        
-        local currentTime = tick()
-        if currentTime - MainModule.Fly.LastGroundCheck > 2 then
-            MainModule.Fly.LastGroundCheck = currentTime
-            
-            local fakeGround = Instance.new("Part")
-            fakeGround.Name = "FlyGroundCheck"
-            fakeGround.Size = Vector3.new(10, 1, 10)
-            fakeGround.Transparency = 1
-            fakeGround.Anchored = true
-            fakeGround.CanCollide = true
-            fakeGround.Position = rootPart.Position - Vector3.new(0, 3, 0)
-            fakeGround.Parent = workspace
-            
-            task.delay(0.5, function()
-                if fakeGround and fakeGround.Parent then
-                    fakeGround:Destroy()
-                end
-            end)
-        end
-    end)
-    
+    -- Обработка смерти персонажа
     if MainModule.Fly.HumanoidDiedConnection then
         MainModule.Fly.HumanoidDiedConnection:Disconnect()
     end
@@ -3193,21 +3134,19 @@ function MainModule.EnableFlight()
         MainModule.DisableFlight()
     end)
     
+    -- Обработка смены персонажа
     if MainModule.Fly.CharacterAddedConnection then
         MainModule.Fly.CharacterAddedConnection:Disconnect()
     end
     MainModule.Fly.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newCharacter)
-        task.wait(1)
+        task.wait(0.5)
         
         if MainModule.Fly.Enabled then
-            task.wait(0.5)
             MainModule.DisableFlight()
             task.wait(0.1)
             MainModule.EnableFlight()
         end
     end)
-    
-    MainModule.Fly.LastGroundCheck = tick()
 end
 
 function MainModule.DisableFlight()
@@ -3215,14 +3154,10 @@ function MainModule.DisableFlight()
     
     MainModule.Fly.Enabled = false
     
+    -- Отключаем все соединения
     if MainModule.Fly.Connection then
         MainModule.Fly.Connection:Disconnect()
         MainModule.Fly.Connection = nil
-    end
-    
-    if MainModule.Fly.SpeedChangeConnection then
-        MainModule.Fly.SpeedChangeConnection:Disconnect()
-        MainModule.Fly.SpeedChangeConnection = nil
     end
     
     if MainModule.Fly.HumanoidDiedConnection then
@@ -3239,47 +3174,31 @@ function MainModule.DisableFlight()
     if character then
         local rootPart = GetRootPart(character)
         if rootPart then
-            local bv = rootPart:FindFirstChild("FlightVelocity")
+            -- Удаляем BodyVelocity
+            local bv = rootPart:FindFirstChild("MainModuleVelocity")
             if bv then
                 bv:Destroy()
             end
             
-            local bg = rootPart:FindFirstChild("FlightGyro")
-            if bg then
-                bg:Destroy()
-            end
-            
+            -- Сброс физических параметров
             rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         end
         
         local humanoid = GetHumanoid(character)
         if humanoid then
+            -- Восстанавливаем оригинальные состояния
+            humanoid.AutoRotate = true
             humanoid.PlatformStand = false
-        end
-    end
-    
-    if MainModule.Fly.FakeParts then
-        for _, part in ipairs(MainModule.Fly.FakeParts) do
-            if part and part.Parent then
-                part:Destroy()
+            
+            if MainModule.Fly.OriginalStates then
+                humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
+                humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
             end
         end
-        MainModule.Fly.FakeParts = {}
     end
     
-    if MainModule.Fly.OriginalStates and character then
-        local humanoid = GetHumanoid(character)
-        if humanoid then
-            humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
-            humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
-        end
-    end
     MainModule.Fly.OriginalStates = nil
-    
-    if MainModule.Fly.WasRagdollEnabled then
-        MainModule.ToggleBypassRagdoll(true)
-        MainModule.Fly.WasRagdollEnabled = false
-    end
+    MainModule.Fly.BodyVelocity = nil
 end
 
 function MainModule.ToggleFly(enabled)
@@ -3838,6 +3757,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
