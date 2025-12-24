@@ -28,65 +28,51 @@ local keysData = {
     blacklist = {}
 }
 
--- Try to load from DataStore or use memory
+-- Load keys from GitHub or use default
+local function LoadKeys()
+    local success, result = pcall(function()
+        -- Try to load from GitHub
+        local url = "https://raw.githubusercontent.com/gosdinmadan-ops/creonx/main/keys.json"
+        local response = game:HttpGet(url, true)
+        
+        if response then
+            local loadedData = HttpService:JSONDecode(response)
+            if loadedData then
+                return loadedData
+            end
+        end
+    end)
+    
+    if success and result then
+        keysData = result
+        print("Keys loaded from GitHub successfully")
+    else
+        -- Fallback to default keys
+        print("Using default keys. Error: " .. tostring(result))
+        keysData = {
+            keys = {
+                ["TESTKEY123456789"] = 0  -- 0 means infinite time
+            },
+            blacklist = {}
+        }
+    end
+    
+    -- Ensure tables exist
+    keysData.keys = keysData.keys or {}
+    keysData.blacklist = keysData.blacklist or {}
+end
+
+-- Save keys back to memory (we can't save to GitHub from Roblox)
 local function SaveKeys()
+    -- In Roblox, we can only save to DataStore
     local success, err = pcall(function()
-        -- Try DataStore first
         local dataStore = DataStoreService:GetDataStore("CreonX_Keys")
         dataStore:SetAsync("KeysData", keysData)
     end)
     
     if not success then
-        -- Fallback to memory with warning
-        warn("Could not save to DataStore, using memory only. Error: " .. tostring(err))
-        -- Можно также сохранить в ReplicatedStorage как запасной вариант
-        local repStorage = game:GetService("ReplicatedStorage")
-        local folder = repStorage:FindFirstChild("CreonX_Keys_Temp")
-        if not folder then
-            folder = Instance.new("Folder")
-            folder.Name = "CreonX_Keys_Temp"
-            folder.Parent = repStorage
-        end
-        
-        local dataValue = folder:FindFirstChild("KeysData")
-        if not dataValue then
-            dataValue = Instance.new("StringValue")
-            dataValue.Name = "KeysData"
-            dataValue.Parent = folder
-        end
-        
-        dataValue.Value = HttpService:JSONEncode(keysData)
-    end
-end
-
-local function LoadKeys()
-    local success, err = pcall(function()
-        -- Try DataStore first
-        local dataStore = DataStoreService:GetDataStore("CreonX_Keys")
-        local savedData = dataStore:GetAsync("KeysData")
-        
-        if savedData then
-            keysData = savedData
-            return
-        end
-    end)
-    
-    if not success then
-        -- Try fallback from ReplicatedStorage
-        local repStorage = game:GetService("ReplicatedStorage")
-        local folder = repStorage:FindFirstChild("CreonX_Keys_Temp")
-        if folder then
-            local dataValue = folder:FindFirstChild("KeysData")
-            if dataValue and dataValue.Value ~= "" then
-                local success2, result = pcall(function()
-                    return HttpService:JSONDecode(dataValue.Value)
-                end)
-                if success2 and result then
-                    keysData = result
-                    return
-                end
-            end
-        end
+        warn("Could not save to DataStore: " .. tostring(err))
+        -- We'll keep changes in memory only
     end
 end
 
@@ -96,7 +82,7 @@ LoadKeys()
 -- Check if key is valid
 local function IsKeyValid(key)
     -- Check if key is in blacklist
-    for _, blacklistedKey in pairs(keysData.blacklist or {}) do
+    for _, blacklistedKey in pairs(keysData.blacklist) do
         if blacklistedKey == key then
             return false, "Key is blacklisted"
         end
@@ -108,8 +94,13 @@ local function IsKeyValid(key)
     end
     
     -- Check in regular keys
-    for keyData, expiry in pairs(keysData.keys or {}) do
+    for keyData, expiry in pairs(keysData.keys) do
         if keyData == key then
+            -- 0 means infinite time
+            if expiry == 0 then
+                return true, "user"
+            end
+            
             local currentTime = os.time()
             if expiry > currentTime then
                 return true, "user"
@@ -127,14 +118,10 @@ local function IsKeyValid(key)
 end
 
 -- Add new key
-local function AddNewKey(key)
+local function AddNewKey(key, hours)
     if key == ADMIN_KEY then
         return false, "Cannot add admin key"
     end
-    
-    -- Initialize tables if nil
-    keysData.keys = keysData.keys or {}
-    keysData.blacklist = keysData.blacklist or {}
     
     -- Check if key already exists
     for existingKey, _ in pairs(keysData.keys) do
@@ -150,21 +137,39 @@ local function AddNewKey(key)
         end
     end
     
-    -- Add key with 24 hour expiry
-    local expiryTime = os.time() + (24 * 60 * 60) -- 24 hours
+    -- Add key with specified expiry (0 for infinite)
+    local expiryTime = 0  -- Default to infinite
+    
+    if hours and hours > 0 then
+        expiryTime = os.time() + (hours * 60 * 60)
+    end
+    
     keysData.keys[key] = expiryTime
     SaveKeys()
     
-    return true, "Key added successfully"
+    local message = "Key added successfully"
+    if hours and hours > 0 then
+        message = message .. " (Expires in " .. hours .. " hours)"
+    else
+        message = message .. " (Infinite access)"
+    end
+    
+    return true, message
 end
 
 -- Get remaining time for a key
 local function GetKeyRemainingTime(key)
-    if not keysData.keys or not keysData.keys[key] then
+    if not keysData.keys[key] then
         return "N/A"
     end
     
     local expiry = keysData.keys[key]
+    
+    -- 0 means infinite
+    if expiry == 0 then
+        return "∞ Infinite"
+    end
+    
     local currentTime = os.time()
     local remaining = expiry - currentTime
     
@@ -384,7 +389,7 @@ end
 local function ShowNotification(text, color)
     local notificationFrame = Instance.new("Frame")
     notificationFrame.Size = UDim2.new(0, 300, 0, 50)
-    notificationFrame.Position = UDim2.new(0.5, -150, 0.8, -100) -- Start off-screen
+    notificationFrame.Position = UDim2.new(0.5, -150, 0.8, -100)
     notificationFrame.BackgroundColor3 = color
     notificationFrame.BackgroundTransparency = 0.3
     notificationFrame.BorderSizePixel = 0
@@ -403,15 +408,15 @@ local function ShowNotification(text, color)
     local label = CreateStyledLabel(notificationFrame, text, UDim2.new(1, 0, 1, 0), UDim2.new(0, 0, 0, 0), false)
     label.TextColor3 = CHRISTMAS_COLORS.WHITE
     
-    -- Slide in animation
-    TweenService:Create(notificationFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    -- Slide in
+    TweenService:Create(notificationFrame, TweenInfo.new(0.3), {
         Position = UDim2.new(0.5, -150, 0.8, 0)
     }):Play()
     
-    -- Auto remove after 3 seconds
+    -- Auto remove
     task.delay(3, function()
         if notificationFrame and notificationFrame.Parent then
-            TweenService:Create(notificationFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            TweenService:Create(notificationFrame, TweenInfo.new(0.3), {
                 BackgroundTransparency = 1,
                 Position = UDim2.new(0.5, -150, 0.8, -100)
             }):Play()
@@ -576,8 +581,8 @@ local function CreateAddKeyGUI()
     ClearGUI()
     
     local mainFrame = CreateStyledFrame(
-        UDim2.new(0, 450, 0, 300),
-        UDim2.new(0.5, -225, 0.5, -150),
+        UDim2.new(0, 450, 0, 350),
+        UDim2.new(0.5, -225, 0.5, -175),
         ScreenGui
     )
     
@@ -593,7 +598,7 @@ local function CreateAddKeyGUI()
     -- Instruction
     local instructionLabel = CreateStyledLabel(
         mainFrame,
-        "Enter new key (24 hour access)",
+        "Enter new key",
         UDim2.new(1, 0, 0, 30),
         UDim2.new(0, 0, 0, 70),
         false
@@ -603,16 +608,25 @@ local function CreateAddKeyGUI()
     local keyTextBox = CreateStyledTextBox(
         mainFrame,
         UDim2.new(0.8, 0, 0, 40),
-        UDim2.new(0.1, 0, 0.35, 0),
+        UDim2.new(0.1, 0, 0.3, 0),
         "Enter new key..."
     )
+    
+    -- Hours input
+    local hoursTextBox = CreateStyledTextBox(
+        mainFrame,
+        UDim2.new(0.8, 0, 0, 40),
+        UDim2.new(0.1, 0, 0.5, 0),
+        "Hours (0 for infinite, 24 default)"
+    )
+    hoursTextBox.Text = "24"
     
     -- Add button
     local addButton = CreateStyledButton(
         mainFrame,
         "Add Key",
         UDim2.new(0.5, 0, 0, 45),
-        UDim2.new(0.25, 0, 0.6, 0)
+        UDim2.new(0.25, 0, 0.7, 0)
     )
     
     -- Back button
@@ -635,10 +649,12 @@ local function CreateAddKeyGUI()
             return
         end
         
-        local success, message = AddNewKey(key)
+        local hours = tonumber(hoursTextBox.Text) or 24
+        
+        local success, message = AddNewKey(key, hours)
         
         if success then
-            ShowNotification("New key successfully added", CHRISTMAS_COLORS.GREEN)
+            ShowNotification(message, CHRISTMAS_COLORS.GREEN)
             task.wait(1.5)
             CreateAdminPanelGUI()
         else
@@ -733,58 +749,58 @@ local function CreateKeyListGUI()
     
     -- Add keys to list
     local keyCount = 0
-    if keysData.keys then
-        for key, expiry in pairs(keysData.keys) do
-            keyCount = keyCount + 1
-            
-            local keyFrame = Instance.new("Frame")
-            keyFrame.Size = UDim2.new(1, 0, 0, 35)
-            keyFrame.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
-            keyFrame.BackgroundTransparency = 0.6
-            keyFrame.BorderSizePixel = 0
-            keyFrame.LayoutOrder = keyCount
-            keyFrame.Parent = scrollingFrame
-            
-            local keyCorner = Instance.new("UICorner")
-            keyCorner.CornerRadius = UDim.new(0, 6)
-            keyCorner.Parent = keyFrame
-            
-            -- Key text (masked)
-            local maskedKey = string.sub(key, 1, 8) .. "..." .. string.sub(key, -8)
-            local keyLabel = CreateStyledLabel(
-                keyFrame,
-                "🔐 " .. maskedKey,
-                UDim2.new(0.6, 0, 1, 0),
-                UDim2.new(0, 10, 0, 0),
-                false
-            )
-            keyLabel.TextXAlignment = Enum.TextXAlignment.Left
-            keyLabel.Font = Enum.Font.GothamSemibold
-            
-            -- Remaining time
-            local remainingTime = GetKeyRemainingTime(key)
-            local timeLabel = CreateStyledLabel(
-                keyFrame,
-                remainingTime,
-                UDim2.new(0.3, 0, 1, 0),
-                UDim2.new(0.65, 0, 0, 0),
-                false
-            )
-            timeLabel.TextXAlignment = Enum.TextXAlignment.Right
-            
-            -- Color code based on remaining time
-            if remainingTime == "Expired" then
-                timeLabel.TextColor3 = CHRISTMAS_COLORS.RED
-            elseif remainingTime ~= "N/A" and tonumber(string.sub(remainingTime, 1, 2)) < 5 then
-                timeLabel.TextColor3 = CHRISTMAS_COLORS.GOLD
-            else
-                timeLabel.TextColor3 = CHRISTMAS_COLORS.GREEN
-            end
+    for key, expiry in pairs(keysData.keys) do
+        keyCount = keyCount + 1
+        
+        local keyFrame = Instance.new("Frame")
+        keyFrame.Size = UDim2.new(1, 0, 0, 35)
+        keyFrame.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+        keyFrame.BackgroundTransparency = 0.6
+        keyFrame.BorderSizePixel = 0
+        keyFrame.LayoutOrder = keyCount
+        keyFrame.Parent = scrollingFrame
+        
+        local keyCorner = Instance.new("UICorner")
+        keyCorner.CornerRadius = UDim.new(0, 6)
+        keyCorner.Parent = keyFrame
+        
+        -- Key text (masked)
+        local maskedKey = string.sub(key, 1, 8) .. "..." .. string.sub(key, -8)
+        local keyLabel = CreateStyledLabel(
+            keyFrame,
+            "🔐 " .. maskedKey,
+            UDim2.new(0.6, 0, 1, 0),
+            UDim2.new(0, 10, 0, 0),
+            false
+        )
+        keyLabel.TextXAlignment = Enum.TextXAlignment.Left
+        keyLabel.Font = Enum.Font.GothamSemibold
+        
+        -- Remaining time
+        local remainingTime = GetKeyRemainingTime(key)
+        local timeLabel = CreateStyledLabel(
+            keyFrame,
+            remainingTime,
+            UDim2.new(0.3, 0, 1, 0),
+            UDim2.new(0.65, 0, 0, 0),
+            false
+        )
+        timeLabel.TextXAlignment = Enum.TextXAlignment.Right
+        
+        -- Color code based on remaining time
+        if remainingTime == "Expired" then
+            timeLabel.TextColor3 = CHRISTMAS_COLORS.RED
+        elseif remainingTime == "∞ Infinite" then
+            timeLabel.TextColor3 = CHRISTMAS_COLORS.GOLD
+        elseif remainingTime ~= "N/A" and tonumber(string.sub(remainingTime, 1, 2)) < 5 then
+            timeLabel.TextColor3 = CHRISTMAS_COLORS.GOLD
+        else
+            timeLabel.TextColor3 = CHRISTMAS_COLORS.GREEN
         end
     end
     
     -- Add blacklist section
-    if keysData.blacklist and #keysData.blacklist > 0 then
+    if #keysData.blacklist > 0 then
         local separator = Instance.new("Frame")
         separator.Size = UDim2.new(1, 0, 0, 2)
         separator.BackgroundColor3 = CHRISTMAS_COLORS.RED
