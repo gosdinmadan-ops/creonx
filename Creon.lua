@@ -1,4 +1,4 @@
--- Creon X v2.6 (Winter Edition)
+-- Creon X v2.5 (исправленная версия для ПК и Delta Mobile)
 -- Проверка исполнителя
 local executorName = "Unknown"
 if identifyexecutor then
@@ -23,8 +23,17 @@ local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local SoundService = game:GetService("SoundService")
 local player = Players.LocalPlayer
+
+-- Новогодние цвета
+local CHRISTMAS_COLORS = {
+    RED = Color3.fromRGB(220, 20, 60),
+    GREEN = Color3.fromRGB(46, 204, 113),
+    GOLD = Color3.fromRGB(241, 196, 15),
+    BLUE = Color3.fromRGB(52, 152, 219),
+    WHITE = Color3.fromRGB(236, 240, 241),
+    SNOW = Color3.fromRGB(255, 255, 255)
+}
 
 -- Загрузка Main модуля
 local MainModule
@@ -39,9 +48,6 @@ if not success then
     return
 end
 
--- Флаг для предотвращения автоматического включения Bypass
-local initializing = true
-
 -- Переменные для отслеживания статуса AntiFall
 local GlassBridgeAntiFallEnabled = false
 local JumpRopeAntiFallEnabled = false
@@ -50,44 +56,45 @@ local SkySquidAntiFallEnabled = false
 -- Переменная для Zone Kill
 local ZoneKillEnabled = false
 
+-- Переменные для горячей клавиши меню
+local menuHotkey = Enum.KeyCode.M
+local isChoosingMenuKey = false
+local keyChangeButton = nil
+
 -- Переменные для биндов
 local FlyHotkey = nil
 local NoclipHotkey = nil
 local KillauraHotkey = nil
-
--- Переменные для отслеживания выбора клавиш
 local isChoosingFlyKey = false
 local isChoosingNoclipKey = false
 local isChoosingKillauraKey = false
 
--- GUI Creon X v2.6 (Winter Edition)
+-- Флаг для предотвращения автоматического включения Bypass
+local initializing = true
+
+-- GUI Creon X v2.5
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
 local TitleBar = Instance.new("Frame")
 local TitleLabel = Instance.new("TextLabel")
 local MinimizeButton = Instance.new("TextButton")
-
--- Tab buttons container
 local TabButtons = Instance.new("Frame")
 local ContentFrame = Instance.new("Frame")
 local ContentScrolling = Instance.new("ScrollingFrame")
 local ContentLayout = Instance.new("UIListLayout")
 
--- Snow particles for winter theme
-local SnowContainer = Instance.new("Frame")
-
--- Custom cursor for PC
+-- Кастомная мышка
 local CustomCursor = Instance.new("ImageLabel")
 
--- Music player
-local backgroundMusic
-local musicPlaying = false
+-- Снежный эффект
+local SnowContainer = Instance.new("Frame")
+local SnowParticles = {}
 
 -- Кнопка для мобильных устройств (Delta Mobile)
 local MobileOpenButton = Instance.new("TextButton")
 
 ScreenGui.Parent = game.CoreGui
-ScreenGui.Name = "CreonXv26"
+ScreenGui.Name = "CreonXv25_Christmas"
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 ScreenGui.ResetOnSpawn = false
 
@@ -102,122 +109,112 @@ if UIS.TouchEnabled then
     GUI_HEIGHT = 595 * MOBILE_SCALE
 end
 
--- Create snow effect (only for PC)
-if not UIS.TouchEnabled then
-    SnowContainer.Size = UDim2.new(1, 0, 1, 0)
-    SnowContainer.BackgroundTransparency = 1
-    SnowContainer.Parent = ScreenGui
+-- Снежный эффект
+SnowContainer.Size = UDim2.new(1, 0, 1, 0)
+SnowContainer.BackgroundTransparency = 1
+SnowContainer.Parent = ScreenGui
+
+-- Создаем снежинки
+for i = 1, 30 do
+    local snowflake = Instance.new("TextLabel")
+    snowflake.Size = UDim2.new(0, 10, 0, 10)
+    snowflake.Position = UDim2.new(0, math.random(0, 1000), 0, math.random(-100, 0))
+    snowflake.BackgroundTransparency = 1
+    snowflake.Text = "❄"
+    snowflake.TextColor3 = CHRISTMAS_COLORS.SNOW
+    snowflake.TextSize = math.random(12, 20)
+    snowflake.TextTransparency = 0.7
+    snowflake.ZIndex = 0
+    snowflake.Parent = SnowContainer
     
-    for i = 1, 50 do
-        local snowflake = Instance.new("Frame")
-        snowflake.Size = UDim2.new(0, math.random(3, 8), 0, math.random(3, 8))
-        snowflake.Position = UDim2.new(0, math.random(0, 1000), 0, -math.random(20, 100))
-        snowflake.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        snowflake.BackgroundTransparency = 0.7
-        snowflake.BorderSizePixel = 0
-        snowflake.ZIndex = 0
-        snowflake.Parent = SnowContainer
-        
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(1, 0)
-        corner.Parent = snowflake
-        
-        -- Animate snowflake
-        spawn(function()
-            local speed = math.random(20, 50) / 100
-            local sway = math.random(-50, 50)
-            local startX = snowflake.Position.X.Offset
-            
-            while snowflake and snowflake.Parent do
-                local xPos = startX + math.sin(tick() * 0.5) * sway
-                snowflake.Position = UDim2.new(
-                    0, xPos,
-                    snowflake.Position.Y.Scale,
-                    snowflake.Position.Y.Offset + speed
-                )
-                
-                if snowflake.Position.Y.Offset > 600 then
-                    snowflake.Position = UDim2.new(0, math.random(0, 1000), 0, -20)
-                end
-                wait(0.03)
-            end
-        end)
-    end
+    table.insert(SnowParticles, {
+        object = snowflake,
+        speed = math.random(20, 50),
+        sway = math.random(-10, 10) / 100
+    })
 end
 
--- Create custom cursor (only for PC)
+-- Кастомная мышка (только для ПК)
 if not UIS.TouchEnabled then
-    CustomCursor.Size = UDim2.new(0, 32, 0, 32)
+    CustomCursor.Name = "CustomCursor"
+    CustomCursor.Size = UDim2.new(0, 20, 0, 20)
     CustomCursor.BackgroundTransparency = 1
-    CustomCursor.Image = "rbxassetid://11128591779" -- Simple cursor image
-    CustomCursor.ImageColor3 = Color3.fromRGB(255, 255, 255)
+    CustomCursor.Image = "rbxassetid://12700154929"
+    CustomCursor.ImageColor3 = CHRISTMAS_COLORS.RED
+    CustomCursor.Visible = false
     CustomCursor.ZIndex = 1000
     CustomCursor.Parent = ScreenGui
-    CustomCursor.Visible = false
-    
-    -- Update cursor position
-    RunService.RenderStepped:Connect(function()
-        if CustomCursor.Visible and not UIS.MouseIconEnabled then
-            local mousePos = UIS:GetMouseLocation()
-            CustomCursor.Position = UDim2.new(0, mousePos.X - 16, 0, mousePos.Y - 16)
-        end
-    end)
 end
 
 -- Основной фрейм
 MainFrame.Size = UDim2.new(0, GUI_WIDTH, 0, GUI_HEIGHT)
 MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 20, 35) -- Темно-синий зимний фон
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 20, 30)
+MainFrame.BackgroundTransparency = 0.1
 MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
+
+-- Градиентный фон
+local gradient = Instance.new("UIGradient")
+gradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(15, 20, 30)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(25, 35, 50)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 20, 30))
+})
+gradient.Rotation = 45
+gradient.Parent = MainFrame
 
 local mainCorner = Instance.new("UICorner")
 mainCorner.CornerRadius = UDim.new(0, 12)
 mainCorner.Parent = MainFrame
 
 local mainStroke = Instance.new("UIStroke")
-mainStroke.Color = Color3.fromRGB(80, 120, 180) -- Голубой обводка
-mainStroke.Thickness = 2.5
+mainStroke.Color = CHRISTMAS_COLORS.RED
+mainStroke.Thickness = 2
+mainStroke.Transparency = 0.3
 mainStroke.Parent = MainFrame
 
--- TitleBar для перемещения
+-- TitleBar с новогодним дизайном
 TitleBar.Size = UDim2.new(1, 0, 0, 40)
-TitleBar.BackgroundColor3 = Color3.fromRGB(25, 35, 60) -- Темно-синий
+TitleBar.BackgroundColor3 = Color3.fromRGB(20, 25, 40)
+TitleBar.BackgroundTransparency = 0.2
 TitleBar.BorderSizePixel = 0
 TitleBar.Parent = MainFrame
+
+local titleGradient = Instance.new("UIGradient")
+titleGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, CHRISTMAS_COLORS.RED),
+    ColorSequenceKeypoint.new(0.5, CHRISTMAS_COLORS.GOLD),
+    ColorSequenceKeypoint.new(1, CHRISTMAS_COLORS.RED)
+})
+titleGradient.Rotation = 0
+titleGradient.Parent = TitleBar
 
 local titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0, 12)
 titleCorner.Parent = TitleBar
 
--- Gradient for title bar
-local titleGradient = Instance.new("UIGradient")
-titleGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(220, 60, 60)), -- Красный
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 120, 120)), -- Светло-красный
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(220, 60, 60)) -- Красный
-})
-titleGradient.Rotation = 90
-titleGradient.Parent = TitleBar
-
 TitleLabel.Size = UDim2.new(0.7, 0, 1, 0)
 TitleLabel.Position = UDim2.new(0.1, 0, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "❄️ Creon X v2.6 ❄️"
-TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.Text = "🎄 Creon X v2.5 🎅"
+TitleLabel.TextColor3 = CHRISTMAS_COLORS.WHITE
 TitleLabel.TextSize = 16
 TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextStrokeColor3 = CHRISTMAS_COLORS.RED
+TitleLabel.TextStrokeTransparency = 0.5
 TitleLabel.Parent = TitleBar
 
 -- Кнопка сворачивания (только для мобильных)
 if UIS.TouchEnabled then
     MinimizeButton.Size = UDim2.new(0, 40, 0, 40)
     MinimizeButton.Position = UDim2.new(1, -45, 0.5, -20)
-    MinimizeButton.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+    MinimizeButton.BackgroundColor3 = CHRISTMAS_COLORS.RED
+    MinimizeButton.BackgroundTransparency = 0.3
     MinimizeButton.BorderSizePixel = 0
-    MinimizeButton.Text = "✕"
-    MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    MinimizeButton.TextSize = 20
+    MinimizeButton.Text = "❌"
+    MinimizeButton.TextColor3 = CHRISTMAS_COLORS.WHITE
+    MinimizeButton.TextSize = 18
     MinimizeButton.Font = Enum.Font.GothamBold
     MinimizeButton.Parent = TitleBar
 
@@ -228,16 +225,22 @@ if UIS.TouchEnabled then
     MinimizeButton.MouseButton1Click:Connect(function()
         MainFrame.Visible = false
         MobileOpenButton.Visible = true
+        if CustomCursor then
+            CustomCursor.Visible = false
+        end
     end)
+else
+    -- Для ПК кнопки сворачивания нет
 end
 
 -- УВЕЛИЧИВАЕМ ШИРИНУ ЛЕВОЙ ПАНЕЛИ С ВКЛАДКАМИ
-local TAB_PANEL_WIDTH = 200
+local TAB_PANEL_WIDTH = 200 -- Увеличенная ширина
 
--- Фрейм для кнопок вкладок
+-- Фрейм для кнопок вкладок с прокруткой
 TabButtons.Size = UDim2.new(0, TAB_PANEL_WIDTH, 1, -40)
 TabButtons.Position = UDim2.new(0, 0, 0, 40)
-TabButtons.BackgroundColor3 = Color3.fromRGB(20, 25, 45)
+TabButtons.BackgroundColor3 = Color3.fromRGB(20, 25, 40)
+TabButtons.BackgroundTransparency = 0.3
 TabButtons.BorderSizePixel = 0
 TabButtons.Parent = MainFrame
 
@@ -245,18 +248,18 @@ local tabCorner = Instance.new("UICorner")
 tabCorner.CornerRadius = UDim.new(0, 12)
 tabCorner.Parent = TabButtons
 
--- ScrollingFrame для кнопок вкладок
+-- ScrollingFrame для кнопок вкладок (для мобильных)
 local TabScrolling = Instance.new("ScrollingFrame")
 TabScrolling.Size = UDim2.new(1, 0, 1, 0)
 TabScrolling.BackgroundTransparency = 1
 TabScrolling.BorderSizePixel = 0
 TabScrolling.ScrollBarThickness = 4
-TabScrolling.ScrollBarImageColor3 = Color3.fromRGB(100, 150, 200)
+TabScrolling.ScrollBarImageColor3 = CHRISTMAS_COLORS.RED
 TabScrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
 TabScrolling.Parent = TabButtons
 
 local TabLayout = Instance.new("UIListLayout")
-TabLayout.Padding = UDim.new(0, 8)
+TabLayout.Padding = UDim.new(0, 8) -- Отступ между вкладками
 TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
 TabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     TabScrolling.CanvasSize = UDim2.new(0, 0, 0, TabLayout.AbsoluteContentSize.Y + 10)
@@ -267,6 +270,7 @@ TabLayout.Parent = TabScrolling
 ContentFrame.Size = UDim2.new(1, -TAB_PANEL_WIDTH, 1, -40)
 ContentFrame.Position = UDim2.new(0, TAB_PANEL_WIDTH, 0, 40)
 ContentFrame.BackgroundColor3 = Color3.fromRGB(15, 20, 35)
+ContentFrame.BackgroundTransparency = 0.2
 ContentFrame.BorderSizePixel = 0
 ContentFrame.Parent = MainFrame
 
@@ -280,7 +284,7 @@ ContentScrolling.Position = UDim2.new(0, 7.5, 0, 7.5)
 ContentScrolling.BackgroundTransparency = 1
 ContentScrolling.BorderSizePixel = 0
 ContentScrolling.ScrollBarThickness = 6
-ContentScrolling.ScrollBarImageColor3 = Color3.fromRGB(100, 150, 200)
+ContentScrolling.ScrollBarImageColor3 = CHRISTMAS_COLORS.RED
 ContentScrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
 ContentScrolling.Parent = ContentFrame
 
@@ -291,15 +295,16 @@ ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 end)
 ContentLayout.Parent = ContentScrolling
 
--- Кнопка для мобильных устройств (Delta Mobile)
+-- Кнопка для мобильных устройств (Delta Mobile) с улучшенным дизайном
 if UIS.TouchEnabled then
     MobileOpenButton.Size = UDim2.new(0, 140, 0, 50)
     MobileOpenButton.Position = UDim2.new(0.5, -70, 0.2, 0)
-    MobileOpenButton.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+    MobileOpenButton.BackgroundColor3 = CHRISTMAS_COLORS.RED
+    MobileOpenButton.BackgroundTransparency = 0.3
     MobileOpenButton.BorderSizePixel = 0
-    MobileOpenButton.Text = "❄️ OPEN ❄️"
-    MobileOpenButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    MobileOpenButton.TextSize = 18
+    MobileOpenButton.Text = "🎮 OPEN"
+    MobileOpenButton.TextColor3 = CHRISTMAS_COLORS.WHITE
+    MobileOpenButton.TextSize = 16
     MobileOpenButton.Font = Enum.Font.GothamBold
     MobileOpenButton.Parent = ScreenGui
     
@@ -307,13 +312,24 @@ if UIS.TouchEnabled then
     mobileCorner.CornerRadius = UDim.new(0, 12)
     mobileCorner.Parent = MobileOpenButton
     
-    local mobileGradient = Instance.new("UIGradient")
-    mobileGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(220, 60, 60)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 40, 40))
-    })
-    mobileGradient.Rotation = 90
-    mobileGradient.Parent = MobileOpenButton
+    local mobileStroke = Instance.new("UIStroke")
+    mobileStroke.Color = CHRISTMAS_COLORS.GOLD
+    mobileStroke.Thickness = 2
+    mobileStroke.Parent = MobileOpenButton
+    
+    MobileOpenButton.MouseEnter:Connect(function()
+        TweenService:Create(MobileOpenButton, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.2,
+            TextColor3 = CHRISTMAS_COLORS.GOLD
+        }):Play()
+    end)
+    
+    MobileOpenButton.MouseLeave:Connect(function()
+        TweenService:Create(MobileOpenButton, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.3,
+            TextColor3 = CHRISTMAS_COLORS.WHITE
+        }):Play()
+    end)
     
     MobileOpenButton.MouseButton1Click:Connect(function()
         MainFrame.Visible = true
@@ -321,10 +337,9 @@ if UIS.TouchEnabled then
         MobileOpenButton.Visible = false
     end)
     
-    -- Улучшенное перетаскивание кнопки OPEN для мобильных
+    -- Улучшенное перетаскивание для мобильных
     local mobileDragging = false
     local mobileDragStart, mobileStartPos
-    local dragTween
     
     MobileOpenButton.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch then
@@ -332,38 +347,18 @@ if UIS.TouchEnabled then
             mobileDragStart = input.Position
             mobileStartPos = MobileOpenButton.Position
             MobileOpenButton.ZIndex = 10
-            
-            -- Анимация при касании
-            if dragTween then dragTween:Cancel() end
-            dragTween = TweenService:Create(MobileOpenButton, TweenInfo.new(0.1), {
-                Size = UDim2.new(0, 130, 0, 45)
-            }):Play()
         end
     end)
     
     MobileOpenButton.InputChanged:Connect(function(input)
         if mobileDragging and input.UserInputType == Enum.UserInputType.Touch then
             local delta = input.Position - mobileDragStart
-            local newPosition = UDim2.new(
+            MobileOpenButton.Position = UDim2.new(
                 mobileStartPos.X.Scale, 
                 mobileStartPos.X.Offset + delta.X,
                 mobileStartPos.Y.Scale, 
                 mobileStartPos.Y.Offset + delta.Y
             )
-            
-            -- Ограничиваем позицию в пределах экрана
-            local absSize = ScreenGui.AbsoluteSize
-            local btnSize = MobileOpenButton.AbsoluteSize
-            
-            local minX = 0
-            local maxX = absSize.X - btnSize.X
-            local minY = 0
-            local maxY = absSize.Y - btnSize.Y
-            
-            local xPos = math.clamp(newPosition.X.Offset, minX, maxX)
-            local yPos = math.clamp(newPosition.Y.Offset, minY, maxY)
-            
-            MobileOpenButton.Position = UDim2.new(0, xPos, 0, yPos)
         end
     end)
     
@@ -371,18 +366,47 @@ if UIS.TouchEnabled then
         if input.UserInputType == Enum.UserInputType.Touch then
             mobileDragging = false
             MobileOpenButton.ZIndex = 1
-            
-            -- Возвращаем размер
-            if dragTween then dragTween:Cancel() end
-            dragTween = TweenService:Create(MobileOpenButton, TweenInfo.new(0.2), {
-                Size = UDim2.new(0, 140, 0, 50)
-            }):Play()
         end
     end)
     
     MainFrame.Visible = false
 else
     MainFrame.Visible = true
+end
+
+-- Анимация снега
+RunService.RenderStepped:Connect(function(deltaTime)
+    for _, snowflake in ipairs(SnowParticles) do
+        if snowflake.object and snowflake.object.Parent then
+            local currentPos = snowflake.object.Position
+            local newY = currentPos.Y.Offset + snowflake.speed * deltaTime
+            local newX = currentPos.X.Offset + snowflake.sway * 10
+            
+            if newY > 1000 then
+                newY = -50
+                newX = math.random(0, 1000)
+            end
+            
+            if newX < 0 then newX = 1000 end
+            if newX > 1000 then newX = 0 end
+            
+            snowflake.object.Position = UDim2.new(0, newX, 0, newY)
+            snowflake.object.Rotation = snowflake.object.Rotation + 0.5
+        end
+    end
+end)
+
+-- Обновление кастомной мышки
+if CustomCursor then
+    RunService.RenderStepped:Connect(function()
+        if MainFrame.Visible and not UIS.TouchEnabled then
+            local mousePos = UIS:GetMouseLocation()
+            CustomCursor.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y)
+            CustomCursor.Visible = true
+        else
+            CustomCursor.Visible = false
+        end
+    end)
 end
 
 -- Функция для перемещения GUI
@@ -420,17 +444,20 @@ UIS.InputChanged:Connect(function(input)
     end
 end)
 
--- Функция для создания кнопок с зимним дизайном
+-- Улучшенная функция для создания кнопок
 local function CreateButton(text, isTitle)
     local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, -10, 0, 36)
-    button.BackgroundColor3 = isTitle and Color3.fromRGB(40, 50, 80) or Color3.fromRGB(30, 40, 70)
+    button.Size = UDim2.new(1, -10, 0, isTitle and 40 or 36)
+    button.BackgroundColor3 = isTitle and Color3.fromRGB(30, 35, 50) or Color3.fromRGB(25, 30, 45)
+    button.BackgroundTransparency = isTitle and 0.3 or 0.4
     button.BorderSizePixel = 0
     button.Text = text
-    button.TextColor3 = isTitle and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(220, 220, 255)
+    button.TextColor3 = isTitle and CHRISTMAS_COLORS.GOLD or CHRISTMAS_COLORS.WHITE
     button.TextSize = isTitle and 14 or 13
-    button.Font = Enum.Font.Gotham
+    button.Font = Enum.Font.GothamSemibold
     button.AutoButtonColor = false
+    button.TextStrokeColor3 = isTitle and CHRISTMAS_COLORS.RED or Color3.new(0, 0, 0)
+    button.TextStrokeTransparency = isTitle and 0.5 or 0.8
     button.Parent = ContentScrolling
     
     local corner = Instance.new("UICorner")
@@ -438,157 +465,108 @@ local function CreateButton(text, isTitle)
     corner.Parent = button
     
     local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(100, 150, 200)
-    stroke.Thickness = 1.5
+    stroke.Color = isTitle and CHRISTMAS_COLORS.GOLD or CHRISTMAS_COLORS.RED
+    stroke.Thickness = isTitle and 1.5 or 1.2
+    stroke.Transparency = 0.3
     stroke.Parent = button
-    
-    -- Gradient for button
-    local buttonGradient = Instance.new("UIGradient")
-    buttonGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, button.BackgroundColor3),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(
-            math.min(button.BackgroundColor3.R * 255 + 20, 255)/255,
-            math.min(button.BackgroundColor3.G * 255 + 20, 255)/255,
-            math.min(button.BackgroundColor3.B * 255 + 20, 255)/255
-        ))
-    })
-    buttonGradient.Rotation = 90
-    buttonGradient.Parent = button
     
     -- Анимация при наведении
     button.MouseEnter:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(50, 70, 110),
-            TextColor3 = Color3.fromRGB(255, 255, 255)
+            BackgroundTransparency = isTitle and 0.2 or 0.3,
+            TextColor3 = isTitle and CHRISTMAS_COLORS.WHITE :Lerp(CHRISTMAS_COLORS.GOLD, 0.5) or CHRISTMAS_COLORS.GOLD
         }):Play()
-        TweenService:Create(stroke, TweenInfo.new(0.2), {
-            Color = Color3.fromRGB(150, 200, 255)
+        TweenService:Create(button.UIStroke, TweenInfo.new(0.2), {
+            Transparency = 0.1
         }):Play()
-        
-        if not UIS.TouchEnabled then
-            UIS.MouseIconEnabled = false
-            if CustomCursor then
-                CustomCursor.Visible = true
-            end
-        end
     end)
     
     button.MouseLeave:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = isTitle and Color3.fromRGB(40, 50, 80) or Color3.fromRGB(30, 40, 70),
-            TextColor3 = isTitle and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(220, 220, 255)
+            BackgroundTransparency = isTitle and 0.3 or 0.4,
+            TextColor3 = isTitle and CHRISTMAS_COLORS.GOLD or CHRISTMAS_COLORS.WHITE
         }):Play()
-        TweenService:Create(stroke, TweenInfo.new(0.2), {
-            Color = Color3.fromRGB(100, 150, 200)
+        TweenService:Create(button.UIStroke, TweenInfo.new(0.2), {
+            Transparency = 0.3
         }):Play()
-        
-        if not UIS.TouchEnabled then
-            UIS.MouseIconEnabled = true
-            if CustomCursor then
-                CustomCursor.Visible = false
-            end
-        end
     end)
     
     button.MouseButton1Down:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.1), {
-            BackgroundColor3 = Color3.fromRGB(20, 30, 60)
+            BackgroundTransparency = 0.1
         }):Play()
     end)
     
     button.MouseButton1Up:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.1), {
-            BackgroundColor3 = Color3.fromRGB(50, 70, 110)
+            BackgroundTransparency = isTitle and 0.2 or 0.3
         }):Play()
     end)
     
     return button
 end
 
--- Массив для отслеживания переключателей
-local toggleElements = {}
-
 -- Улучшенная функция для создания переключателей
-local function CreateToggle(text, getEnabledFunction, callback, layoutOrder)
+local toggleElements = {}
+local function CreateToggle(text, getEnabledFunction, callback, layoutOrder, bypassInitialization)
     local toggleContainer = Instance.new("Frame")
-    toggleContainer.Size = UDim2.new(1, -10, 0, 40)
+    toggleContainer.Size = UDim2.new(1, -10, 0, 36)
     toggleContainer.BackgroundTransparency = 1
     toggleContainer.Parent = ContentScrolling
     toggleContainer.LayoutOrder = layoutOrder or 999
     
-    local toggleFrame = Instance.new("Frame")
-    toggleFrame.Size = UDim2.new(1, 0, 1, 0)
-    toggleFrame.BackgroundColor3 = Color3.fromRGB(25, 35, 60)
-    toggleFrame.BorderSizePixel = 0
-    toggleFrame.Parent = toggleContainer
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = toggleFrame
-    
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(100, 150, 200)
-    stroke.Thickness = 1.5
-    stroke.Parent = toggleFrame
-    
-    -- Gradient для фона
-    local frameGradient = Instance.new("UIGradient")
-    frameGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(25, 35, 60)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 45, 75))
+    -- Сохраняем ссылку для обновлений
+    table.insert(toggleElements, {
+        container = toggleContainer,
+        getEnabled = getEnabledFunction,
+        callback = callback,
+        text = text,
+        bypassInitialization = bypassInitialization or false
     })
-    frameGradient.Rotation = 90
-    frameGradient.Parent = toggleFrame
     
     -- Текст
     local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(0.65, 0, 1, 0)
-    textLabel.Position = UDim2.new(0, 15, 0, 0)
+    textLabel.Size = UDim2.new(0.7, 0, 1, 0)
+    textLabel.Position = UDim2.new(0, 0, 0, 0)
     textLabel.BackgroundTransparency = 1
     textLabel.Text = text
-    textLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
+    textLabel.TextColor3 = CHRISTMAS_COLORS.WHITE
     textLabel.TextSize = 13
     textLabel.Font = Enum.Font.Gotham
     textLabel.TextXAlignment = Enum.TextXAlignment.Left
-    textLabel.Parent = toggleFrame
+    textLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+    textLabel.TextStrokeTransparency = 0.8
+    textLabel.Parent = toggleContainer
     
-    -- Переключатель
+    -- Переключатель с новогодним дизайном
     local toggleBackground = Instance.new("Frame")
-    toggleBackground.Size = UDim2.new(0, 60, 0, 28)
-    toggleBackground.Position = UDim2.new(1, -70, 0.5, -14)
-    toggleBackground.BackgroundColor3 = Color3.fromRGB(60, 70, 100)
+    toggleBackground.Size = UDim2.new(0, 54, 0, 26)
+    toggleBackground.Position = UDim2.new(1, -56, 0.5, -13)
+    toggleBackground.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
     toggleBackground.BorderSizePixel = 0
-    toggleBackground.Parent = toggleFrame
+    toggleBackground.Parent = toggleContainer
     
     local toggleCircle = Instance.new("Frame")
     toggleCircle.Size = UDim2.new(0, 22, 0, 22)
-    toggleCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    toggleCircle.BackgroundColor3 = CHRISTMAS_COLORS.WHITE
     toggleCircle.BorderSizePixel = 0
-    toggleCircle.Position = UDim2.new(0, 3, 0.5, -11)
+    toggleCircle.Position = UDim2.new(0, 2, 0.5, -11)
     toggleCircle.Parent = toggleBackground
     
     -- Закругления
-    local bgCorner = Instance.new("UICorner")
-    bgCorner.CornerRadius = UDim.new(0, 14)
-    bgCorner.Parent = toggleBackground
+    local corner1 = Instance.new("UICorner")
+    corner1.CornerRadius = UDim.new(1, 0)
+    corner1.Parent = toggleBackground
     
-    local circleCorner = Instance.new("UICorner")
-    circleCorner.CornerRadius = UDim.new(0, 11)
-    circleCorner.Parent = toggleCircle
+    local corner2 = Instance.new("UICorner")
+    corner2.CornerRadius = UDim.new(1, 0)
+    corner2.Parent = toggleCircle
     
-    local bgStroke = Instance.new("UIStroke")
-    bgStroke.Color = Color3.fromRGB(120, 170, 220)
-    bgStroke.Thickness = 2
-    bgStroke.Parent = toggleBackground
-    
-    -- Gradient для переключателя
-    local toggleGradient = Instance.new("UIGradient")
-    toggleGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(60, 70, 100)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 90, 120))
-    })
-    toggleGradient.Rotation = 90
-    toggleGradient.Parent = toggleBackground
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = CHRISTMAS_COLORS.RED
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.3
+    stroke.Parent = toggleBackground
     
     -- Кнопка для переключения
     local toggleButton = Instance.new("TextButton")
@@ -596,29 +574,7 @@ local function CreateToggle(text, getEnabledFunction, callback, layoutOrder)
     toggleButton.Position = UDim2.new(0, 0, 0, 0)
     toggleButton.BackgroundTransparency = 1
     toggleButton.Text = ""
-    toggleButton.Parent = toggleFrame
-    
-    -- Анимации для кнопки
-    toggleButton.MouseEnter:Connect(function()
-        TweenService:Create(toggleFrame, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(35, 45, 80)
-        }):Play()
-        TweenService:Create(stroke, TweenInfo.new(0.2), {
-            Color = Color3.fromRGB(150, 200, 255)
-        }):Play()
-    end)
-    
-    toggleButton.MouseLeave:Connect(function()
-        local success, isEnabled = pcall(getEnabledFunction)
-        if not success then isEnabled = false end
-        
-        TweenService:Create(toggleFrame, TweenInfo.new(0.2), {
-            BackgroundColor3 = isEnabled and Color3.fromRGB(30, 50, 90) or Color3.fromRGB(25, 35, 60)
-        }):Play()
-        TweenService:Create(stroke, TweenInfo.new(0.2), {
-            Color = Color3.fromRGB(100, 150, 200)
-        }):Play()
-    end)
+    toggleButton.Parent = toggleContainer
     
     local function updateToggleVisual()
         if not toggleContainer or not toggleContainer.Parent then
@@ -630,16 +586,13 @@ local function CreateToggle(text, getEnabledFunction, callback, layoutOrder)
             isEnabled = false
         end
         
-        TweenService:Create(toggleBackground, TweenInfo.new(0.3), {
-            BackgroundColor3 = isEnabled and Color3.fromRGB(0, 180, 100) or Color3.fromRGB(180, 60, 60)
+        TweenService:Create(toggleBackground, TweenInfo.new(0.2), {
+            BackgroundColor3 = isEnabled and CHRISTMAS_COLORS.GREEN or Color3.fromRGB(40, 45, 65)
         }):Play()
         
-        TweenService:Create(toggleCircle, TweenInfo.new(0.3), {
-            Position = isEnabled and UDim2.new(1, -25, 0.5, -11) or UDim2.new(0, 3, 0.5, -11)
-        }):Play()
-        
-        TweenService:Create(toggleFrame, TweenInfo.new(0.3), {
-            BackgroundColor3 = isEnabled and Color3.fromRGB(30, 50, 90) or Color3.fromRGB(25, 35, 60)
+        TweenService:Create(toggleCircle, TweenInfo.new(0.2), {
+            Position = isEnabled and UDim2.new(1, -24, 0.5, -11) or UDim2.new(0, 2, 0.5, -11),
+            BackgroundColor3 = isEnabled and CHRISTMAS_COLORS.GOLD :Lerp(CHRISTMAS_COLORS.WHITE, 0.5) or CHRISTMAS_COLORS.WHITE
         }):Play()
     end
     
@@ -657,41 +610,30 @@ local function CreateToggle(text, getEnabledFunction, callback, layoutOrder)
         
         local newState = not currentState
         
-        -- Special handling for Spikes Kill
-        if text == "Spikes Kill" then
-            if newState then
-                local hasKnife = MainModule.CheckKnifeInInventory()
-                if not hasKnife then
-                    textLabel.Text = "Spikes Kill [No Knife]"
-                    textLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-                    task.wait(2)
-                    newState = false
-                    updateToggleVisual()
-                    return
-                else
-                    textLabel.Text = "Spikes Kill"
-                    textLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
+        -- Специальная обработка для Spikes Kill
+        if text == "Spikes Kill" and newState then
+            local hasKnife = MainModule.CheckKnifeInInventory()
+            if not hasKnife then
+                if game:GetService("StarterGui") then
+                    game:GetService("StarterGui"):SetCore("SendNotification", {
+                        Title = "Spikes Kill",
+                        Text = "Knife not found!",
+                        Duration = 3
+                    })
                 end
+                newState = false
+                updateToggleVisual()
+                return
             end
         end
         
         if callback then
             callback(newState)
         end
-        
         updateToggleVisual()
     end
     
     toggleButton.MouseButton1Click:Connect(toggleFunction)
-    
-    -- Сохраняем для обновлений
-    table.insert(toggleElements, {
-        container = toggleContainer,
-        getEnabled = getEnabledFunction,
-        callback = callback,
-        textLabel = textLabel,
-        updateVisual = updateToggleVisual
-    })
     
     -- Инициализация состояния
     updateToggleVisual()
@@ -703,22 +645,38 @@ end
 local function UpdateAllToggles()
     for _, toggleData in pairs(toggleElements) do
         if toggleData.container and toggleData.container.Parent then
-            toggleData.updateVisual()
+            local success, isEnabled = pcall(toggleData.getEnabled)
+            if success then
+                local toggleBackground = toggleData.container:FindFirstChildWhichIsA("Frame")
+                if toggleBackground then
+                    TweenService:Create(toggleBackground, TweenInfo.new(0.1), {
+                        BackgroundColor3 = isEnabled and CHRISTMAS_COLORS.GREEN or Color3.fromRGB(40, 45, 65)
+                    }):Play()
+                    
+                    local toggleCircle = toggleBackground:FindFirstChildWhichIsA("Frame")
+                    if toggleCircle then
+                        TweenService:Create(toggleCircle, TweenInfo.new(0.1), {
+                            Position = isEnabled and UDim2.new(1, -24, 0.5, -11) or UDim2.new(0, 2, 0.5, -11)
+                        }):Play()
+                    end
+                end
+            end
         end
     end
 end
 
--- Функция для создания кнопки бинда
+-- Улучшенная функция для создания кнопки бинда
 local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrder)
     local bindContainer = Instance.new("Frame")
-    bindContainer.Size = UDim2.new(1, -10, 0, 40)
+    bindContainer.Size = UDim2.new(1, -10, 0, 36)
     bindContainer.BackgroundTransparency = 1
     bindContainer.Parent = ContentScrolling
     bindContainer.LayoutOrder = layoutOrder or 999
     
     local bindFrame = Instance.new("Frame")
     bindFrame.Size = UDim2.new(1, 0, 1, 0)
-    bindFrame.BackgroundColor3 = Color3.fromRGB(25, 35, 60)
+    bindFrame.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+    bindFrame.BackgroundTransparency = 0.4
     bindFrame.BorderSizePixel = 0
     bindFrame.Parent = bindContainer
     
@@ -727,41 +685,35 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
     corner.Parent = bindFrame
     
     local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(100, 150, 200)
-    stroke.Thickness = 1.5
+    stroke.Color = CHRISTMAS_COLORS.BLUE
+    stroke.Thickness = 1.2
+    stroke.Transparency = 0.3
     stroke.Parent = bindFrame
-    
-    -- Gradient
-    local frameGradient = Instance.new("UIGradient")
-    frameGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(25, 35, 60)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 45, 75))
-    })
-    frameGradient.Rotation = 90
-    frameGradient.Parent = bindFrame
     
     -- Текст
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.5, 0, 1, 0)
+    label.Size = UDim2.new(0.6, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Text = labelText
-    label.TextColor3 = Color3.fromRGB(240, 240, 255)
+    label.TextColor3 = CHRISTMAS_COLORS.WHITE
     label.TextSize = 13
     label.Font = Enum.Font.Gotham
     label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Position = UDim2.new(0, 15, 0, 0)
+    label.TextStrokeColor3 = Color3.new(0, 0, 0)
+    label.TextStrokeTransparency = 0.8
     label.Parent = bindFrame
     
     -- Кнопка бинда
     local bindBtn = Instance.new("TextButton")
     bindBtn.Size = UDim2.new(0.35, 0, 0.7, 0)
-    bindBtn.Position = UDim2.new(0.52, 0, 0.15, 0)
-    bindBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
+    bindBtn.Position = UDim2.new(0.62, 0, 0.15, 0)
+    bindBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+    bindBtn.BackgroundTransparency = 0.3
     bindBtn.BorderSizePixel = 0
     bindBtn.Text = currentKey and currentKey.Name or "None"
-    bindBtn.TextColor3 = Color3.fromRGB(240, 240, 255)
+    bindBtn.TextColor3 = CHRISTMAS_COLORS.WHITE
     bindBtn.TextSize = 12
-    bindBtn.Font = Enum.Font.GothamBold
+    bindBtn.Font = Enum.Font.GothamSemibold
     bindBtn.AutoButtonColor = false
     bindBtn.Parent = bindFrame
     
@@ -770,66 +722,66 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
     btnCorner.Parent = bindBtn
     
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Color = Color3.fromRGB(100, 150, 200)
-    btnStroke.Thickness = 1.5
+    btnStroke.Color = CHRISTMAS_COLORS.GOLD
+    btnStroke.Thickness = 1
+    btnStroke.Transparency = 0.3
     btnStroke.Parent = bindBtn
     
-    -- Gradient для кнопки
-    local btnGradient = Instance.new("UIGradient")
-    btnGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 60, 100)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 80, 120))
-    })
-    btnGradient.Rotation = 90
-    btnGradient.Parent = bindBtn
+    -- Анимации для кнопки
+    bindBtn.MouseEnter:Connect(function()
+        TweenService:Create(bindBtn, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.2,
+            TextColor3 = CHRISTMAS_COLORS.GOLD
+        }):Play()
+        TweenService:Create(bindBtn.UIStroke, TweenInfo.new(0.2), {
+            Transparency = 0.1
+        }):Play()
+    end)
+    
+    bindBtn.MouseLeave:Connect(function()
+        TweenService:Create(bindBtn, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.3,
+            TextColor3 = CHRISTMAS_COLORS.WHITE
+        }):Play()
+        TweenService:Create(bindBtn.UIStroke, TweenInfo.new(0.2), {
+            Transparency = 0.3
+        }):Play()
+    end)
     
     -- Функция обновления текста
     local function updateButtonText()
         bindBtn.Text = currentKey and currentKey.Name or "None"
     end
     
-    -- Анимации для кнопки
-    bindBtn.MouseEnter:Connect(function()
-        TweenService:Create(bindBtn, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(60, 90, 140),
-            TextColor3 = Color3.fromRGB(255, 255, 255)
-        }):Play()
-        TweenService:Create(btnStroke, TweenInfo.new(0.2), {
-            Color = Color3.fromRGB(150, 200, 255)
-        }):Play()
-        TweenService:Create(bindFrame, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(35, 45, 80)
-        }):Play()
-    end)
-    
-    bindBtn.MouseLeave:Connect(function()
-        TweenService:Create(bindBtn, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(40, 60, 100),
-            TextColor3 = Color3.fromRGB(240, 240, 255)
-        }):Play()
-        TweenService:Create(btnStroke, TweenInfo.new(0.2), {
-            Color = Color3.fromRGB(100, 150, 200)
-        }):Play()
-        TweenService:Create(bindFrame, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(25, 35, 60)
-        }):Play()
-    end)
-    
     -- Функция изменения бинда
-    local function startKeyChange()
-        bindBtn.Text = "[Press any key]"
-        bindBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
+    local function startKeyChange(bindType)
+        if bindType == "fly" and isChoosingFlyKey then return end
+        if bindType == "noclip" and isChoosingNoclipKey then return end
+        if bindType == "killaura" and isChoosingKillauraKey then return end
+        
+        if bindType == "fly" then isChoosingFlyKey = true end
+        if bindType == "noclip" then isChoosingNoclipKey = true end
+        if bindType == "killaura" then isChoosingKillauraKey = true end
+        
+        bindBtn.Text = "Press a key..."
+        bindBtn.BackgroundColor3 = CHRISTMAS_COLORS.GREEN
+        bindBtn.BackgroundTransparency = 0.2
         
         local connection
         connection = UIS.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Keyboard then
                 currentKey = input.KeyCode
                 updateButtonText()
-                bindBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
+                bindBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+                bindBtn.BackgroundTransparency = 0.3
                 
                 if onBindChanged then
                     onBindChanged(currentKey)
                 end
+                
+                if bindType == "fly" then isChoosingFlyKey = false end
+                if bindType == "noclip" then isChoosingNoclipKey = false end
+                if bindType == "killaura" then isChoosingKillauraKey = false end
                 
                 if connection then
                     connection:Disconnect()
@@ -838,7 +790,12 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
                    input.UserInputType == Enum.UserInputType.MouseButton2 or
                    input.UserInputType == Enum.UserInputType.MouseButton3 then
                 updateButtonText()
-                bindBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
+                bindBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+                bindBtn.BackgroundTransparency = 0.3
+                
+                if bindType == "fly" then isChoosingFlyKey = false end
+                if bindType == "noclip" then isChoosingNoclipKey = false end
+                if bindType == "killaura" then isChoosingKillauraKey = false end
                 
                 if connection then
                     connection:Disconnect()
@@ -848,9 +805,14 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
         
         -- Если 3 секунды не выбрали клавишу - отменяем
         task.delay(3, function()
-            if bindBtn.Text == "[Press any key]" then
+            if bindBtn.Text == "Press a key..." then
                 updateButtonText()
-                bindBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
+                bindBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+                bindBtn.BackgroundTransparency = 0.3
+                
+                if bindType == "fly" then isChoosingFlyKey = false end
+                if bindType == "noclip" then isChoosingNoclipKey = false end
+                if bindType == "killaura" then isChoosingKillauraKey = false end
                 
                 if connection then
                     connection:Disconnect()
@@ -859,7 +821,15 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
         end)
     end
     
-    bindBtn.MouseButton1Click:Connect(startKeyChange)
+    bindBtn.MouseButton1Click:Connect(function()
+        local bindType
+        if labelText:find("Fly") then bindType = "fly" end
+        if labelText:find("Noclip") then bindType = "noclip" end
+        if labelText:find("Killaura") then bindType = "killaura" end
+        if bindType then
+            startKeyChange(bindType)
+        end
+    end)
     
     -- Автоматическое обновление текста
     local updateConnection
@@ -876,203 +846,268 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
     return bindContainer, bindBtn
 end
 
--- Функция для создания слайдера скорости (переименована в Faster Speed)
-local function CreateSpeedSlider()
-    local sliderContainer = Instance.new("Frame")
-    sliderContainer.Size = UDim2.new(1, -10, 0, 60)
-    sliderContainer.BackgroundTransparency = 1
-    sliderContainer.Parent = ContentScrolling
+-- Функция для создания кнопки изменения горячей клавиши меню
+local function CreateKeybindButton()
+    local keybindContainer = Instance.new("Frame")
+    keybindContainer.Size = UDim2.new(1, -10, 0, 36)
+    keybindContainer.BackgroundTransparency = 1
+    keybindContainer.Parent = ContentScrolling
     
-    local speedLabel = Instance.new("TextLabel")
-    speedLabel.Size = UDim2.new(1, 0, 0, 25)
-    speedLabel.BackgroundTransparency = 1
-    speedLabel.Text = "Faster Speed: " .. (MainModule.SpeedHack and MainModule.SpeedHack.CurrentSpeed or 16)
-    speedLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
-    speedLabel.TextSize = 14
-    speedLabel.Font = Enum.Font.GothamBold
-    speedLabel.Parent = sliderContainer
-    
-    local sliderBackground = Instance.new("Frame")
-    sliderBackground.Size = UDim2.new(1, 0, 0, 22)
-    sliderBackground.Position = UDim2.new(0, 0, 0, 30)
-    sliderBackground.BackgroundColor3 = Color3.fromRGB(40, 50, 80)
-    sliderBackground.BorderSizePixel = 0
-    sliderBackground.Parent = sliderContainer
+    local keybindFrame = Instance.new("Frame")
+    keybindFrame.Size = UDim2.new(1, 0, 1, 0)
+    keybindFrame.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+    keybindFrame.BackgroundTransparency = 0.4
+    keybindFrame.BorderSizePixel = 0
+    keybindFrame.Parent = keybindContainer
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 11)
-    corner.Parent = sliderBackground
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = keybindFrame
     
-    local sliderFill = Instance.new("Frame")
-    sliderFill.Size = UDim2.new((MainModule.SpeedHack and MainModule.SpeedHack.CurrentSpeed or 16) / (MainModule.SpeedHack and MainModule.SpeedHack.MaxSpeed or 30), 0, 1, 0)
-    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
-    sliderFill.BorderSizePixel = 0
-    sliderFill.Parent = sliderBackground
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = CHRISTMAS_COLORS.BLUE
+    stroke.Thickness = 1.2
+    stroke.Transparency = 0.3
+    stroke.Parent = keybindFrame
     
-    local fillCorner = Instance.new("UICorner")
-    fillCorner.CornerRadius = UDim.new(0, 11)
-    fillCorner.Parent = sliderFill
+    -- Текст
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = "Menu Hotkey: M"
+    label.TextColor3 = CHRISTMAS_COLORS.WHITE
+    label.TextSize = 13
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextStrokeColor3 = Color3.new(0, 0, 0)
+    label.TextStrokeTransparency = 0.8
+    label.Parent = keybindFrame
     
-    -- Gradient для заполнения
-    local fillGradient = Instance.new("UIGradient")
-    fillGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 180, 100)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 220, 120))
-    })
-    fillGradient.Rotation = 90
-    fillGradient.Parent = sliderFill
+    -- Кнопка изменения
+    local changeBtn = Instance.new("TextButton")
+    changeBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
+    changeBtn.Position = UDim2.new(0.72, 0, 0.15, 0)
+    changeBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+    changeBtn.BackgroundTransparency = 0.3
+    changeBtn.BorderSizePixel = 0
+    changeBtn.Text = "Change"
+    changeBtn.TextColor3 = CHRISTMAS_COLORS.WHITE
+    changeBtn.TextSize = 12
+    changeBtn.Font = Enum.Font.GothamSemibold
+    changeBtn.AutoButtonColor = false
+    changeBtn.Parent = keybindFrame
     
-    local sliderButton = Instance.new("TextButton")
-    sliderButton.Size = UDim2.new(0, 24, 0, 24)
-    sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -12, 0, -1)
-    sliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    sliderButton.Text = ""
-    sliderButton.BorderSizePixel = 0
-    sliderButton.Parent = sliderBackground
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = changeBtn
     
-    local buttonCorner = Instance.new("UICorner")
-    buttonCorner.CornerRadius = UDim.new(0, 12)
-    buttonCorner.Parent = sliderButton
+    local btnStroke = Instance.new("UIStroke")
+    btnStroke.Color = CHRISTMAS_COLORS.GOLD
+    btnStroke.Thickness = 1
+    btnStroke.Transparency = 0.3
+    btnStroke.Parent = changeBtn
     
-    local dragging = false
-    
-    local function updateSpeed(value)
-        if MainModule and MainModule.SetSpeed then
-            local newSpeed = MainModule.SetSpeed(value)
-            speedLabel.Text = "Faster Speed: " .. newSpeed
-            sliderFill.Size = UDim2.new((newSpeed - (MainModule.SpeedHack and MainModule.SpeedHack.MinSpeed or 16)) / ((MainModule.SpeedHack and MainModule.SpeedHack.MaxSpeed or 30) - (MainModule.SpeedHack and MainModule.SpeedHack.MinSpeed or 16)), 0, 1, 0)
-            sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -12, 0, -1)
-        end
-    end
-    
-    sliderButton.MouseButton1Down:Connect(function()
-        dragging = true
-        TweenService:Create(sliderButton, TweenInfo.new(0.1), {
-            Size = UDim2.new(0, 28, 0, 28)
-        }):Play()
-    end)
-    
-    UIS.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local relativeX = (input.Position.X - sliderBackground.AbsolutePosition.X) / sliderBackground.AbsoluteSize.X
-            relativeX = math.clamp(relativeX, 0, 1)
-            local newSpeed = math.floor((MainModule.SpeedHack and MainModule.SpeedHack.MinSpeed or 16) + relativeX * ((MainModule.SpeedHack and MainModule.SpeedHack.MaxSpeed or 30) - (MainModule.SpeedHack and MainModule.SpeedHack.MinSpeed or 16)))
-            updateSpeed(newSpeed)
-        end
-    end)
-    
-    UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-            TweenService:Create(sliderButton, TweenInfo.new(0.1), {
-                Size = UDim2.new(0, 24, 0, 24)
+    -- Анимации для кнопки
+    changeBtn.MouseEnter:Connect(function()
+        if not isChoosingMenuKey then
+            TweenService:Create(changeBtn, TweenInfo.new(0.2), {
+                BackgroundTransparency = 0.2,
+                TextColor3 = CHRISTMAS_COLORS.GOLD
+            }):Play()
+            TweenService:Create(changeBtn.UIStroke, TweenInfo.new(0.2), {
+                Transparency = 0.1
             }):Play()
         end
     end)
     
-    return speedLabel
+    changeBtn.MouseLeave:Connect(function()
+        if not isChoosingMenuKey then
+            TweenService:Create(changeBtn, TweenInfo.new(0.2), {
+                BackgroundTransparency = 0.3,
+                TextColor3 = CHRISTMAS_COLORS.WHITE
+            }):Play()
+            TweenService:Create(changeBtn.UIStroke, TweenInfo.new(0.2), {
+                Transparency = 0.3
+            }):Play()
+        end
+    end)
+    
+    -- Функция обновления текста
+    local function updateKeyText()
+        label.Text = "Menu Hotkey: " .. menuHotkey.Name
+    end
+    
+    -- Функция изменения клавиши
+    local function startKeyChange()
+        isChoosingMenuKey = true
+        changeBtn.Text = "Press any key..."
+        changeBtn.BackgroundColor3 = CHRISTMAS_COLORS.GREEN
+        changeBtn.BackgroundTransparency = 0.2
+        
+        local connection
+        connection = UIS.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                menuHotkey = input.KeyCode
+                updateKeyText()
+                
+                isChoosingMenuKey = false
+                changeBtn.Text = "Change"
+                changeBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+                changeBtn.BackgroundTransparency = 0.3
+                
+                if connection then
+                    connection:Disconnect()
+                end
+                
+                updateHotkeyListener()
+            elseif input.UserInputType == Enum.UserInputType.MouseButton1 or 
+                   input.UserInputType == Enum.UserInputType.MouseButton2 or
+                   input.UserInputType == Enum.UserInputType.MouseButton3 then
+                isChoosingMenuKey = false
+                changeBtn.Text = "Change"
+                changeBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+                changeBtn.BackgroundTransparency = 0.3
+                
+                if connection then
+                    connection:Disconnect()
+                end
+            end
+        end)
+        
+        task.delay(5, function()
+            if isChoosingMenuKey then
+                isChoosingMenuKey = false
+                changeBtn.Text = "Change"
+                changeBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+                changeBtn.BackgroundTransparency = 0.3
+                
+                if connection then
+                    connection:Disconnect()
+                end
+            end
+        end)
+    end
+    
+    changeBtn.MouseButton1Click:Connect(function()
+        if not isChoosingMenuKey then
+            startKeyChange()
+        end
+    end)
+    
+    updateKeyText()
+    keyChangeButton = changeBtn
+    
+    return keybindContainer
 end
 
--- Функция для создания слайдера Killaura радиуса
-local function CreateKillauraRadiusSlider()
-    local sliderContainer = Instance.new("Frame")
-    sliderContainer.Size = UDim2.new(1, -10, 0, 60)
-    sliderContainer.BackgroundTransparency = 1
-    sliderContainer.Parent = ContentScrolling
+-- Простая кнопка выбора Guard типа
+local function CreateGuardTypeSelector()
+    local selectorContainer = Instance.new("Frame")
+    selectorContainer.Size = UDim2.new(1, -10, 0, 36)
+    selectorContainer.BackgroundTransparency = 1
+    selectorContainer.LayoutOrder = 1
+    selectorContainer.Parent = ContentScrolling
     
-    local radiusLabel = Instance.new("TextLabel")
-    radiusLabel.Size = UDim2.new(1, 0, 0, 25)
-    radiusLabel.BackgroundTransparency = 1
-    radiusLabel.Text = "Killaura Radius: " .. (MainModule.Killaura and MainModule.Killaura.Radius or 30)
-    radiusLabel.TextColor3 = Color3.fromRGB(240, 240, 255)
-    radiusLabel.TextSize = 14
-    radiusLabel.Font = Enum.Font.GothamBold
-    radiusLabel.Parent = sliderContainer
-    
-    local sliderBackground = Instance.new("Frame")
-    sliderBackground.Size = UDim2.new(1, 0, 0, 22)
-    sliderBackground.Position = UDim2.new(0, 0, 0, 30)
-    sliderBackground.BackgroundColor3 = Color3.fromRGB(40, 50, 80)
-    sliderBackground.BorderSizePixel = 0
-    sliderBackground.Parent = sliderContainer
+    local selectorFrame = Instance.new("Frame")
+    selectorFrame.Size = UDim2.new(1, 0, 1, 0)
+    selectorFrame.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+    selectorFrame.BackgroundTransparency = 0.4
+    selectorFrame.BorderSizePixel = 0
+    selectorFrame.Parent = selectorContainer
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 11)
-    corner.Parent = sliderBackground
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = selectorFrame
     
-    local sliderFill = Instance.new("Frame")
-    sliderFill.Size = UDim2.new(((MainModule.Killaura and MainModule.Killaura.Radius or 30) - 15) / ((MainModule.Killaura and MainModule.Killaura.MaxRadius or 50) - 15), 0, 1, 0)
-    sliderFill.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
-    sliderFill.BorderSizePixel = 0
-    sliderFill.Parent = sliderBackground
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = CHRISTMAS_COLORS.BLUE
+    stroke.Thickness = 1.2
+    stroke.Transparency = 0.3
+    stroke.Parent = selectorFrame
     
-    local fillCorner = Instance.new("UICorner")
-    fillCorner.CornerRadius = UDim.new(0, 11)
-    fillCorner.Parent = sliderFill
+    -- Текст
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = "Guard Type: " .. (MainModule.Guards and MainModule.Guards.SelectedGuard or "Circle")
+    label.TextColor3 = CHRISTMAS_COLORS.WHITE
+    label.TextSize = 13
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextStrokeColor3 = Color3.new(0, 0, 0)
+    label.TextStrokeTransparency = 0.8
+    label.Parent = selectorFrame
     
-    -- Gradient для заполнения
-    local fillGradient = Instance.new("UIGradient")
-    fillGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(220, 60, 60)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 100))
-    })
-    fillGradient.Rotation = 90
-    fillGradient.Parent = sliderFill
+    -- Кнопка смены типа
+    local changeBtn = Instance.new("TextButton")
+    changeBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
+    changeBtn.Position = UDim2.new(0.72, 0, 0.15, 0)
+    changeBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+    changeBtn.BackgroundTransparency = 0.3
+    changeBtn.BorderSizePixel = 0
+    changeBtn.Text = "Change"
+    changeBtn.TextColor3 = CHRISTMAS_COLORS.WHITE
+    changeBtn.TextSize = 12
+    changeBtn.Font = Enum.Font.GothamSemibold
+    changeBtn.AutoButtonColor = false
+    changeBtn.Parent = selectorFrame
     
-    local sliderButton = Instance.new("TextButton")
-    sliderButton.Size = UDim2.new(0, 24, 0, 24)
-    sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -12, 0, -1)
-    sliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    sliderButton.Text = ""
-    sliderButton.BorderSizePixel = 0
-    sliderButton.Parent = sliderBackground
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = changeBtn
     
-    local buttonCorner = Instance.new("UICorner")
-    buttonCorner.CornerRadius = UDim.new(0, 12)
-    buttonCorner.Parent = sliderButton
+    local btnStroke = Instance.new("UIStroke")
+    btnStroke.Color = CHRISTMAS_COLORS.GOLD
+    btnStroke.Thickness = 1
+    btnStroke.Transparency = 0.3
+    btnStroke.Parent = changeBtn
     
-    local dragging = false
-    
-    local function updateRadius(value)
-        if MainModule and MainModule.SetKillauraRadius then
-            local newRadius = MainModule.SetKillauraRadius(value)
-            radiusLabel.Text = "Killaura Radius: " .. newRadius
-            sliderFill.Size = UDim2.new((newRadius - 15) / ((MainModule.Killaura and MainModule.Killaura.MaxRadius or 50) - 15), 0, 1, 0)
-            sliderButton.Position = UDim2.new(sliderFill.Size.X.Scale, -12, 0, -1)
-        end
-    end
-    
-    sliderButton.MouseButton1Down:Connect(function()
-        dragging = true
-        TweenService:Create(sliderButton, TweenInfo.new(0.1), {
-            Size = UDim2.new(0, 28, 0, 28)
+    -- Анимации для кнопки
+    changeBtn.MouseEnter:Connect(function()
+        TweenService:Create(changeBtn, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.2,
+            TextColor3 = CHRISTMAS_COLORS.GOLD
+        }):Play()
+        TweenService:Create(changeBtn.UIStroke, TweenInfo.new(0.2), {
+            Transparency = 0.1
         }):Play()
     end)
     
-    UIS.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local relativeX = (input.Position.X - sliderBackground.AbsolutePosition.X) / sliderBackground.AbsoluteSize.X
-            relativeX = math.clamp(relativeX, 0, 1)
-            local newRadius = math.floor(15 + relativeX * ((MainModule.Killaura and MainModule.Killaura.MaxRadius or 50) - 15))
-            updateRadius(newRadius)
-        end
+    changeBtn.MouseLeave:Connect(function()
+        TweenService:Create(changeBtn, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.3,
+            TextColor3 = CHRISTMAS_COLORS.WHITE
+        }):Play()
+        TweenService:Create(changeBtn.UIStroke, TweenInfo.new(0.2), {
+            Transparency = 0.3
+        }):Play()
     end)
     
-    UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-            TweenService:Create(sliderButton, TweenInfo.new(0.1), {
-                Size = UDim2.new(0, 24, 0, 24)
-            }):Play()
+    -- Циклическое переключение типов
+    local guardTypes = {"Circle", "Triangle", "Square"}
+    local currentIndex = 1
+    
+    changeBtn.MouseButton1Click:Connect(function()
+        currentIndex = currentIndex + 1
+        if currentIndex > #guardTypes then
+            currentIndex = 1
         end
+        
+        local newGuardType = guardTypes[currentIndex]
+        if MainModule and MainModule.SetGuardType then
+            MainModule.SetGuardType(newGuardType)
+        elseif MainModule and MainModule.Guards then
+            MainModule.Guards.SelectedGuard = newGuardType
+        end
+        label.Text = "Guard Type: " .. newGuardType
     end)
     
-    return radiusLabel
+    return selectorContainer
 end
 
 -- Функции для создания контента вкладок
 local function ClearContent()
-    toggleElements = {}
+    toggleElements = {} -- Очищаем массив переключателей
     for _, child in pairs(ContentScrolling:GetChildren()) do
         if child:IsA("Frame") or child:IsA("TextButton") or child:IsA("TextLabel") then
             child:Destroy()
@@ -1084,11 +1119,7 @@ end
 local function CreateMainContent()
     ClearContent()
     
-    -- Speed Slider (переименован в Faster Speed)
-    local speedLabel = CreateSpeedSlider()
-    speedLabel.LayoutOrder = 1
-    
-    -- Speed Toggle (переименован в Faster Speed)
+    -- Faster Speed (бывший SpeedHack)
     CreateToggle("Faster Speed", function() 
         return MainModule and MainModule.SpeedHack and MainModule.SpeedHack.Enabled or false
     end, function(enabled)
@@ -1097,7 +1128,7 @@ local function CreateMainContent()
         elseif MainModule and MainModule.SpeedHack then
             MainModule.SpeedHack.Enabled = enabled
         end
-    end, 2)
+    end, 1)
     
     -- Fly Toggle
     CreateToggle("Fly", function() 
@@ -1108,13 +1139,13 @@ local function CreateMainContent()
         elseif MainModule and MainModule.Fly then
             MainModule.Fly.Enabled = enabled
         end
-    end, 3)
+    end, 2)
     
     -- Fly Bind
     local flyBindContainer, flyBindBtn = CreateBindButton("Fly Bind", FlyHotkey, function(newKey)
         FlyHotkey = newKey
         setupFlyListener()
-    end, 4)
+    end, 3)
     
     -- Noclip Toggle
     CreateToggle("Noclip", function() 
@@ -1125,13 +1156,13 @@ local function CreateMainContent()
         elseif MainModule and MainModule.Noclip then
             MainModule.Noclip.Enabled = enabled
         end
-    end, 5)
+    end, 4)
     
     -- Noclip Bind
     local noclipBindContainer, noclipBindBtn = CreateBindButton("Noclip Bind", NoclipHotkey, function(newKey)
         NoclipHotkey = newKey
         setupNoclipListener()
-    end, 6)
+    end, 5)
     
     -- Free Dash (only player)
     CreateToggle("Free Dash (only player)", function() 
@@ -1142,7 +1173,7 @@ local function CreateMainContent()
         elseif MainModule and MainModule.FreeDash then
             MainModule.FreeDash.Enabled = enabled
         end
-    end, 7)
+    end, 6)
     
     -- Anti Stun QTE
     CreateToggle("Anti Stun QTE", function() 
@@ -1153,7 +1184,7 @@ local function CreateMainContent()
         elseif MainModule and MainModule.AutoQTE then
             MainModule.AutoQTE.AntiStunEnabled = enabled
         end
-    end, 8)
+    end, 7)
     
     -- Anti Stun + Anti Ragdoll
     CreateToggle("Anti Stun + Anti Ragdoll", function() 
@@ -1169,7 +1200,7 @@ local function CreateMainContent()
         elseif MainModule and MainModule.Misc then
             MainModule.Misc.BypassRagdollEnabled = enabled
         end
-    end, 9, true)
+    end, 8, true)
     
     -- Instance Interact
     CreateToggle("Instance Interact", function() 
@@ -1180,7 +1211,7 @@ local function CreateMainContent()
         elseif MainModule and MainModule.Misc then
             MainModule.Misc.InstaInteract = enabled
         end
-    end, 10)
+    end, 9)
     
     -- No Cooldown Proximity
     CreateToggle("No Cooldown Proximity", function() 
@@ -1191,11 +1222,11 @@ local function CreateMainContent()
         elseif MainModule and MainModule.Misc then
             MainModule.Misc.NoCooldownProximity = enabled
         end
-    end, 11)
+    end, 10)
     
     -- Teleport Buttons
     local tpUpBtn = CreateButton("TP 100 blocks up")
-    tpUpBtn.LayoutOrder = 12
+    tpUpBtn.LayoutOrder = 11
     tpUpBtn.MouseButton1Click:Connect(function()
         if MainModule and MainModule.TeleportUp100 then
             MainModule.TeleportUp100()
@@ -1203,7 +1234,7 @@ local function CreateMainContent()
     end)
     
     local tpDownBtn = CreateButton("TP 40 blocks down")
-    tpDownBtn.LayoutOrder = 13
+    tpDownBtn.LayoutOrder = 12
     tpDownBtn.MouseButton1Click:Connect(function()
         if MainModule and MainModule.TeleportDown40 then
             MainModule.TeleportDown40()
@@ -1212,9 +1243,9 @@ local function CreateMainContent()
     
     -- Position display
     local positionLabel = CreateButton("Position: " .. (MainModule and MainModule.GetPlayerPosition and MainModule.GetPlayerPosition() or "0,0,0"))
-    positionLabel.LayoutOrder = 14
-    positionLabel.BackgroundColor3 = Color3.fromRGB(40, 50, 80)
-    positionLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    positionLabel.LayoutOrder = 13
+    positionLabel.BackgroundColor3 = Color3.fromRGB(30, 35, 50)
+    positionLabel.TextColor3 = CHRISTMAS_COLORS.WHITE:Lerp(CHRISTMAS_COLORS.GOLD, 0.5)
     
     -- Update position
     game:GetService("RunService").Heartbeat:Connect(function()
@@ -1234,10 +1265,6 @@ local function CreateCombatContent()
     local killauraTitle = CreateButton("KILLAURA", true)
     killauraTitle.LayoutOrder = 1
     
-    -- Killaura Radius Slider
-    local radiusLabel = CreateKillauraRadiusSlider()
-    radiusLabel.LayoutOrder = 2
-    
     -- Killaura Toggle
     CreateToggle("Killaura", function() 
         return MainModule and MainModule.Killaura and MainModule.Killaura.Enabled or false
@@ -1245,25 +1272,32 @@ local function CreateCombatContent()
         if MainModule and MainModule.ToggleKillaura then
             MainModule.ToggleKillaura(enabled)
             if enabled then
-                print("Killaura Enabled")
+                if game:GetService("StarterGui") then
+                    game:GetService("StarterGui"):SetCore("SendNotification", {
+                        Title = "Killaura",
+                        Text = "Enabled",
+                        Duration = 3
+                    })
+                end
             else
-                print("Killaura Disabled")
+                if game:GetService("StarterGui") then
+                    game:GetService("StarterGui"):SetCore("SendNotification", {
+                        Title = "Killaura",
+                        Text = "Disabled",
+                        Duration = 3
+                    })
+                end
             end
         elseif MainModule and MainModule.Killaura then
             MainModule.Killaura.Enabled = enabled
-            if enabled then
-                print("Killaura Enabled")
-            else
-                print("Killaura Disabled")
-            end
         end
-    end, 3)
+    end, 2)
     
     -- Killaura Bind
     local killauraBindContainer, killauraBindBtn = CreateBindButton("Killaura Bind", KillauraHotkey, function(newKey)
         KillauraHotkey = newKey
         setupKillauraListener()
-    end, 4)
+    end, 3)
 end
 
 -- MISC TAB
@@ -1405,23 +1439,8 @@ end
 local function CreateGuardsContent()
     ClearContent()
     
-    -- Simple Guard type selector
-    local guardSelectorBtn = CreateButton("Guard Type: " .. (MainModule.Guards and MainModule.Guards.SelectedGuard or "Circle"))
-    guardSelectorBtn.LayoutOrder = 1
-    guardSelectorBtn.MouseButton1Click:Connect(function()
-        local guardTypes = {"Circle", "Triangle", "Square"}
-        local current = MainModule.Guards and MainModule.Guards.SelectedGuard or "Circle"
-        local index = table.find(guardTypes, current) or 1
-        local nextIndex = (index % #guardTypes) + 1
-        local newType = guardTypes[nextIndex]
-        
-        if MainModule and MainModule.SetGuardType then
-            MainModule.SetGuardType(newType)
-        elseif MainModule and MainModule.Guards then
-            MainModule.Guards.SelectedGuard = newType
-        end
-        guardSelectorBtn.Text = "Guard Type: " .. newType
-    end)
+    -- Guard Type Selector
+    local guardSelector = CreateGuardTypeSelector()
     
     -- Spawn as Guard кнопка
     local spawnBtn = CreateButton("Spawn as Guard")
@@ -1471,14 +1490,8 @@ local function CreateGuardsContent()
     end, function(enabled)
         if MainModule and MainModule.ToggleHitboxExpander then
             MainModule.ToggleHitboxExpander(enabled)
-            if enabled then
-                print("Hitbox Enabled...")
-            end
         elseif MainModule and MainModule.Guards then
             MainModule.Guards.HitboxExpander = enabled
-            if enabled then
-                print("Hitbox Enabled...")
-            end
         end
     end, 6)
     
@@ -1530,7 +1543,7 @@ local function CreateHNSContent()
         end
     end, 1)
     
-    -- Spikes Kill с улучшенным сообщением
+    -- Spikes Kill
     CreateToggle("Spikes Kill", function() 
         return MainModule and MainModule.SpikesKillFeature and MainModule.SpikesKillFeature.Enabled or false
     end, function(enabled)
@@ -1560,10 +1573,10 @@ local function CreateHNSContent()
             MainModule.TeleportToHider()
         else
             teleportToHiderBtn.Text = "Function Not Available"
-            teleportToHiderBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+            teleportToHiderBtn.BackgroundColor3 = CHRISTMAS_COLORS.RED
             task.wait(1)
             teleportToHiderBtn.Text = "Teleport to Hider"
-            teleportToHiderBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 70)
+            teleportToHiderBtn.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
         end
     end)
 end
@@ -1603,10 +1616,10 @@ local function CreateGlassBridgeContent()
         if MainModule and MainModule.RevealGlassBridge then
             MainModule.RevealGlassBridge()
             glassEspBtn.Text = "Glass ESP (Revealed)"
-            glassEspBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
+            glassEspBtn.BackgroundColor3 = CHRISTMAS_COLORS.GREEN
             task.wait(1)
             glassEspBtn.Text = "Glass ESP"
-            glassEspBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 70)
+            glassEspBtn.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
         end
     end)
     
@@ -1639,18 +1652,20 @@ end
 local function CreateJumpRopeContent()
     ClearContent()
     
-    -- AntiFall Toggle
-    CreateToggle("AntiFall", function() 
-        return JumpRopeAntiFallEnabled
+    -- AntiFall Toggle (ON/OFF) с обновлением текста
+    local antiFallToggle, _, antiFallTextLabel = CreateToggle("AntiFall [" .. (JumpRopeAntiFallEnabled and "ON" or "OFF") .. "]", function() 
+        return JumpRopeAntiFallEnabled 
     end, function(enabled)
         JumpRopeAntiFallEnabled = enabled
         if enabled then
             if MainModule and MainModule.CreateJumpRopeAntiFall then
                 MainModule.CreateJumpRopeAntiFall()
+                antiFallTextLabel.Text = "AntiFall [ON]"
             end
         else
             if MainModule and MainModule.RemoveJumpRopeAntiFall then
                 MainModule.RemoveJumpRopeAntiFall()
+                antiFallTextLabel.Text = "AntiFall [OFF]"
             end
         end
     end, 1)
@@ -1663,16 +1678,16 @@ local function CreateJumpRopeContent()
             local success = MainModule.DeleteJumpRope()
             if success then
                 deleteRopeBtn.Text = "Rope Deleted!"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
+                deleteRopeBtn.BackgroundColor3 = CHRISTMAS_COLORS.GREEN
                 task.wait(1)
                 deleteRopeBtn.Text = "Delete The Rope"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 70)
+                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
             else
                 deleteRopeBtn.Text = "Rope Not Found"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+                deleteRopeBtn.BackgroundColor3 = CHRISTMAS_COLORS.RED
                 task.wait(1)
                 deleteRopeBtn.Text = "Delete The Rope"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 70)
+                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
             end
         end
     end)
@@ -1691,18 +1706,20 @@ end
 local function CreateSkySquidContent()
     ClearContent()
     
-    -- AntiFall Toggle
-    CreateToggle("AntiFall", function() 
-        return SkySquidAntiFallEnabled
+    -- AntiFall Toggle (ON/OFF) с обновлением текста
+    local antiFallToggle, _, antiFallTextLabel = CreateToggle("AntiFall [" .. (SkySquidAntiFallEnabled and "ON" or "OFF") .. "]", function() 
+        return SkySquidAntiFallEnabled 
     end, function(enabled)
         SkySquidAntiFallEnabled = enabled
         if enabled then
             if MainModule and MainModule.CreateSkySquidAntiFall then
                 MainModule.CreateSkySquidAntiFall()
+                antiFallTextLabel.Text = "AntiFall [ON]"
             end
         else
             if MainModule and MainModule.RemoveSkySquidAntiFall then
                 MainModule.RemoveSkySquidAntiFall()
+                antiFallTextLabel.Text = "AntiFall [OFF]"
             end
         end
     end, 1)
@@ -1727,13 +1744,15 @@ local function CreateLastDinnerContent()
     titleLabel.LayoutOrder = 1
     
     -- Zone Kill Toggle
-    CreateToggle("Zone Kill", function() 
-        return ZoneKillEnabled
+    local zoneKillToggle, _, zoneKillTextLabel = CreateToggle("Zone Kill [" .. (ZoneKillEnabled and "ON" or "OFF") .. "]", function() 
+        return ZoneKillEnabled 
     end, function(enabled)
         ZoneKillEnabled = enabled
         if enabled then
+            zoneKillTextLabel.Text = "Zone Kill [ON]"
             print("Zone Kill активирован")
         else
+            zoneKillTextLabel.Text = "Zone Kill [OFF]"
             print("Zone Kill деактивирован")
         end
     end, 2)
@@ -1747,7 +1766,7 @@ local function CreateSettingsContent()
     creatorLabel.TextXAlignment = Enum.TextXAlignment.Left
     creatorLabel.LayoutOrder = 1
     
-    local versionLabel = CreateButton("Version: 2.6 (Winter Edition)")
+    local versionLabel = CreateButton("Version: 2.5")
     versionLabel.TextXAlignment = Enum.TextXAlignment.Left
     versionLabel.LayoutOrder = 2
     
@@ -1759,17 +1778,9 @@ local function CreateSettingsContent()
     supportedLabel.TextXAlignment = Enum.TextXAlignment.Left
     supportedLabel.LayoutOrder = 4
     
-    -- Music Toggle
-    CreateToggle("Music", function()
-        return musicPlaying
-    end, function(enabled)
-        musicPlaying = enabled
-        if enabled then
-            PlayMusic()
-        else
-            StopMusic()
-        end
-    end, 5)
+    -- Кнопка для изменения горячей клавиши меню
+    local keybindButton = CreateKeybindButton()
+    keybindButton.LayoutOrder = 5
     
     local positionLabel = CreateButton("Position: " .. (MainModule and MainModule.GetPlayerPosition and MainModule.GetPlayerPosition() or "0,0,0"))
     positionLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1781,7 +1792,6 @@ local function CreateSettingsContent()
         if MainModule and MainModule.Cleanup then
             MainModule.Cleanup()
         end
-        StopMusic()
         ScreenGui:Destroy()
     end)
     
@@ -1795,29 +1805,32 @@ local function CreateSettingsContent()
     end)
 end
 
--- Создание вкладок
+-- Создание вкладок с улучшенным дизайном
 local tabs = {"Main", "Combat", "Misc", "Rebel", "RLGL", "Guards", "Dalgona", "HNS", "Glass Bridge", "Tug of War", "Jump Rope", "Sky Squid", "Last Dinner", "Settings"}
 local tabButtons = {}
 
-local TAB_BUTTON_WIDTH_PERCENT = 0.95
+local TAB_BUTTON_WIDTH_PERCENT = 0.95 -- 95% ширины контейнера
 
 for i, name in pairs(tabs) do
     local buttonContainer = Instance.new("Frame")
-    buttonContainer.Size = UDim2.new(TAB_BUTTON_WIDTH_PERCENT, 0, 0, 38)
-    buttonContainer.Position = UDim2.new((1 - TAB_BUTTON_WIDTH_PERCENT)/2, 0, 0, (i-1)*42 + 10)
+    buttonContainer.Size = UDim2.new(TAB_BUTTON_WIDTH_PERCENT, 0, 0, 40)
+    buttonContainer.Position = UDim2.new((1 - TAB_BUTTON_WIDTH_PERCENT)/2, 0, 0, (i-1)*48 + 10) -- Центрируем
     buttonContainer.BackgroundTransparency = 1
     buttonContainer.LayoutOrder = i
     buttonContainer.Parent = TabScrolling
     
     local button = Instance.new("TextButton")
     button.Size = UDim2.new(1, 0, 1, 0)
-    button.BackgroundColor3 = Color3.fromRGB(30, 40, 70)
+    button.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+    button.BackgroundTransparency = 0.4
     button.BorderSizePixel = 0
     button.Text = name
-    button.TextColor3 = Color3.fromRGB(220, 220, 255)
+    button.TextColor3 = CHRISTMAS_COLORS.WHITE
     button.TextSize = 13
-    button.Font = Enum.Font.Gotham
+    button.Font = Enum.Font.GothamSemibold
     button.AutoButtonColor = false
+    button.TextStrokeColor3 = Color3.new(0, 0, 0)
+    button.TextStrokeTransparency = 0.8
     button.Parent = buttonContainer
     
     local corner = Instance.new("UICorner")
@@ -1825,37 +1838,31 @@ for i, name in pairs(tabs) do
     corner.Parent = button
     
     local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(100, 150, 200)
-    stroke.Thickness = 1.5
+    stroke.Color = CHRISTMAS_COLORS.RED
+    stroke.Thickness = 1.2
+    stroke.Transparency = 0.3
     stroke.Parent = button
-    
-    -- Gradient
-    local btnGradient = Instance.new("UIGradient")
-    btnGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 40, 70)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(40, 50, 85))
-    })
-    btnGradient.Rotation = 90
-    btnGradient.Parent = button
     
     -- Анимация для кнопки вкладки
     button.MouseEnter:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(50, 70, 110),
-            TextColor3 = Color3.fromRGB(255, 255, 255)
+            BackgroundTransparency = 0.3,
+            TextColor3 = CHRISTMAS_COLORS.GOLD
         }):Play()
-        TweenService:Create(stroke, TweenInfo.new(0.2), {
-            Color = Color3.fromRGB(150, 200, 255)
+        TweenService:Create(button.UIStroke, TweenInfo.new(0.2), {
+            Transparency = 0.1,
+            Color = CHRISTMAS_COLORS.GOLD
         }):Play()
     end)
     
     button.MouseLeave:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(30, 40, 70),
-            TextColor3 = Color3.fromRGB(220, 220, 255)
+            BackgroundTransparency = 0.4,
+            TextColor3 = CHRISTMAS_COLORS.WHITE
         }):Play()
-        TweenService:Create(stroke, TweenInfo.new(0.2), {
-            Color = Color3.fromRGB(100, 150, 200)
+        TweenService:Create(button.UIStroke, TweenInfo.new(0.2), {
+            Transparency = 0.3,
+            Color = CHRISTMAS_COLORS.RED
         }):Play()
     end)
     
@@ -1863,16 +1870,16 @@ for i, name in pairs(tabs) do
     
     local function ActivateTab()
         for tabName, btn in pairs(tabButtons) do
-            btn.BackgroundColor3 = Color3.fromRGB(30, 40, 70)
-            btn.TextColor3 = Color3.fromRGB(220, 220, 255)
-            TweenService:Create(btn, TweenInfo.new(0.2), {
-                BackgroundColor3 = Color3.fromRGB(30, 40, 70)
+            btn.BackgroundTransparency = 0.4
+            btn.TextColor3 = CHRISTMAS_COLORS.WHITE
+            TweenService:Create(btn.UIStroke, TweenInfo.new(0.2), {
+                Color = CHRISTMAS_COLORS.RED
             }):Play()
         end
-        
-        TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(220, 60, 60),
-            TextColor3 = Color3.fromRGB(255, 255, 255)
+        button.BackgroundTransparency = 0.2
+        button.TextColor3 = CHRISTMAS_COLORS.GOLD
+        TweenService:Create(button.UIStroke, TweenInfo.new(0.2), {
+            Color = CHRISTMAS_COLORS.GOLD
         }):Play()
         
         if name == "Main" then
@@ -1906,7 +1913,7 @@ for i, name in pairs(tabs) do
         end
         
         -- Обновляем все переключатели после смены вкладки
-        task.wait(0.05)
+        task.wait(0.1)
         UpdateAllToggles()
     end
     
@@ -1914,11 +1921,36 @@ for i, name in pairs(tabs) do
 end
 
 -- Слушатели для горячих клавиш
+local menuHotkeyConnection
 local flyHotkeyConnection
 local noclipHotkeyConnection
 local killauraHotkeyConnection
 
--- Функция для настройки слушателя Fly
+-- Улучшенная функция для настройки слушателя меню
+local function setupHotkeyListener()
+    if menuHotkeyConnection then
+        menuHotkeyConnection:Disconnect()
+        menuHotkeyConnection = nil
+    end
+    
+    menuHotkeyConnection = UIS.InputBegan:Connect(function(input)
+        if input.KeyCode == menuHotkey then
+            MainFrame.Visible = not MainFrame.Visible
+            if MainFrame.Visible then
+                MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
+                if UIS.TouchEnabled then
+                    MobileOpenButton.Visible = false
+                end
+            else
+                if UIS.TouchEnabled then
+                    MobileOpenButton.Visible = true
+                end
+            end
+        end
+    end)
+end
+
+-- Улучшенная функция для настройки слушателя Fly
 local function setupFlyListener()
     if flyHotkeyConnection then
         flyHotkeyConnection:Disconnect()
@@ -1949,7 +1981,7 @@ local function setupFlyListener()
     end
 end
 
--- Функция для настройки слушателя Noclip
+-- Улучшенная функция для настройки слушателя Noclip
 local function setupNoclipListener()
     if noclipHotkeyConnection then
         noclipHotkeyConnection:Disconnect()
@@ -1975,7 +2007,7 @@ local function setupNoclipListener()
     end
 end
 
--- Функция для настройки слушателя Killaura
+-- Улучшенная функция для настройки слушателя Killaura
 local function setupKillauraListener()
     if killauraHotkeyConnection then
         killauraHotkeyConnection:Disconnect()
@@ -1992,18 +2024,8 @@ local function setupKillauraListener()
                 if success and MainModule then
                     if MainModule.ToggleKillaura then
                         MainModule.ToggleKillaura(not currentState)
-                        if not currentState then
-                            print("Killaura Enabled")
-                        else
-                            print("Killaura Disabled")
-                        end
                     elseif MainModule.Killaura then
                         MainModule.Killaura.Enabled = not currentState
-                        if not currentState then
-                            print("Killaura Enabled")
-                        else
-                            print("Killaura Disabled")
-                        end
                     end
                 end
             end
@@ -2012,85 +2034,21 @@ local function setupKillauraListener()
 end
 
 -- Функция для обновления всех слушателей горячих клавиш
-local function updateHotkeyListeners()
+local function updateHotkeyListener()
+    setupHotkeyListener()
     setupFlyListener()
     setupNoclipListener()
     setupKillauraListener()
 end
 
 -- Установка начальных слушателей
-updateHotkeyListeners()
+setupHotkeyListener()
 
--- Управление мышкой для ПК
-local function updateMouseCursor()
-    if not UIS.TouchEnabled then
-        -- Показываем/скрываем кастомный курсор
-        UIS.InputChanged:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseMovement then
-                if MainFrame.Visible then
-                    UIS.MouseIconEnabled = false
-                    if CustomCursor then
-                        CustomCursor.Visible = true
-                    end
-                else
-                    UIS.MouseIconEnabled = true
-                    if CustomCursor then
-                        CustomCursor.Visible = false
-                    end
-                end
-            end
-        end)
-        
-        -- Скрываем курсор при закрытии меню
-        MainFrame:GetPropertyChangedSignal("Visible"):Connect(function()
-            if not MainFrame.Visible then
-                UIS.MouseIconEnabled = true
-                if CustomCursor then
-                    CustomCursor.Visible = false
-                end
-            end
-        end)
-    end
-end
-
-updateMouseCursor()
-
--- Музыкальные функции
-local function PlayMusic()
-    if backgroundMusic then
-        backgroundMusic:Destroy()
-    end
-    
-    backgroundMusic = Instance.new("Sound")
-    backgroundMusic.SoundId = "rbxassetid://566507830"
-    backgroundMusic.Volume = 0.3
-    backgroundMusic.Looped = true
-    backgroundMusic.Parent = SoundService
-    
-    backgroundMusic.Ended:Connect(function()
-        if musicPlaying then
-            backgroundMusic:Play()
-        end
-    end)
-    
-    backgroundMusic:Play()
-    print("Music started")
-end
-
-local function StopMusic()
-    if backgroundMusic then
-        backgroundMusic:Stop()
-        backgroundMusic:Destroy()
-        backgroundMusic = nil
-    end
-    print("Music stopped")
-end
-
--- Автоматическое обновление GUI состояния каждые 0.5 секунды
+-- Автоматическое обновление GUI состояния
 local guiUpdateConnection
 guiUpdateConnection = RunService.Heartbeat:Connect(function()
     UpdateAllToggles()
-    task.wait(0.5)
+    task.wait(0.5) -- Обновляем каждые 0.5 секунд
 end)
 
 -- Закрытие при нажатии ESC
@@ -2105,22 +2063,23 @@ end)
 
 -- Автоматически открываем Main вкладку
 if tabButtons["Main"] then
-    tabButtons["Main"].BackgroundColor3 = Color3.fromRGB(220, 60, 60)
-    tabButtons["Main"].TextColor3 = Color3.fromRGB(255, 255, 255)
+    task.spawn(function()
+        task.wait(0.1)
+        local btn = tabButtons["Main"]
+        btn.BackgroundTransparency = 0.2
+        btn.TextColor3 = CHRISTMAS_COLORS.GOLD
+        TweenService:Create(btn.UIStroke, TweenInfo.new(0.2), {
+            Color = CHRISTMAS_COLORS.GOLD
+        }):Play()
+        CreateMainContent()
+    end)
 end
 
--- Создаем Main контент
-CreateMainContent()
-
--- Завершаем инициализацию
+-- Завершаем инициализацию после создания GUI
 task.spawn(function()
-    task.wait(1)
+    task.wait(2) -- Даем время на полную инициализацию
     initializing = false
-    print("Инициализация завершена")
-    
-    -- Автоматически включаем музыку
-    musicPlaying = true
-    PlayMusic()
+    print("🎄 Creon X v2.5 успешно загружен! 🎅")
 end)
 
 -- Очистка при удалении GUI
@@ -2128,6 +2087,9 @@ ScreenGui.AncestryChanged:Connect(function()
     if not ScreenGui.Parent then
         if MainModule and MainModule.Cleanup then
             MainModule.Cleanup()
+        end
+        if menuHotkeyConnection then
+            menuHotkeyConnection:Disconnect()
         end
         if flyHotkeyConnection then
             flyHotkeyConnection:Disconnect()
@@ -2141,62 +2103,12 @@ ScreenGui.AncestryChanged:Connect(function()
         if guiUpdateConnection then
             guiUpdateConnection:Disconnect()
         end
-        StopMusic()
     end
 end)
 
--- Bypass Anti-Kick система
-local function LoadAntiKick()
-    if getgenv().ED_AntiKick then
-        return
-    end
-
-    local Players, LocalPlayer, StarterGui = game:GetService("Players"), game:GetService("Players").LocalPlayer, game:GetService("StarterGui")
-    
-    getgenv().ED_AntiKick = {
-        Enabled = true,
-        SendNotifications = true,
-        CheckCaller = true
-    }
-
-    if getgenv().ED_AntiKick.SendNotifications then
-        task.spawn(function()
-            task.wait(1)
-            StarterGui:SetCore("SendNotification", {
-                Title = "Bypassed CreonHub...",
-                Text = "",
-                Duration = 3
-            })
-        end)
-    end
-
-    local OldNamecall; OldNamecall = hookmetamethod(game, "__namecall", function(...)
-        local self, message = ...
-        local method = getnamecallmethod()
-        
-        if ((getgenv().ED_AntiKick.CheckCaller and not checkcaller()) or true) and self == LocalPlayer and method == "Kick" and ED_AntiKick.Enabled then
-            return
-        end
-
-        return OldNamecall(...)
-    end)
-
-    local OldFunction; OldFunction = hookfunction(LocalPlayer.Kick, function(...)
-        local self, Message = ...
-
-        if ((ED_AntiKick.CheckCaller and not checkcaller()) or true) and self == LocalPlayer and ED_AntiKick.Enabled then
-            return
-        end
-        
-        return OldFunction(...)
-    end)
-end
-
--- Загружаем Anti-Kick систему
-LoadAntiKick()
-
 -- Отображение сообщения о загрузке
-print("❄️ Creon X v2.6 (Winter Edition) loaded successfully ❄️")
+print("🎄 Creon X v2.5 loaded successfully 🎅")
+print("Menu Hotkey: " .. menuHotkey.Name)
 print("Fly Hotkey: " .. (FlyHotkey and FlyHotkey.Name or "Not set"))
 print("Noclip Hotkey: " .. (NoclipHotkey and NoclipHotkey.Name or "Not set"))
 print("Killaura Hotkey: " .. (KillauraHotkey and KillauraHotkey.Name or "Not set"))
