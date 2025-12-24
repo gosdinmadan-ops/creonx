@@ -595,12 +595,21 @@ function MainModule.ToggleFreeDash(enabled)
             end
         end
         
+        -- Вместо Destroy - перехватываем вызов
         local remote = ReplicatedStorage:FindFirstChild("Remotes")
         if remote then
             remote = remote:FindFirstChild("DashRequest")
             if remote then
-                remote:Destroy()
-                MainModule.FreeDash.RemoteDestroyed = true
+                -- Сохраняем оригинальный FireServer
+                MainModule.FreeDash.OriginalFireServer = remote.FireServer
+                
+                -- Подменяем функцию
+                remote.FireServer = function(self, ...)
+                    -- Просто ничего не делаем или возвращаем успешный результат
+                    return true
+                end
+                
+                MainModule.FreeDash.RemoteHooked = true
             end
         end
     else
@@ -610,6 +619,18 @@ function MainModule.ToggleFreeDash(enabled)
             if fasterSprint then
                 fasterSprint.Value = MainModule.FreeDash.OriginalSprintValue
             end
+        end
+        
+        -- Восстанавливаем оригинальный Remote
+        if MainModule.FreeDash.RemoteHooked then
+            local remote = ReplicatedStorage:FindFirstChild("Remotes")
+            if remote then
+                remote = remote:FindFirstChild("DashRequest")
+                if remote and MainModule.FreeDash.OriginalFireServer then
+                    remote.FireServer = MainModule.FreeDash.OriginalFireServer
+                end
+            end
+            MainModule.FreeDash.RemoteHooked = false
         end
     end
 end
@@ -4051,6 +4072,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
