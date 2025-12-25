@@ -52,8 +52,8 @@ MainModule.AutoDodge = {
     Connections = {},
     LastDodgeTime = 0,
     DodgeCooldown = 0.4,
-    Range = 4.8,
-    RangeSquared = 4.8 * 4.8,
+    Range = 5, -- Изменено с 4.8 на 5
+    RangeSquared = 5 * 5, -- Квадрат радиуса для оптимизации
     AnimationIdsSet = {},
     PlayersInRange = {},
     LastRangeUpdate = 0,
@@ -2983,7 +2983,12 @@ function MainModule.GetPlayerPosition()
     return "Не доступно"
 end
 
--- Новая улучшенная функция AutoDodge
+-- Создаем набор для быстрого поиска анимаций
+for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
+    MainModule.AutoDodge.AnimationIdsSet[id] = true
+end
+
+-- Улучшенная функция AutoDodge
 local function executeDodge()
     if not MainModule.AutoDodge.Enabled then return false end
     
@@ -3031,33 +3036,48 @@ end
 
 local function createAutoDodgeHandler()
     local function checkPlayerAnimation(player)
-        if player == LocalPlayer then return end
+        if player == game:GetService("Players").LocalPlayer then return end
         if not player or not player.Character then return end
         
         local humanoid = player.Character:FindFirstChild("Humanoid")
         if not humanoid then return end
         
-        local localCharacter = GetCharacter()
+        local localCharacter = game:GetService("Players").LocalPlayer.Character
         if not localCharacter then return end
         
-        local localRoot = GetRootPart(localCharacter)
+        local localRoot = localCharacter:FindFirstChild("HumanoidRootPart")
         local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
         
         if not (localRoot and targetRoot) then return end
         
-        local distance = (targetRoot.Position - localRoot.Position).Magnitude
-        if distance > 100 then return end
+        -- Проверка расстояния (квадрат расстояния для оптимизации)
+        local distanceSquared = (targetRoot.Position - localRoot.Position).MagnitudeSquared
+        if distanceSquared > MainModule.AutoDodge.RangeSquared then return end
         
-        local isFacingLocalPlayer = false
+        -- Проверка направления взгляда
+        local isLookingAtUs = false
         local targetLook = targetRoot.CFrame.LookVector
+        
+        -- Вектор от врага к нам
         local directionToLocal = (localRoot.Position - targetRoot.Position).Unit
+        
+        -- Скалярное произведение (cos угла между векторами)
         local dotProduct = targetLook:Dot(directionToLocal)
         
-        if dotProduct > 0.5 then
-            isFacingLocalPlayer = true
+        -- Если враг смотрит в нашу сторону (даже не точно на нас)
+        -- Значение 0 = перпендикулярно, 1 = прямо на нас, -1 = в противоположную сторону
+        -- Условие: если смотрит хоть немного в нашу сторону (даже сбоку)
+        if dotProduct > 0 then -- Убрал 0.5, теперь любое положительное значение
+            isLookingAtUs = true
         end
         
-        if distance <= MainModule.AutoDodge.Range and isFacingLocalPlayer then
+        -- Дополнительная проверка: если враг очень близко (в радиусе 2), доджим в любом случае
+        if distanceSquared <= 4 then -- 2^2 = 4
+            isLookingAtUs = true
+        end
+        
+        if isLookingAtUs then
+            -- Проверяем текущие анимации врага
             for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do
                 if track and track.Animation then
                     local animId = track.Animation.AnimationId
@@ -3071,7 +3091,7 @@ local function createAutoDodgeHandler()
     end
     
     local function setupPlayerTracking(player)
-        if player == LocalPlayer then return end
+        if player == game:GetService("Players").LocalPlayer then return end
         
         local function setupCharacter(character)
             if not character or not MainModule.AutoDodge.Enabled then return end
@@ -3120,18 +3140,18 @@ function MainModule.ToggleAutoDodge(enabled)
         
         local setupPlayerTracking = createAutoDodgeHandler()
         
-        for _, player in pairs(Players:GetPlayers()) do
+        for _, player in pairs(game:GetService("Players"):GetPlayers()) do
             task.spawn(setupPlayerTracking, player)
         end
         
-        local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+        local playerAddedConn = game:GetService("Players").PlayerAdded:Connect(function(player)
             if MainModule.AutoDodge.Enabled then
                 task.spawn(setupPlayerTracking, player)
             end
         end)
         table.insert(MainModule.AutoDodge.Connections, playerAddedConn)
         
-        local heartbeatConn = RunService.Heartbeat:Connect(function()
+        local heartbeatConn = game:GetService("RunService").Heartbeat:Connect(function()
             if not MainModule.AutoDodge.Enabled then return end
             
             local currentTime = tick()
@@ -3986,6 +4006,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
