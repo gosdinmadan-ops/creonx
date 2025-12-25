@@ -3686,6 +3686,7 @@ function MainModule.GetHider()
 end
 
 function MainModule.Cleanup()
+    -- Отключаем все основные соединения
     local connections = {
         speedConnection, autoFarmConnection, godModeConnection, instaInteractConnection,
         noCooldownConnection, antiStunConnection, rapidFireConnection, infiniteAmmoConnection,
@@ -3698,8 +3699,10 @@ function MainModule.Cleanup()
         end
     end
     
+    -- Очищаем ESP
     MainModule.ClearESP()
     
+    -- Отключаем RLGL
     if MainModule.RLGL.Connection then
         MainModule.RLGL.Connection:Disconnect()
         MainModule.RLGL.Connection = nil
@@ -3710,16 +3713,19 @@ function MainModule.Cleanup()
         MainModule.RLGL.PocketSandCheck = nil
     end
     
+    -- Отключаем Rebel
     if MainModule.Rebel.Connection then
         MainModule.Rebel.Connection:Disconnect()
         MainModule.Rebel.Connection = nil
     end
     
+    -- Отключаем HNS
     if MainModule.HNS.InfinityStaminaConnection then
         MainModule.HNS.InfinityStaminaConnection:Disconnect()
         MainModule.HNS.InfinityStaminaConnection = nil
     end
     
+    -- Отключаем SpikesKillFeature
     if MainModule.SpikesKillFeature.AnimationConnection then
         MainModule.SpikesKillFeature.AnimationConnection:Disconnect()
         MainModule.SpikesKillFeature.AnimationConnection = nil
@@ -3750,6 +3756,7 @@ function MainModule.Cleanup()
     end
     MainModule.SpikesKillFeature.AnimationStoppedConnections = {}
     
+    -- Отключаем VoidKillFeature
     if MainModule.VoidKillFeature.AnimationConnection then
         MainModule.VoidKillFeature.AnimationConnection:Disconnect()
         MainModule.VoidKillFeature.AnimationConnection = nil
@@ -3770,6 +3777,7 @@ function MainModule.Cleanup()
     end
     MainModule.VoidKillFeature.AnimationStoppedConnections = {}
     
+    -- Отключаем ZoneKillFeature
     if MainModule.ZoneKillFeature.AnimationConnection then
         MainModule.ZoneKillFeature.AnimationConnection:Disconnect()
         MainModule.ZoneKillFeature.AnimationConnection = nil
@@ -3785,6 +3793,8 @@ function MainModule.Cleanup()
         MainModule.ZoneKillFeature.AnimationCheckConnection = nil
     end
     
+    -- ИСПРАВЛЕНО: ZoneCheckConnection был объявлен, но не создавался в ZoneKillFeature
+    -- Добавлен для совместимости с вашим исходным кодом
     if MainModule.ZoneKillFeature.ZoneCheckConnection then
         MainModule.ZoneKillFeature.ZoneCheckConnection:Disconnect()
         MainModule.ZoneKillFeature.ZoneCheckConnection = nil
@@ -3795,6 +3805,7 @@ function MainModule.Cleanup()
     end
     MainModule.ZoneKillFeature.AnimationStoppedConnections = {}
     
+    -- Отключаем GlassBridge
     if MainModule.GlassBridge.AntiBreakConnection then
         MainModule.GlassBridge.AntiBreakConnection:Disconnect()
         MainModule.GlassBridge.AntiBreakConnection = nil
@@ -3805,43 +3816,52 @@ function MainModule.Cleanup()
         MainModule.GlassBridge.GlassESPConnection = nil
     end
     
+    -- Отключаем JumpRope (Connection не был объявлен в структуре, но добавлен для совместимости)
     if MainModule.JumpRope.Connection then
         MainModule.JumpRope.Connection:Disconnect()
         MainModule.JumpRope.Connection = nil
     end
     
+    -- Отключаем SkySquid (Connection не был объявлен в структуре, но добавлен для совместимости)
     if MainModule.SkySquid.Connection then
         MainModule.SkySquid.Connection:Disconnect()
         MainModule.SkySquid.Connection = nil
     end
     
+    -- Отключаем TugOfWar
     if MainModule.TugOfWar.Connection then
         MainModule.TugOfWar.Connection:Disconnect()
         MainModule.TugOfWar.Connection = nil
     end
     
+    -- Отключаем Hitbox
     if MainModule.Hitbox.Connection then
         MainModule.Hitbox.Connection:Disconnect()
         MainModule.Hitbox.Connection = nil
     end
     
+    -- Отключаем AntiTimeStop
     if MainModule.AntiTimeStop.Connection then
         MainModule.AntiTimeStop.Connection:Disconnect()
         MainModule.AntiTimeStop.Connection = nil
     end
     
+    -- Отключаем Killaura
     for _, conn in pairs(MainModule.Killaura.Connections) do
         if conn then conn:Disconnect() end
     end
     MainModule.Killaura.Connections = {}
     
+    -- Отключаем AutoDodge
     for _, conn in pairs(MainModule.AutoDodge.Connections) do
         if conn then pcall(function() conn:Disconnect() end) end
     end
     MainModule.AutoDodge.Connections = {}
     
+    -- Отключаем Fly
     MainModule.DisableFlight()
     
+    -- Сбрасываем состояние Fly
     MainModule.Fly.Enabled = false
     MainModule.Fly.Speed = 39
     MainModule.Fly.Connection = nil
@@ -3849,26 +3869,36 @@ function MainModule.Cleanup()
     MainModule.Fly.BodyGyro = nil
     MainModule.Fly.HumanoidDiedConnection = nil
     MainModule.Fly.CharacterAddedConnection = nil
-    MainModule.Fly.SpeedChangeConnection = nil
     
+    -- ИСПРАВЛЕНО: SpeedChangeConnection не был объявлен в структуре Fly
+    if MainModule.Fly.SpeedChangeConnection then
+        MainModule.Fly.SpeedChangeConnection:Disconnect()
+        MainModule.Fly.SpeedChangeConnection = nil
+    end
+    
+    -- Отключаем Noclip
     if MainModule.Noclip.Connection then
         MainModule.Noclip.Connection:Disconnect()
         MainModule.Noclip.Connection = nil
     end
     
+    -- Отключаем защиту от ragdoll
     MainModule.StopEnhancedProtection()
     MainModule.StopJointCleaning()
     
-    for part, _ in pairs(MainModule.Noclip.NoclipParts) do
+    -- Восстанавливаем коллизии для частей Noclip
+    -- ИСПРАВЛЕНО: Используем правильную структуру данных из MainModule.Noclip
+    for part, _ in pairs(MainModule.Noclip.OriginalProperties) do
         if part and part.Parent then
             pcall(function()
                 part.CanCollide = true
             end)
         end
     end
-    MainModule.Noclip.NoclipParts = {}
-    MainModule.Noclip.OriginalCollisions = {}
+    MainModule.Noclip.OriginalProperties = {}
+    MainModule.Noclip.TransparentParts = {}
     
+    -- Восстанавливаем хитбоксы игроков
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             local root = player.Character:FindFirstChild("HumanoidRootPart")
@@ -3880,6 +3910,7 @@ function MainModule.Cleanup()
     end
     MainModule.Hitbox.ModifiedParts = {}
     
+    -- Восстанавливаем оригинальные значения патронов
     for obj, originalValue in pairs(MainModule.Guards.OriginalAmmo) do
         if obj and obj.Parent then
             obj.Value = originalValue
@@ -3887,6 +3918,7 @@ function MainModule.Cleanup()
     end
     MainModule.Guards.OriginalAmmo = {}
     
+    -- Восстанавливаем оригинальные значения скорострельности
     for obj, originalValue in pairs(MainModule.Guards.OriginalFireRates) do
         if obj and obj.Parent then
             obj.Value = originalValue
@@ -3894,6 +3926,7 @@ function MainModule.Cleanup()
     end
     MainModule.Guards.OriginalFireRates = {}
     
+    -- Восстанавливаем оригинальные свойства для AntiTimeStop
     for humanoid, properties in pairs(MainModule.AntiTimeStop.OriginalProperties) do
         if humanoid and humanoid.Parent then
             humanoid.WalkSpeed = properties.WalkSpeed
@@ -3902,6 +3935,7 @@ function MainModule.Cleanup()
     end
     MainModule.AntiTimeStop.OriginalProperties = {}
     
+    -- Удаляем платформы GlassBridge
     for _, platform in pairs(MainModule.GlassBridge.GlassPlatforms) do
         if platform and platform.Parent then
             platform:Destroy()
@@ -3909,6 +3943,7 @@ function MainModule.Cleanup()
     end
     MainModule.GlassBridge.GlassPlatforms = {}
     
+    -- Восстанавливаем оригинальные цвета GlassBridge
     for part, properties in pairs(MainModule.GlassBridge.OriginalColors) do
         if part and part.Parent then
             pcall(function()
@@ -3922,23 +3957,29 @@ function MainModule.Cleanup()
     MainModule.GlassBridge.OriginalMaterials = {}
     MainModule.GlassBridge.OriginalTransparency = {}
     
+    -- Удаляем анти-падение GlassBridge
     if MainModule.GlassBridge.GlassAntiFallPlatform and MainModule.GlassBridge.GlassAntiFallPlatform.Parent then
         MainModule.RemoveGlassBridgeAntiFall()
     end
     
+    -- Удаляем анти-падение SkySquid
     if MainModule.SkySquid.AntiFallPlatform and MainModule.SkySquid.AntiFallPlatform.Parent then
         MainModule.RemoveSkySquidAntiFall()
     end
     
+    -- Удаляем анти-падение JumpRope
     if MainModule.JumpRope.AntiFallPlatform and MainModule.JumpRope.AntiFallPlatform.Parent then
         MainModule.RemoveJumpRopeAntiFall()
     end
     
-    if MainModule.VoidKillFeature.AntiFallEnabled then
-        MainModule.RemoveSkySquidAntiFall()
-        MainModule.VoidKillFeature.AntiFallEnabled = false
+    -- ИСПРАВЛЕНО: VoidKillFeature использует свою собственную платформу
+    if MainModule.VoidKillFeature.AntiFallPlatform and MainModule.VoidKillFeature.AntiFallPlatform.Parent then
+        MainModule.VoidKillFeature.AntiFallPlatform:Destroy()
+        MainModule.VoidKillFeature.AntiFallPlatform = nil
     end
+    MainModule.VoidKillFeature.AntiFallEnabled = false
     
+    -- Отключаем функции вызовом соответствующих методов
     if MainModule.SpeedHack.Enabled then
         MainModule.ToggleSpeedHack(false)
     end
@@ -3959,6 +4000,7 @@ function MainModule.Cleanup()
         MainModule.ToggleFly(false)
     end
     
+    -- Сбрасываем все флаги состояния
     MainModule.SpeedHack.Enabled = false
     MainModule.SpeedHack.CurrentSpeed = 16
     MainModule.Noclip.Enabled = false
@@ -3997,6 +4039,8 @@ function MainModule.Cleanup()
     MainModule.ZoneKillFeature.TrackedAnimations = {}
     MainModule.FreeDash.Enabled = false
     MainModule.FreeDashGuards.Enabled = false
+    
+    ShowNotification("Cleanup", "All features disabled", 3)
 end
 
 LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
@@ -4006,11 +4050,3 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
-
-
-
-
-
-
-
-
