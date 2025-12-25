@@ -711,7 +711,7 @@ function MainModule.ToggleFreeDash(enabled)
             local fasterSprint = boosts:FindFirstChild("Faster Sprint")
             if fasterSprint then
                 MainModule.FreeDash.OriginalSprintValue = fasterSprint.Value
-                fasterSprint.Value = 5 -- Изменено с 5 на 10
+                fasterSprint.Value = 9 -- Изменено с 5 на 10
             end
         end
         
@@ -3986,6 +3986,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
