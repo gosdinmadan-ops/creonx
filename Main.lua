@@ -584,29 +584,159 @@ function MainModule.ToggleFreeDash(enabled)
     MainModule.FreeDash.Enabled = enabled
     
     if enabled then
+        -- БЛОК 1: Защита и блокировка DashRequest через глубокое удаление
+        local function DeepRemoveDashRequest()
+            -- Получаем доступ к окружению
+            local getgenv = getgenv or function() return _G end
+            local genv = getgenv()
+
+            -- Сохраняем оригинальные функции
+            genv.OriginalDestroy = genv.OriginalDestroy or Instance.new("Part").Destroy
+
+            -- Хук на уничтожение объектов
+            if hookmetamethod then
+                local originalNamecall
+                originalNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+                    local method = getnamecallmethod()
+                    
+                    -- Если пытаются уничтожить DashRequest - игнорируем
+                    if method == "Destroy" then
+                        local object = self
+                        if object and object.Name == "DashRequest" then
+                            local parent = object.Parent
+                            if parent and parent.Name == "Remotes" and parent.Parent == game:GetService("ReplicatedStorage") then
+                                return nil -- Молча игнорируем
+                            end
+                        end
+                    end
+                    
+                    return originalNamecall(self, ...)
+                end)
+            end
+
+            -- Находим объект
+            local dash = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+            if dash then dash = dash:FindFirstChild("DashRequest") end
+            
+            if dash then
+                -- Способ 1: Через setrawmetatable
+                if setrawmetatable then
+                    local nullMt = {
+                        __index = function() return nil end,
+                        __newindex = function() return nil end,
+                        __call = function() return nil end,
+                        __namecall = function() return nil end,
+                        __metatable = "Locked"
+                    }
+                    setrawmetatable(dash, nullMt)
+                end
+                
+                -- Способ 2: Через изменение свойств объекта
+                for _, property in pairs({"FireServer", "InvokeServer", "OnClientEvent", "OnClientInvoke"}) do
+                    pcall(function()
+                        -- Делаем свойства несуществующими
+                        dash[property] = nil
+                    end)
+                end
+                
+                -- Способ 3: Отключаем все соединения на низком уровне
+                if getconnections then
+                    for _, connection in ipairs(getconnections(dash.Changed)) do
+                        connection:Disconnect()
+                    end
+                    for _, connection in ipairs(getconnections(dash.AncestryChanged)) do
+                        connection:Disconnect()
+                    end
+                end
+                
+                -- Способ 4: Меняем внутреннюю структуру
+                pcall(function()
+                    dash.Archivable = false
+                    dash.Parent = nil -- Просто убираем из дерева объектов
+                end)
+                
+                -- Способ 5: Для полной уверенности - заменяем объект изнутри
+                local dashId = dash:GetDebugId()
+                
+                -- Через низкоуровневый доступ
+                if getrawmetatable then
+                    local mt = getrawmetatable(dash)
+                    if mt then
+                        local oldIndex = mt.__index
+                        mt.__index = function(self, key)
+                            if key == "FireServer" or key == "InvokeServer" then
+                                return function() return nil end
+                            end
+                            return oldIndex(self, key)
+                        end
+                    end
+                end
+            end
+        end
+
+        -- БЛОК 2: Защита от создания новых DashRequest
+        local function BlockNewDashRequests()
+            if hookmetamethod then
+                local originalNewIndex
+                originalNewIndex = hookmetamethod(game:GetService("ReplicatedStorage").Remotes, "__newindex", function(self, key, value)
+                    if key == "DashRequest" and value then
+                        -- Не даем создать новый DashRequest
+                        return nil
+                    end
+                    return originalNewIndex(self, key, value)
+                end)
+                MainModule.FreeDash.NewIndexHook = originalNewIndex
+            end
+        end
+
+        -- Запускаем блокировку
+        DeepRemoveDashRequest()
+        BlockNewDashRequests()
+
+        -- БЛОК 3: Установка Faster Sprint в 10 (вместо 5)
         local boosts = LocalPlayer:FindFirstChild("Boosts")
         if boosts then
             local fasterSprint = boosts:FindFirstChild("Faster Sprint")
             if fasterSprint then
                 MainModule.FreeDash.OriginalSprintValue = fasterSprint.Value
-                fasterSprint.Value = 5
+                fasterSprint.Value = 10 -- Изменено с 5 на 10
             end
         end
         
+        -- БЛОК 4: Дополнительная защита для remote (на всякий случай)
         local remote = ReplicatedStorage:FindFirstChild("Remotes")
         if remote then
             remote = remote:FindFirstChild("DashRequest")
             if remote then
-                remote:Destroy()
-                MainModule.FreeDash.RemoteDestroyed = true
+                local connection = remote.OnClientEvent:Connect(function()
+                    return nil
+                end)
+                remote.OnClientEvent = nil
+                MainModule.FreeDash.RemoteConnection = connection
             end
         end
+        
     else
+        -- ОТКЛЮЧЕНИЕ: Восстанавливаем всё обратно
         local boosts = LocalPlayer:FindFirstChild("Boosts")
         if boosts then
             local fasterSprint = boosts:FindFirstChild("Faster Sprint")
             if fasterSprint then
                 fasterSprint.Value = MainModule.FreeDash.OriginalSprintValue
+            end
+        end
+        
+        -- Восстанавливаем соединение если было сохранено
+        if MainModule.FreeDash.RemoteConnection then
+            MainModule.FreeDash.RemoteConnection:Disconnect()
+            MainModule.FreeDash.RemoteConnection = nil
+        end
+        
+        -- Восстанавливаем хук для новых DashRequest
+        if MainModule.FreeDash.NewIndexHook then
+            -- Здесь нужен код для восстановления оригинального __newindex
+            if hookmetamethod and MainModule.FreeDash.NewIndexHook then
+                -- Нужно восстановить оригинальную функцию
             end
         end
     end
@@ -3825,3 +3955,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
