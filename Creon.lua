@@ -25,14 +25,18 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
--- Новогодние цвета
-local CHRISTMAS_COLORS = {
+-- Цвета с серыми тонами для более элегантного дизайна
+local COLORS = {
     RED = Color3.fromRGB(220, 20, 60),
     GREEN = Color3.fromRGB(46, 204, 113),
     GOLD = Color3.fromRGB(241, 196, 15),
     BLUE = Color3.fromRGB(52, 152, 219),
     WHITE = Color3.fromRGB(236, 240, 241),
-    SNOW = Color3.fromRGB(255, 255, 255)
+    SNOW = Color3.fromRGB(255, 255, 255),
+    DARK_GRAY = Color3.fromRGB(20, 25, 30),
+    MEDIUM_GRAY = Color3.fromRGB(40, 45, 55),
+    LIGHT_GRAY = Color3.fromRGB(60, 65, 75),
+    SILVER = Color3.fromRGB(180, 185, 195)
 }
 
 -- Загрузка Main модуля
@@ -88,12 +92,12 @@ local ContentFrame = Instance.new("Frame")
 local ContentScrolling = Instance.new("ScrollingFrame")
 local ContentLayout = Instance.new("UIListLayout")
 
--- Кастомная мышка
-local CustomCursor = Instance.new("ImageLabel")
-
 -- Снежный эффект
 local SnowContainer = Instance.new("Frame")
 local SnowParticles = {}
+
+-- Кастомная мышка (крестик)
+local CustomCursor = Instance.new("ImageLabel")
 
 -- Кнопка для мобильных устройств (Delta Mobile)
 local MobileOpenButton = Instance.new("TextButton")
@@ -114,58 +118,21 @@ if UIS.TouchEnabled then
     GUI_HEIGHT = 595 * MOBILE_SCALE
 end
 
--- Снежный эффект
-SnowContainer.Size = UDim2.new(1, 0, 1, 0)
-SnowContainer.BackgroundTransparency = 1
-SnowContainer.Parent = ScreenGui
-
--- Создаем снежинки
-for i = 1, 30 do
-    local snowflake = Instance.new("TextLabel")
-    snowflake.Size = UDim2.new(0, 10, 0, 10)
-    snowflake.Position = UDim2.new(0, math.random(0, 1000), 0, math.random(-100, 0))
-    snowflake.BackgroundTransparency = 1
-    snowflake.Text = "❄"
-    snowflake.TextColor3 = CHRISTMAS_COLORS.SNOW
-    snowflake.TextSize = math.random(12, 20)
-    snowflake.TextTransparency = 0.7
-    snowflake.ZIndex = 0
-    snowflake.Parent = SnowContainer
-    
-    table.insert(SnowParticles, {
-        object = snowflake,
-        speed = math.random(20, 50),
-        sway = math.random(-10, 10) / 100
-    })
-end
-
--- Кастомная мышка (только для ПК) - ПРОСТОЙ ПЛЮСИК
-if not UIS.TouchEnabled then
-    CustomCursor.Name = "CustomCursor"
-    CustomCursor.Size = UDim2.new(0, 20, 0, 20)
-    CustomCursor.BackgroundTransparency = 1
-    CustomCursor.Image = "rbxassetid://10747375826" -- Простой плюсик
-    CustomCursor.ImageColor3 = CHRISTMAS_COLORS.RED
-    CustomCursor.Visible = false
-    CustomCursor.ZIndex = 10000
-    CustomCursor.AnchorPoint = Vector2.new(0.5, 0.5)
-    CustomCursor.Parent = ScreenGui
-end
-
 -- Основной фрейм
 MainFrame.Size = UDim2.new(0, GUI_WIDTH, 0, GUI_HEIGHT)
 MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 20, 30)
+MainFrame.BackgroundColor3 = COLORS.DARK_GRAY
 MainFrame.BackgroundTransparency = 0.1
 MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
+MainFrame.Visible = false -- Скрываем по умолчанию
 
--- Градиентный фон
+-- Градиентный фон с серыми тонами
 local gradient = Instance.new("UIGradient")
 gradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(15, 20, 30)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(25, 35, 50)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 20, 30))
+    ColorSequenceKeypoint.new(0, COLORS.DARK_GRAY),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(30, 35, 45)),
+    ColorSequenceKeypoint.new(1, COLORS.DARK_GRAY)
 })
 gradient.Rotation = 45
 gradient.Parent = MainFrame
@@ -175,23 +142,23 @@ mainCorner.CornerRadius = UDim.new(0, 12)
 mainCorner.Parent = MainFrame
 
 local mainStroke = Instance.new("UIStroke")
-mainStroke.Color = CHRISTMAS_COLORS.RED
+mainStroke.Color = COLORS.RED
 mainStroke.Thickness = 2
 mainStroke.Transparency = 0.3
 mainStroke.Parent = MainFrame
 
--- TitleBar с новогодним дизайном
+-- TitleBar с обновленным дизайном
 TitleBar.Size = UDim2.new(1, 0, 0, 40)
-TitleBar.BackgroundColor3 = Color3.fromRGB(20, 25, 40)
+TitleBar.BackgroundColor3 = Color3.fromRGB(25, 30, 40)
 TitleBar.BackgroundTransparency = 0.2
 TitleBar.BorderSizePixel = 0
 TitleBar.Parent = MainFrame
 
 local titleGradient = Instance.new("UIGradient")
 titleGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, CHRISTMAS_COLORS.RED),
-    ColorSequenceKeypoint.new(0.5, CHRISTMAS_COLORS.GOLD),
-    ColorSequenceKeypoint.new(1, CHRISTMAS_COLORS.RED)
+    ColorSequenceKeypoint.new(0, COLORS.RED),
+    ColorSequenceKeypoint.new(0.5, COLORS.GOLD),
+    ColorSequenceKeypoint.new(1, COLORS.RED)
 })
 titleGradient.Rotation = 0
 titleGradient.Parent = TitleBar
@@ -204,28 +171,28 @@ TitleLabel.Size = UDim2.new(0.7, 0, 1, 0)
 TitleLabel.Position = UDim2.new(0.1, 0, 0, 0)
 TitleLabel.BackgroundTransparency = 1
 TitleLabel.Text = "🎄 Creon X v2.5 🎅"
-TitleLabel.TextColor3 = CHRISTMAS_COLORS.WHITE
+TitleLabel.TextColor3 = COLORS.WHITE
 TitleLabel.TextSize = 16
 TitleLabel.Font = Enum.Font.GothamBold
-TitleLabel.TextStrokeColor3 = CHRISTMAS_COLORS.RED
+TitleLabel.TextStrokeColor3 = COLORS.RED
 TitleLabel.TextStrokeTransparency = 0.5
 TitleLabel.Parent = TitleBar
 
 -- Кнопка сворачивания (только для мобильных)
 if UIS.TouchEnabled then
-    MinimizeButton.Size = UDim2.new(0, 40, 0, 40)
-    MinimizeButton.Position = UDim2.new(1, -45, 0.5, -20)
-    MinimizeButton.BackgroundColor3 = CHRISTMAS_COLORS.RED
+    MinimizeButton.Size = UDim2.new(0, 30, 0, 30)
+    MinimizeButton.Position = UDim2.new(1, -35, 0.5, -15)
+    MinimizeButton.BackgroundColor3 = COLORS.MEDIUM_GRAY
     MinimizeButton.BackgroundTransparency = 0.3
     MinimizeButton.BorderSizePixel = 0
     MinimizeButton.Text = "❌"
-    MinimizeButton.TextColor3 = CHRISTMAS_COLORS.WHITE
-    MinimizeButton.TextSize = 18
+    MinimizeButton.TextColor3 = COLORS.WHITE
+    MinimizeButton.TextSize = 14
     MinimizeButton.Font = Enum.Font.GothamBold
     MinimizeButton.Parent = TitleBar
 
     local minimizeCorner = Instance.new("UICorner")
-    minimizeCorner.CornerRadius = UDim.new(0, 8)
+    minimizeCorner.CornerRadius = UDim.new(0, 6)
     minimizeCorner.Parent = MinimizeButton
     
     MinimizeButton.MouseButton1Click:Connect(function()
@@ -233,6 +200,10 @@ if UIS.TouchEnabled then
         MobileOpenButton.Visible = true
         if CustomCursor then
             CustomCursor.Visible = false
+        end
+        -- Убираем снег при закрытии GUI
+        if SnowContainer then
+            SnowContainer.Visible = false
         end
     end)
 end
@@ -243,7 +214,7 @@ local TAB_PANEL_WIDTH = 200
 -- Фрейм для кнопок вкладок с прокруткой
 TabButtons.Size = UDim2.new(0, TAB_PANEL_WIDTH, 1, -40)
 TabButtons.Position = UDim2.new(0, 0, 0, 40)
-TabButtons.BackgroundColor3 = Color3.fromRGB(20, 25, 40)
+TabButtons.BackgroundColor3 = COLORS.LIGHT_GRAY
 TabButtons.BackgroundTransparency = 0.3
 TabButtons.BorderSizePixel = 0
 TabButtons.Parent = MainFrame
@@ -258,7 +229,7 @@ TabScrolling.Size = UDim2.new(1, 0, 1, 0)
 TabScrolling.BackgroundTransparency = 1
 TabScrolling.BorderSizePixel = 0
 TabScrolling.ScrollBarThickness = 4
-TabScrolling.ScrollBarImageColor3 = CHRISTMAS_COLORS.RED
+TabScrolling.ScrollBarImageColor3 = COLORS.RED
 TabScrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
 TabScrolling.Parent = TabButtons
 
@@ -273,7 +244,7 @@ TabLayout.Parent = TabScrolling
 -- Content Frame с прокруткой
 ContentFrame.Size = UDim2.new(1, -TAB_PANEL_WIDTH, 1, -40)
 ContentFrame.Position = UDim2.new(0, TAB_PANEL_WIDTH, 0, 40)
-ContentFrame.BackgroundColor3 = Color3.fromRGB(15, 20, 35)
+ContentFrame.BackgroundColor3 = COLORS.MEDIUM_GRAY
 ContentFrame.BackgroundTransparency = 0.2
 ContentFrame.BorderSizePixel = 0
 ContentFrame.Parent = MainFrame
@@ -288,7 +259,7 @@ ContentScrolling.Position = UDim2.new(0, 7.5, 0, 7.5)
 ContentScrolling.BackgroundTransparency = 1
 ContentScrolling.BorderSizePixel = 0
 ContentScrolling.ScrollBarThickness = 6
-ContentScrolling.ScrollBarImageColor3 = CHRISTMAS_COLORS.RED
+ContentScrolling.ScrollBarImageColor3 = COLORS.RED
 ContentScrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
 ContentScrolling.Parent = ContentFrame
 
@@ -299,73 +270,196 @@ ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 end)
 ContentLayout.Parent = ContentScrolling
 
--- Кнопка для мобильных устройств (Delta Mobile)
+-- Кнопка для мобильных устройств (Delta Mobile) - УМЕНЬШЕНА И ОБНОВЛЕНА
 if UIS.TouchEnabled then
-    MobileOpenButton.Size = UDim2.new(0, 140, 0, 50)
-    MobileOpenButton.Position = UDim2.new(0.5, -70, 0.2, 0)
-    MobileOpenButton.BackgroundColor3 = CHRISTMAS_COLORS.RED
-    MobileOpenButton.BackgroundTransparency = 0.3
+    MobileOpenButton.Size = UDim2.new(0, 100, 0, 40) -- Уменьшена
+    MobileOpenButton.BackgroundColor3 = COLORS.MEDIUM_GRAY
+    MobileOpenButton.BackgroundTransparency = 0.2
     MobileOpenButton.BorderSizePixel = 0
     MobileOpenButton.Text = "🎮 OPEN"
-    MobileOpenButton.TextColor3 = CHRISTMAS_COLORS.WHITE
-    MobileOpenButton.TextSize = 16
+    MobileOpenButton.TextColor3 = COLORS.WHITE
+    MobileOpenButton.TextSize = 14
     MobileOpenButton.Font = Enum.Font.GothamBold
     MobileOpenButton.Parent = ScreenGui
     
     local mobileCorner = Instance.new("UICorner")
-    mobileCorner.CornerRadius = UDim.new(0, 12)
+    mobileCorner.CornerRadius = UDim.new(0, 8)
     mobileCorner.Parent = MobileOpenButton
     
     local mobileStroke = Instance.new("UIStroke")
-    mobileStroke.Color = CHRISTMAS_COLORS.GOLD
+    mobileStroke.Color = COLORS.GOLD
     mobileStroke.Thickness = 2
     mobileStroke.Parent = MobileOpenButton
+    
+    -- Делаем кнопку передвижной на мобильных устройствах
+    local mobileDragging = false
+    local mobileDragInput, mobileDragStart, mobileStartPos
+    
+    local function updateMobileDrag(input)
+        local delta = input.Position - mobileDragStart
+        MobileOpenButton.Position = UDim2.new(
+            mobileStartPos.X.Scale, 
+            mobileStartPos.X.Offset + delta.X, 
+            mobileStartPos.Y.Scale, 
+            mobileStartPos.Y.Offset + delta.Y
+        )
+    end
+    
+    MobileOpenButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            mobileDragging = true
+            mobileDragStart = input.Position
+            mobileStartPos = MobileOpenButton.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    mobileDragging = false
+                end
+            end)
+        end
+    end)
+    
+    MobileOpenButton.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            mobileDragInput = input
+        end
+    end)
+    
+    UIS.InputChanged:Connect(function(input)
+        if input == mobileDragInput and mobileDragging then
+            updateMobileDrag(input)
+        end
+    end)
     
     MobileOpenButton.MouseButton1Click:Connect(function()
         MainFrame.Visible = true
         MainFrame.Position = UDim2.new(0.5, -GUI_WIDTH/2, 0.5, -GUI_HEIGHT/2)
         MobileOpenButton.Visible = false
+        
+        -- Показываем снег при открытии GUI
+        if SnowContainer then
+            SnowContainer.Visible = true
+        end
     end)
     
-    MainFrame.Visible = false
+    MobileOpenButton.Visible = true
+    
+    -- Устанавливаем начальную позицию (верхний правый угол)
+    MobileOpenButton.Position = UDim2.new(1, -110, 0, 20)
 else
     MainFrame.Visible = true
+    
+    -- Для ПК: показываем снег сразу
+    task.spawn(function()
+        task.wait(0.5)
+        if SnowContainer then
+            SnowContainer.Visible = true
+        end
+    end)
 end
 
--- Анимация снега
-RunService.RenderStepped:Connect(function(deltaTime)
-    for _, snowflake in ipairs(SnowParticles) do
-        if snowflake.object and snowflake.object.Parent then
-            local currentPos = snowflake.object.Position
-            local newY = currentPos.Y.Offset + snowflake.speed * deltaTime
-            local newX = currentPos.X.Offset + snowflake.sway * 10
-            
-            if newY > 1000 then
-                newY = -50
-                newX = math.random(0, 1000)
-            end
-            
-            if newX < 0 then newX = 1000 end
-            if newX > 1000 then newX = 0 end
-            
-            snowflake.object.Position = UDim2.new(0, newX, 0, newY)
-            snowflake.object.Rotation = snowflake.object.Rotation + 0.5
-        end
-    end
-end)
-
--- Обновление кастомной мышки
-if CustomCursor then
+-- Кастомная мышка (крестик) - только для ПК
+if not UIS.TouchEnabled then
+    CustomCursor.Name = "CustomCursor"
+    CustomCursor.Size = UDim2.new(0, 32, 0, 32) -- Средний размер
+    CustomCursor.BackgroundTransparency = 1
+    CustomCursor.Image = "rbxassetid://10747375826" -- Простой плюсик (будет использован как крестик)
+    CustomCursor.ImageColor3 = COLORS.RED
+    CustomCursor.ImageTransparency = 0
+    CustomCursor.Visible = false
+    CustomCursor.ZIndex = 10000
+    CustomCursor.AnchorPoint = Vector2.new(0.5, 0.5)
+    CustomCursor.Parent = ScreenGui
+    
+    -- Делаем крестик из плюсика (поворачиваем на 45 градусов)
+    CustomCursor.Rotation = 45
+    
+    -- Добавляем эффект свечения
+    local glow = Instance.new("UIGradient")
+    glow.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, COLORS.RED),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 100, 100)),
+        ColorSequenceKeypoint.new(1, COLORS.RED)
+    })
+    glow.Rotation = 90
+    glow.Enabled = true
+    glow.Parent = CustomCursor
+    
+    -- Обновление позиции кастомного курсора
+    local lastMousePos = Vector2.new(0, 0)
+    
     RunService.RenderStepped:Connect(function()
         if MainFrame.Visible and not UIS.TouchEnabled then
             local mousePos = UIS:GetMouseLocation()
-            CustomCursor.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y)
+            
+            -- Плавное следование за мышкой
+            local smoothPos = mousePos:Lerp(lastMousePos, 0.3)
+            CustomCursor.Position = UDim2.new(0, smoothPos.X, 0, smoothPos.Y)
             CustomCursor.Visible = true
+            
+            lastMousePos = smoothPos
         else
             CustomCursor.Visible = false
         end
     end)
 end
+
+-- Снежный эффект (видим только при открытом GUI)
+SnowContainer.Size = UDim2.new(1, 0, 1, 0)
+SnowContainer.BackgroundTransparency = 1
+SnowContainer.Visible = false -- Скрываем по умолчанию
+SnowContainer.ZIndex = 0
+SnowContainer.Parent = ScreenGui
+
+-- Функция для создания снежинок
+local function createSnowflakes()
+    for i = 1, 30 do
+        local snowflake = Instance.new("TextLabel")
+        snowflake.Size = UDim2.new(0, 10, 0, 10)
+        snowflake.Position = UDim2.new(0, math.random(0, 1000), 0, math.random(-100, 0))
+        snowflake.BackgroundTransparency = 1
+        snowflake.Text = "❄"
+        snowflake.TextColor3 = COLORS.SNOW
+        snowflake.TextSize = math.random(12, 20)
+        snowflake.TextTransparency = 0.7
+        snowflake.ZIndex = 0
+        snowflake.Parent = SnowContainer
+        
+        table.insert(SnowParticles, {
+            object = snowflake,
+            speed = math.random(20, 50),
+            sway = math.random(-10, 10) / 100
+        })
+    end
+end
+
+-- Создаем снежинки
+createSnowflakes()
+
+-- Анимация снега
+local snowConnection
+snowConnection = RunService.RenderStepped:Connect(function(deltaTime)
+    if SnowContainer and SnowContainer.Visible then
+        for _, snowflake in ipairs(SnowParticles) do
+            if snowflake.object and snowflake.object.Parent then
+                local currentPos = snowflake.object.Position
+                local newY = currentPos.Y.Offset + snowflake.speed * deltaTime
+                local newX = currentPos.X.Offset + snowflake.sway * 10
+                
+                if newY > 1000 then
+                    newY = -50
+                    newX = math.random(0, 1000)
+                end
+                
+                if newX < 0 then newX = 1000 end
+                if newX > 1000 then newX = 0 end
+                
+                snowflake.object.Position = UDim2.new(0, newX, 0, newY)
+                snowflake.object.Rotation = snowflake.object.Rotation + 0.5
+            end
+        end
+    end
+end)
 
 -- Функция для перемещения GUI
 local dragging = false
@@ -406,15 +500,15 @@ end)
 local function CreateButton(text, isTitle)
     local button = Instance.new("TextButton")
     button.Size = UDim2.new(1, -10, 0, isTitle and 40 or 36)
-    button.BackgroundColor3 = isTitle and Color3.fromRGB(30, 35, 50) or Color3.fromRGB(25, 30, 45)
+    button.BackgroundColor3 = isTitle and COLORS.LIGHT_GRAY or COLORS.MEDIUM_GRAY
     button.BackgroundTransparency = isTitle and 0.3 or 0.4
     button.BorderSizePixel = 0
     button.Text = text
-    button.TextColor3 = isTitle and CHRISTMAS_COLORS.GOLD or CHRISTMAS_COLORS.WHITE
+    button.TextColor3 = isTitle and COLORS.GOLD or COLORS.WHITE
     button.TextSize = isTitle and 14 or 13
     button.Font = Enum.Font.GothamSemibold
     button.AutoButtonColor = false
-    button.TextStrokeColor3 = isTitle and CHRISTMAS_COLORS.RED or Color3.new(0, 0, 0)
+    button.TextStrokeColor3 = isTitle and COLORS.RED or Color3.new(0, 0, 0)
     button.TextStrokeTransparency = isTitle and 0.5 or 0.8
     button.Parent = ContentScrolling
     
@@ -423,7 +517,7 @@ local function CreateButton(text, isTitle)
     corner.Parent = button
     
     local stroke = Instance.new("UIStroke")
-    stroke.Color = isTitle and CHRISTMAS_COLORS.GOLD or CHRISTMAS_COLORS.RED
+    stroke.Color = isTitle and COLORS.GOLD :Lerp(COLORS.SILVER, 0.5) or COLORS.RED :Lerp(COLORS.SILVER, 0.3)
     stroke.Thickness = isTitle and 1.5 or 1.2
     stroke.Transparency = 0.3
     stroke.Parent = button
@@ -432,7 +526,7 @@ local function CreateButton(text, isTitle)
     button.MouseEnter:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.2), {
             BackgroundTransparency = isTitle and 0.2 or 0.3,
-            TextColor3 = isTitle and CHRISTMAS_COLORS.WHITE :Lerp(CHRISTMAS_COLORS.GOLD, 0.5) or CHRISTMAS_COLORS.GOLD
+            TextColor3 = isTitle and COLORS.WHITE :Lerp(COLORS.GOLD, 0.5) or COLORS.GOLD
         }):Play()
         TweenService:Create(button.UIStroke, TweenInfo.new(0.2), {
             Transparency = 0.1
@@ -442,7 +536,7 @@ local function CreateButton(text, isTitle)
     button.MouseLeave:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.2), {
             BackgroundTransparency = isTitle and 0.3 or 0.4,
-            TextColor3 = isTitle and CHRISTMAS_COLORS.GOLD or CHRISTMAS_COLORS.WHITE
+            TextColor3 = isTitle and COLORS.GOLD or COLORS.WHITE
         }):Play()
         TweenService:Create(button.UIStroke, TweenInfo.new(0.2), {
             Transparency = 0.3
@@ -454,7 +548,7 @@ end
 
 -- Улучшенная функция для создания переключателей
 local toggleElements = {}
-local function CreateToggle(text, getEnabledFunction, callback, layoutOrder, bypassInitialization)
+local function CreateToggle(text, getEnabledFunction, callback, layoutOrder)
     local toggleContainer = Instance.new("Frame")
     toggleContainer.Size = UDim2.new(1, -10, 0, 36)
     toggleContainer.BackgroundTransparency = 1
@@ -466,8 +560,7 @@ local function CreateToggle(text, getEnabledFunction, callback, layoutOrder, byp
         container = toggleContainer,
         getEnabled = getEnabledFunction,
         callback = callback,
-        text = text,
-        bypassInitialization = bypassInitialization or false
+        text = text
     })
     
     -- Текст
@@ -476,7 +569,7 @@ local function CreateToggle(text, getEnabledFunction, callback, layoutOrder, byp
     textLabel.Position = UDim2.new(0, 0, 0, 0)
     textLabel.BackgroundTransparency = 1
     textLabel.Text = text
-    textLabel.TextColor3 = CHRISTMAS_COLORS.WHITE
+    textLabel.TextColor3 = COLORS.WHITE
     textLabel.TextSize = 13
     textLabel.Font = Enum.Font.Gotham
     textLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -484,17 +577,17 @@ local function CreateToggle(text, getEnabledFunction, callback, layoutOrder, byp
     textLabel.TextStrokeTransparency = 0.8
     textLabel.Parent = toggleContainer
     
-    -- Переключатель с новогодним дизайном
+    -- Переключатель с обновленным дизайном
     local toggleBackground = Instance.new("Frame")
     toggleBackground.Size = UDim2.new(0, 54, 0, 26)
     toggleBackground.Position = UDim2.new(1, -56, 0.5, -13)
-    toggleBackground.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+    toggleBackground.BackgroundColor3 = COLORS.LIGHT_GRAY
     toggleBackground.BorderSizePixel = 0
     toggleBackground.Parent = toggleContainer
     
     local toggleCircle = Instance.new("Frame")
     toggleCircle.Size = UDim2.new(0, 22, 0, 22)
-    toggleCircle.BackgroundColor3 = CHRISTMAS_COLORS.WHITE
+    toggleCircle.BackgroundColor3 = COLORS.WHITE
     toggleCircle.BorderSizePixel = 0
     toggleCircle.Position = UDim2.new(0, 2, 0.5, -11)
     toggleCircle.Parent = toggleBackground
@@ -509,7 +602,7 @@ local function CreateToggle(text, getEnabledFunction, callback, layoutOrder, byp
     corner2.Parent = toggleCircle
     
     local stroke = Instance.new("UIStroke")
-    stroke.Color = CHRISTMAS_COLORS.RED
+    stroke.Color = COLORS.SILVER
     stroke.Thickness = 1.5
     stroke.Transparency = 0.3
     stroke.Parent = toggleBackground
@@ -533,12 +626,12 @@ local function CreateToggle(text, getEnabledFunction, callback, layoutOrder, byp
         end
         
         TweenService:Create(toggleBackground, TweenInfo.new(0.2), {
-            BackgroundColor3 = isEnabled and CHRISTMAS_COLORS.GREEN or Color3.fromRGB(40, 45, 65)
+            BackgroundColor3 = isEnabled and COLORS.GREEN :Lerp(COLORS.SILVER, 0.3) or COLORS.LIGHT_GRAY
         }):Play()
         
         TweenService:Create(toggleCircle, TweenInfo.new(0.2), {
             Position = isEnabled and UDim2.new(1, -24, 0.5, -11) or UDim2.new(0, 2, 0.5, -11),
-            BackgroundColor3 = isEnabled and CHRISTMAS_COLORS.GOLD :Lerp(CHRISTMAS_COLORS.WHITE, 0.5) or CHRISTMAS_COLORS.WHITE
+            BackgroundColor3 = isEnabled and COLORS.GOLD :Lerp(COLORS.WHITE, 0.5) or COLORS.WHITE
         }):Play()
     end
     
@@ -596,7 +689,7 @@ local function UpdateAllToggles()
                 local toggleBackground = toggleData.container:FindFirstChildWhichIsA("Frame")
                 if toggleBackground then
                     TweenService:Create(toggleBackground, TweenInfo.new(0.1), {
-                        BackgroundColor3 = isEnabled and CHRISTMAS_COLORS.GREEN or Color3.fromRGB(40, 45, 65)
+                        BackgroundColor3 = isEnabled and COLORS.GREEN :Lerp(COLORS.SILVER, 0.3) or COLORS.LIGHT_GRAY
                     }):Play()
                     
                     local toggleCircle = toggleBackground:FindFirstChildWhichIsA("Frame")
@@ -621,7 +714,7 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
     
     local bindFrame = Instance.new("Frame")
     bindFrame.Size = UDim2.new(1, 0, 1, 0)
-    bindFrame.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+    bindFrame.BackgroundColor3 = COLORS.MEDIUM_GRAY
     bindFrame.BackgroundTransparency = 0.4
     bindFrame.BorderSizePixel = 0
     bindFrame.Parent = bindContainer
@@ -631,7 +724,7 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
     corner.Parent = bindFrame
     
     local stroke = Instance.new("UIStroke")
-    stroke.Color = CHRISTMAS_COLORS.BLUE
+    stroke.Color = COLORS.SILVER
     stroke.Thickness = 1.2
     stroke.Transparency = 0.3
     stroke.Parent = bindFrame
@@ -641,7 +734,7 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
     label.Size = UDim2.new(0.6, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Text = labelText
-    label.TextColor3 = CHRISTMAS_COLORS.WHITE
+    label.TextColor3 = COLORS.WHITE
     label.TextSize = 13
     label.Font = Enum.Font.Gotham
     label.TextXAlignment = Enum.TextXAlignment.Left
@@ -653,11 +746,11 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
     local bindBtn = Instance.new("TextButton")
     bindBtn.Size = UDim2.new(0.35, 0, 0.7, 0)
     bindBtn.Position = UDim2.new(0.62, 0, 0.15, 0)
-    bindBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+    bindBtn.BackgroundColor3 = COLORS.LIGHT_GRAY
     bindBtn.BackgroundTransparency = 0.3
     bindBtn.BorderSizePixel = 0
     bindBtn.Text = currentKey and currentKey.Name or "None"
-    bindBtn.TextColor3 = CHRISTMAS_COLORS.WHITE
+    bindBtn.TextColor3 = COLORS.WHITE
     bindBtn.TextSize = 12
     bindBtn.Font = Enum.Font.GothamSemibold
     bindBtn.AutoButtonColor = false
@@ -668,7 +761,7 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
     btnCorner.Parent = bindBtn
     
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Color = CHRISTMAS_COLORS.GOLD
+    btnStroke.Color = COLORS.GOLD :Lerp(COLORS.SILVER, 0.5)
     btnStroke.Thickness = 1
     btnStroke.Transparency = 0.3
     btnStroke.Parent = bindBtn
@@ -677,7 +770,7 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
     bindBtn.MouseEnter:Connect(function()
         TweenService:Create(bindBtn, TweenInfo.new(0.2), {
             BackgroundTransparency = 0.2,
-            TextColor3 = CHRISTMAS_COLORS.GOLD
+            TextColor3 = COLORS.GOLD
         }):Play()
         TweenService:Create(bindBtn.UIStroke, TweenInfo.new(0.2), {
             Transparency = 0.1
@@ -687,7 +780,7 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
     bindBtn.MouseLeave:Connect(function()
         TweenService:Create(bindBtn, TweenInfo.new(0.2), {
             BackgroundTransparency = 0.3,
-            TextColor3 = CHRISTMAS_COLORS.WHITE
+            TextColor3 = COLORS.WHITE
         }):Play()
         TweenService:Create(bindBtn.UIStroke, TweenInfo.new(0.2), {
             Transparency = 0.3
@@ -720,7 +813,7 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
         end
         
         bindBtn.Text = "Press a key..."
-        bindBtn.BackgroundColor3 = CHRISTMAS_COLORS.GREEN
+        bindBtn.BackgroundColor3 = COLORS.GREEN
         bindBtn.BackgroundTransparency = 0.2
         
         local connection
@@ -728,7 +821,7 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
             if input.UserInputType == Enum.UserInputType.Keyboard then
                 currentKey = input.KeyCode
                 updateButtonText()
-                bindBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+                bindBtn.BackgroundColor3 = COLORS.LIGHT_GRAY
                 bindBtn.BackgroundTransparency = 0.3
                 
                 if onBindChanged then
@@ -746,7 +839,7 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
                    input.UserInputType == Enum.UserInputType.MouseButton2 or
                    input.UserInputType == Enum.UserInputType.MouseButton3 then
                 updateButtonText()
-                bindBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+                bindBtn.BackgroundColor3 = COLORS.LIGHT_GRAY
                 bindBtn.BackgroundTransparency = 0.3
                 
                 if bindType == "fly" then isChoosingFlyKey = false end
@@ -767,7 +860,7 @@ local function CreateBindButton(labelText, currentKey, onBindChanged, layoutOrde
                 if bindType == "killaura" then isChoosingKillauraKey = false end
                 
                 updateButtonText()
-                bindBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+                bindBtn.BackgroundColor3 = COLORS.LIGHT_GRAY
                 bindBtn.BackgroundTransparency = 0.3
                 
                 if connection then
@@ -811,7 +904,7 @@ local function CreateKeybindButton()
     
     local keybindFrame = Instance.new("Frame")
     keybindFrame.Size = UDim2.new(1, 0, 1, 0)
-    keybindFrame.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+    keybindFrame.BackgroundColor3 = COLORS.MEDIUM_GRAY
     keybindFrame.BackgroundTransparency = 0.4
     keybindFrame.BorderSizePixel = 0
     keybindFrame.Parent = keybindContainer
@@ -821,7 +914,7 @@ local function CreateKeybindButton()
     corner.Parent = keybindFrame
     
     local stroke = Instance.new("UIStroke")
-    stroke.Color = CHRISTMAS_COLORS.BLUE
+    stroke.Color = COLORS.SILVER
     stroke.Thickness = 1.2
     stroke.Transparency = 0.3
     stroke.Parent = keybindFrame
@@ -831,7 +924,7 @@ local function CreateKeybindButton()
     label.Size = UDim2.new(0.7, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Text = "Menu Hotkey: M"
-    label.TextColor3 = CHRISTMAS_COLORS.WHITE
+    label.TextColor3 = COLORS.WHITE
     label.TextSize = 13
     label.Font = Enum.Font.Gotham
     label.TextXAlignment = Enum.TextXAlignment.Left
@@ -843,11 +936,11 @@ local function CreateKeybindButton()
     local changeBtn = Instance.new("TextButton")
     changeBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
     changeBtn.Position = UDim2.new(0.72, 0, 0.15, 0)
-    changeBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+    changeBtn.BackgroundColor3 = COLORS.LIGHT_GRAY
     changeBtn.BackgroundTransparency = 0.3
     changeBtn.BorderSizePixel = 0
     changeBtn.Text = "Change"
-    changeBtn.TextColor3 = CHRISTMAS_COLORS.WHITE
+    changeBtn.TextColor3 = COLORS.WHITE
     changeBtn.TextSize = 12
     changeBtn.Font = Enum.Font.GothamSemibold
     changeBtn.AutoButtonColor = false
@@ -858,7 +951,7 @@ local function CreateKeybindButton()
     btnCorner.Parent = changeBtn
     
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Color = CHRISTMAS_COLORS.GOLD
+    btnStroke.Color = COLORS.GOLD :Lerp(COLORS.SILVER, 0.5)
     btnStroke.Thickness = 1
     btnStroke.Transparency = 0.3
     btnStroke.Parent = changeBtn
@@ -872,7 +965,7 @@ local function CreateKeybindButton()
     local function startKeyChange()
         isChoosingMenuKey = true
         changeBtn.Text = "Press any key..."
-        changeBtn.BackgroundColor3 = CHRISTMAS_COLORS.GREEN
+        changeBtn.BackgroundColor3 = COLORS.GREEN
         changeBtn.BackgroundTransparency = 0.2
         
         local connection
@@ -883,7 +976,7 @@ local function CreateKeybindButton()
                 
                 isChoosingMenuKey = false
                 changeBtn.Text = "Change"
-                changeBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+                changeBtn.BackgroundColor3 = COLORS.LIGHT_GRAY
                 changeBtn.BackgroundTransparency = 0.3
                 
                 if connection then
@@ -896,7 +989,7 @@ local function CreateKeybindButton()
                    input.UserInputType == Enum.UserInputType.MouseButton3 then
                 isChoosingMenuKey = false
                 changeBtn.Text = "Change"
-                changeBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+                changeBtn.BackgroundColor3 = COLORS.LIGHT_GRAY
                 changeBtn.BackgroundTransparency = 0.3
                 
                 if connection then
@@ -909,7 +1002,7 @@ local function CreateKeybindButton()
             if isChoosingMenuKey then
                 isChoosingMenuKey = false
                 changeBtn.Text = "Change"
-                changeBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+                changeBtn.BackgroundColor3 = COLORS.LIGHT_GRAY
                 changeBtn.BackgroundTransparency = 0.3
                 
                 if connection then
@@ -941,7 +1034,7 @@ local function CreateGuardTypeSelector()
     
     local selectorFrame = Instance.new("Frame")
     selectorFrame.Size = UDim2.new(1, 0, 1, 0)
-    selectorFrame.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+    selectorFrame.BackgroundColor3 = COLORS.MEDIUM_GRAY
     selectorFrame.BackgroundTransparency = 0.4
     selectorFrame.BorderSizePixel = 0
     selectorFrame.Parent = selectorContainer
@@ -951,7 +1044,7 @@ local function CreateGuardTypeSelector()
     corner.Parent = selectorFrame
     
     local stroke = Instance.new("UIStroke")
-    stroke.Color = CHRISTMAS_COLORS.BLUE
+    stroke.Color = COLORS.SILVER
     stroke.Thickness = 1.2
     stroke.Transparency = 0.3
     stroke.Parent = selectorFrame
@@ -961,7 +1054,7 @@ local function CreateGuardTypeSelector()
     label.Size = UDim2.new(0.7, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Text = "Guard Type: " .. (MainModule.Guards and MainModule.Guards.SelectedGuard or "Circle")
-    label.TextColor3 = CHRISTMAS_COLORS.WHITE
+    label.TextColor3 = COLORS.WHITE
     label.TextSize = 13
     label.Font = Enum.Font.Gotham
     label.TextXAlignment = Enum.TextXAlignment.Left
@@ -973,11 +1066,11 @@ local function CreateGuardTypeSelector()
     local changeBtn = Instance.new("TextButton")
     changeBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
     changeBtn.Position = UDim2.new(0.72, 0, 0.15, 0)
-    changeBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 65)
+    changeBtn.BackgroundColor3 = COLORS.LIGHT_GRAY
     changeBtn.BackgroundTransparency = 0.3
     changeBtn.BorderSizePixel = 0
     changeBtn.Text = "Change"
-    changeBtn.TextColor3 = CHRISTMAS_COLORS.WHITE
+    changeBtn.TextColor3 = COLORS.WHITE
     changeBtn.TextSize = 12
     changeBtn.Font = Enum.Font.GothamSemibold
     changeBtn.AutoButtonColor = false
@@ -988,7 +1081,7 @@ local function CreateGuardTypeSelector()
     btnCorner.Parent = changeBtn
     
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Color = CHRISTMAS_COLORS.GOLD
+    btnStroke.Color = COLORS.GOLD :Lerp(COLORS.SILVER, 0.5)
     btnStroke.Thickness = 1
     btnStroke.Transparency = 0.3
     btnStroke.Parent = changeBtn
@@ -1089,16 +1182,42 @@ local function CreateMainContent()
         setupNoclipListener()
     end, 5)
     
-    -- Free Dash (only player)
-    CreateToggle("Free Dash (only player)", function() 
-        return MainModule and MainModule.FreeDash and MainModule.FreeDash.Enabled or false
-    end, function(enabled)
-        if MainModule and MainModule.ToggleFreeDash then
-            MainModule.ToggleFreeDash(enabled)
-        elseif MainModule and MainModule.FreeDash then
-            MainModule.FreeDash.Enabled = enabled
-        end
-    end, 6)
+    -- Free Dash (only player) - СПЕЦИАЛЬНАЯ ОБРАБОТКА ДЛЯ МОБИЛЬНЫХ
+    if UIS.TouchEnabled then
+        -- Для мобильных: просто надпись
+        local mobileDashLabel = Instance.new("TextLabel")
+        mobileDashLabel.Size = UDim2.new(1, -10, 0, 36)
+        mobileDashLabel.BackgroundColor3 = COLORS.MEDIUM_GRAY
+        mobileDashLabel.BackgroundTransparency = 0.4
+        mobileDashLabel.BorderSizePixel = 0
+        mobileDashLabel.Text = "Free Dash (only player) - PC Only"
+        mobileDashLabel.TextColor3 = COLORS.SILVER
+        mobileDashLabel.TextSize = 13
+        mobileDashLabel.Font = Enum.Font.Gotham
+        mobileDashLabel.Parent = ContentScrolling
+        mobileDashLabel.LayoutOrder = 6
+        
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 8)
+        corner.Parent = mobileDashLabel
+        
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = COLORS.SILVER
+        stroke.Thickness = 1.2
+        stroke.Transparency = 0.3
+        stroke.Parent = mobileDashLabel
+    else
+        -- Для ПК: обычный переключатель
+        CreateToggle("Free Dash (only player)", function() 
+            return MainModule and MainModule.FreeDash and MainModule.FreeDash.Enabled or false
+        end, function(enabled)
+            if MainModule and MainModule.ToggleFreeDash then
+                MainModule.ToggleFreeDash(enabled)
+            elseif MainModule and MainModule.FreeDash then
+                MainModule.FreeDash.Enabled = enabled
+            end
+        end, 6)
+    end
     
     -- Anti Stun QTE
     CreateToggle("Anti Stun QTE", function() 
@@ -1111,7 +1230,7 @@ local function CreateMainContent()
         end
     end, 7)
     
-    -- Anti Stun + Anti Ragdoll (УБРАЛИ ПРОВЕРКУ ИНИЦИАЛИЗАЦИИ)
+    -- Anti Stun + Anti Ragdoll
     CreateToggle("Anti Stun + Anti Ragdoll", function() 
         return MainModule and MainModule.Misc and MainModule.Misc.BypassRagdollEnabled or false
     end, function(enabled)
@@ -1164,8 +1283,8 @@ local function CreateMainContent()
     -- Position display
     local positionLabel = CreateButton("Position: " .. (MainModule and MainModule.GetPlayerPosition and MainModule.GetPlayerPosition() or "0,0,0"))
     positionLabel.LayoutOrder = 13
-    positionLabel.BackgroundColor3 = Color3.fromRGB(30, 35, 50)
-    positionLabel.TextColor3 = CHRISTMAS_COLORS.WHITE:Lerp(CHRISTMAS_COLORS.GOLD, 0.5)
+    positionLabel.BackgroundColor3 = COLORS.LIGHT_GRAY
+    positionLabel.TextColor3 = COLORS.WHITE:Lerp(COLORS.GOLD, 0.5)
     
     -- Update position
     game:GetService("RunService").Heartbeat:Connect(function()
@@ -1477,10 +1596,10 @@ local function CreateHNSContent()
             MainModule.TeleportToHider()
         else
             teleportToHiderBtn.Text = "Function Not Available"
-            teleportToHiderBtn.BackgroundColor3 = CHRISTMAS_COLORS.RED
+            teleportToHiderBtn.BackgroundColor3 = COLORS.RED
             task.wait(1)
             teleportToHiderBtn.Text = "Teleport to Hider"
-            teleportToHiderBtn.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+            teleportToHiderBtn.BackgroundColor3 = COLORS.MEDIUM_GRAY
         end
     end)
 end
@@ -1520,7 +1639,7 @@ local function CreateGlassBridgeContent()
         if MainModule and MainModule.ToggleGlassBridgeESP then
             MainModule.ToggleGlassBridgeESP(not (MainModule.GlassBridge and MainModule.GlassBridge.GlassESPEnabled or false))
             glassEspBtn.Text = MainModule.GlassBridge and MainModule.GlassBridge.GlassESPEnabled and "Glass ESP (ON)" or "Glass ESP (OFF)"
-            glassEspBtn.BackgroundColor3 = MainModule.GlassBridge and MainModule.GlassBridge.GlassESPEnabled and CHRISTMAS_COLORS.GREEN or Color3.fromRGB(25, 30, 45)
+            glassEspBtn.BackgroundColor3 = MainModule.GlassBridge and MainModule.GlassBridge.GlassESPEnabled and COLORS.GREEN :Lerp(COLORS.SILVER, 0.3) or COLORS.MEDIUM_GRAY
         end
     end)
     
@@ -1579,16 +1698,16 @@ local function CreateJumpRopeContent()
             local success = MainModule.DeleteJumpRope()
             if success then
                 deleteRopeBtn.Text = "Rope Deleted!"
-                deleteRopeBtn.BackgroundColor3 = CHRISTMAS_COLORS.GREEN
+                deleteRopeBtn.BackgroundColor3 = COLORS.GREEN :Lerp(COLORS.SILVER, 0.3)
                 task.wait(1)
                 deleteRopeBtn.Text = "Delete The Rope"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+                deleteRopeBtn.BackgroundColor3 = COLORS.MEDIUM_GRAY
             else
                 deleteRopeBtn.Text = "Rope Not Found"
-                deleteRopeBtn.BackgroundColor3 = CHRISTMAS_COLORS.RED
+                deleteRopeBtn.BackgroundColor3 = COLORS.RED
                 task.wait(1)
                 deleteRopeBtn.Text = "Delete The Rope"
-                deleteRopeBtn.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+                deleteRopeBtn.BackgroundColor3 = COLORS.MEDIUM_GRAY
             end
         end
     end)
@@ -1720,11 +1839,11 @@ for i, name in pairs(tabs) do
     
     local button = Instance.new("TextButton")
     button.Size = UDim2.new(1, 0, 1, 0)
-    button.BackgroundColor3 = Color3.fromRGB(25, 30, 45)
+    button.BackgroundColor3 = COLORS.MEDIUM_GRAY
     button.BackgroundTransparency = 0.4
     button.BorderSizePixel = 0
     button.Text = name
-    button.TextColor3 = CHRISTMAS_COLORS.WHITE
+    button.TextColor3 = COLORS.WHITE
     button.TextSize = 13
     button.Font = Enum.Font.GothamSemibold
     button.AutoButtonColor = false
@@ -1737,7 +1856,7 @@ for i, name in pairs(tabs) do
     corner.Parent = button
     
     local stroke = Instance.new("UIStroke")
-    stroke.Color = CHRISTMAS_COLORS.RED
+    stroke.Color = COLORS.RED :Lerp(COLORS.SILVER, 0.3)
     stroke.Thickness = 1.2
     stroke.Transparency = 0.3
     stroke.Parent = button
@@ -1746,22 +1865,22 @@ for i, name in pairs(tabs) do
     button.MouseEnter:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.2), {
             BackgroundTransparency = 0.3,
-            TextColor3 = CHRISTMAS_COLORS.GOLD
+            TextColor3 = COLORS.GOLD
         }):Play()
         TweenService:Create(button.UIStroke, TweenInfo.new(0.2), {
             Transparency = 0.1,
-            Color = CHRISTMAS_COLORS.GOLD
+            Color = COLORS.GOLD :Lerp(COLORS.SILVER, 0.5)
         }):Play()
     end)
     
     button.MouseLeave:Connect(function()
         TweenService:Create(button, TweenInfo.new(0.2), {
             BackgroundTransparency = 0.4,
-            TextColor3 = CHRISTMAS_COLORS.WHITE
+            TextColor3 = COLORS.WHITE
         }):Play()
         TweenService:Create(button.UIStroke, TweenInfo.new(0.2), {
             Transparency = 0.3,
-            Color = CHRISTMAS_COLORS.RED
+            Color = COLORS.RED :Lerp(COLORS.SILVER, 0.3)
         }):Play()
     end)
     
@@ -1770,15 +1889,15 @@ for i, name in pairs(tabs) do
     local function ActivateTab()
         for tabName, btn in pairs(tabButtons) do
             btn.BackgroundTransparency = 0.4
-            btn.TextColor3 = CHRISTMAS_COLORS.WHITE
+            btn.TextColor3 = COLORS.WHITE
             TweenService:Create(btn.UIStroke, TweenInfo.new(0.2), {
-                Color = CHRISTMAS_COLORS.RED
+                Color = COLORS.RED :Lerp(COLORS.SILVER, 0.3)
             }):Play()
         end
         button.BackgroundTransparency = 0.2
-        button.TextColor3 = CHRISTMAS_COLORS.GOLD
+        button.TextColor3 = COLORS.GOLD
         TweenService:Create(button.UIStroke, TweenInfo.new(0.2), {
-            Color = CHRISTMAS_COLORS.GOLD
+            Color = COLORS.GOLD :Lerp(COLORS.SILVER, 0.5)
         }):Play()
         
         if name == "Main" then
@@ -1840,9 +1959,25 @@ local function setupHotkeyListener()
                 if UIS.TouchEnabled then
                     MobileOpenButton.Visible = false
                 end
+                -- Показываем снег при открытии GUI
+                if SnowContainer then
+                    SnowContainer.Visible = true
+                end
+                -- Показываем кастомный курсор для ПК
+                if CustomCursor then
+                    CustomCursor.Visible = true
+                end
             else
                 if UIS.TouchEnabled then
                     MobileOpenButton.Visible = true
+                end
+                -- Убираем снег при закрытии GUI
+                if SnowContainer then
+                    SnowContainer.Visible = false
+                end
+                -- Скрываем кастомный курсор для ПК
+                if CustomCursor then
+                    CustomCursor.Visible = false
                 end
             end
         end
@@ -1957,6 +2092,14 @@ UIS.InputBegan:Connect(function(input)
         if UIS.TouchEnabled then
             MobileOpenButton.Visible = true
         end
+        -- Убираем снег при закрытии GUI
+        if SnowContainer then
+            SnowContainer.Visible = false
+        end
+        -- Скрываем кастомный курсор для ПК
+        if CustomCursor then
+            CustomCursor.Visible = false
+        end
     end
 end)
 
@@ -1966,11 +2109,19 @@ if tabButtons["Main"] then
         task.wait(0.1)
         local btn = tabButtons["Main"]
         btn.BackgroundTransparency = 0.2
-        btn.TextColor3 = CHRISTMAS_COLORS.GOLD
+        btn.TextColor3 = COLORS.GOLD
         TweenService:Create(btn.UIStroke, TweenInfo.new(0.2), {
-            Color = CHRISTMAS_COLORS.GOLD
+            Color = COLORS.GOLD :Lerp(COLORS.SILVER, 0.5)
         }):Play()
         CreateMainContent()
+        
+        -- Показываем снег при открытии GUI на ПК
+        if not UIS.TouchEnabled then
+            task.wait(0.5)
+            if SnowContainer then
+                SnowContainer.Visible = true
+            end
+        end
     end)
 end
 
@@ -2001,11 +2152,11 @@ ScreenGui.AncestryChanged:Connect(function()
         if guiUpdateConnection then
             guiUpdateConnection:Disconnect()
         end
+        if snowConnection then
+            snowConnection:Disconnect()
+        end
     end
 end)
 
-
 -- Отображение сообщения о загрузке
 print("🎄 Creon X v2.5 loaded successfully 🎅")
-
-
