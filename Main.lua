@@ -52,8 +52,7 @@ MainModule.AutoDodge = {
     Connections = {},
     LastDodgeTime = 0,
     DodgeCooldown = 0.4,
-    Range = 5, -- Изменено с 4.8 на 5
-    RangeSquared = 5 * 5, -- Квадрат радиуса для оптимизации
+    Range = 5,
     AnimationIdsSet = {},
     PlayersInRange = {},
     LastRangeUpdate = 0,
@@ -3035,14 +3034,17 @@ local function executeDodge()
 end
 
 local function createAutoDodgeHandler()
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
+    
     local function checkPlayerAnimation(player)
-        if player == game:GetService("Players").LocalPlayer then return end
+        if player == LocalPlayer then return end
         if not player or not player.Character then return end
         
         local humanoid = player.Character:FindFirstChild("Humanoid")
         if not humanoid then return end
         
-        local localCharacter = game:GetService("Players").LocalPlayer.Character
+        local localCharacter = LocalPlayer.Character
         if not localCharacter then return end
         
         local localRoot = localCharacter:FindFirstChild("HumanoidRootPart")
@@ -3050,9 +3052,9 @@ local function createAutoDodgeHandler()
         
         if not (localRoot and targetRoot) then return end
         
-        -- Проверка расстояния (квадрат расстояния для оптимизации)
-        local distanceSquared = (targetRoot.Position - localRoot.Position).MagnitudeSquared
-        if distanceSquared > MainModule.AutoDodge.RangeSquared then return end
+        -- Проверка расстояния
+        local distance = (targetRoot.Position - localRoot.Position).Magnitude
+        if distance > MainModule.AutoDodge.Range then return end
         
         -- Проверка направления взгляда
         local isLookingAtUs = false
@@ -3066,13 +3068,12 @@ local function createAutoDodgeHandler()
         
         -- Если враг смотрит в нашу сторону (даже не точно на нас)
         -- Значение 0 = перпендикулярно, 1 = прямо на нас, -1 = в противоположную сторону
-        -- Условие: если смотрит хоть немного в нашу сторону (даже сбоку)
         if dotProduct > 0 then -- Убрал 0.5, теперь любое положительное значение
             isLookingAtUs = true
         end
         
         -- Дополнительная проверка: если враг очень близко (в радиусе 2), доджим в любом случае
-        if distanceSquared <= 4 then -- 2^2 = 4
+        if distance <= 2 then
             isLookingAtUs = true
         end
         
@@ -3091,7 +3092,7 @@ local function createAutoDodgeHandler()
     end
     
     local function setupPlayerTracking(player)
-        if player == game:GetService("Players").LocalPlayer then return end
+        if player == LocalPlayer then return end
         
         local function setupCharacter(character)
             if not character or not MainModule.AutoDodge.Enabled then return end
@@ -4050,3 +4051,4 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
