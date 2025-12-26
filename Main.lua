@@ -583,52 +583,154 @@ function MainModule.ToggleFreeDash(enabled)
     MainModule.FreeDash.Enabled = enabled
     
     if enabled then
-        -- БЛОК 1: Удаляем только методы FireServer/InvokeServer
-        local function RemoveDashMethods()
-            local CoreServices = game:GetService("ReplicatedStorage")
-            local RemoteContainer = CoreServices:FindFirstChild("Remotes")
-            local TargetRemote = RemoteContainer and RemoteContainer:FindFirstChild("DashRequest")
-            
-            if TargetRemote then
-                -- Удаляем только эти методы
-                pcall(function()
-                    TargetRemote.FireServer = nil
-                end)
-                pcall(function()
-                    TargetRemote.InvokeServer = nil
-                end)
-                
-                -- Сохраняем оригинальные значения
-                MainModule.FreeDash.OriginalFireServer = TargetRemote.FireServer
-                MainModule.FreeDash.OriginalInvokeServer = TargetRemote.InvokeServer
-                MainModule.FreeDash.OriginalRemote = TargetRemote
+        -- БЛОК 1: При первом включении выполняем полную защиту
+        if not MainModule.FreeDash.Initialized then
+            local function DeepRemoveDashRequest()
+                -- Инициализация окружения
+                local Environment = (getgenv or function() return _G end)()
+                local CoreServices = game:GetService("ReplicatedStorage")
+
+                -- Кэширование стандартных методов
+                Environment.OriginalInstanceMethods = Environment.OriginalInstanceMethods or {}
+                Environment.OriginalInstanceMethods.Remove = Instance.new("Part").Destroy
+
+                -- Перехват системных вызовов
+                if type(hookmetamethod) == "function" then
+                    local SystemCallHandler
+                    SystemCallHandler = hookmetamethod(game, "__namecall", function(ObjectReference, ...)
+                        local CurrentMethod = getnamecallmethod()
+                        
+                        if CurrentMethod == "Destroy" then
+                            local TargetObject = ObjectReference
+                            if TargetObject and TargetObject.Name == "DashRequest" then
+                                local Container = TargetObject.Parent
+                                if Container and Container.Name == "Remotes" and Container.Parent == CoreServices then
+                                    return -- Игнорирование вызова
+                                end
+                            end
+                        end
+                        
+                        return SystemCallHandler(ObjectReference, ...)
+                    end)
+                    
+                    -- Сохраняем хук для последующего восстановления
+                    MainModule.FreeDash.SystemCallHook = SystemCallHandler
+                end
+
+                -- Внутренняя процедура обработки объекта
+                local function ProcessTargetObject()
+                    local RemoteContainer = CoreServices:FindFirstChild("Remotes")
+                    local TargetRemote = RemoteContainer and RemoteContainer:FindFirstChild("DashRequest")
+                    
+                    if TargetRemote then
+                        -- Метод 1: Изменение метатаблицы
+                        if type(setrawmetatable) == "function" then
+                            local SecureTable = {
+                                __index = function() end,
+                                __newindex = function() end,
+                                __call = function() end,
+                                __namecall = function() end,
+                                __metatable = "Protected"
+                            }
+                            setrawmetatable(TargetRemote, SecureTable)
+                            MainModule.FreeDash.SecureTable = SecureTable
+                        end
+                        
+                        -- Метод 2: Очистка интерфейса
+                        local RemoteMethods = {"FireServer", "InvokeServer", "OnClientEvent", "OnClientInvoke"}
+                        for _, MethodName in ipairs(RemoteMethods) do
+                            pcall(function()
+                                TargetRemote[MethodName] = nil
+                            end)
+                        end
+                        
+                        -- Метод 3: Отключение обработчиков
+                        if type(getconnections) == "function" then
+                            local EventHandlers = {"Changed", "AncestryChanged"}
+                            for _, EventName in ipairs(EventHandlers) do
+                                local EventSignal = TargetRemote[EventName]
+                                if EventSignal then
+                                    for _, Handler in ipairs(getconnections(EventSignal)) do
+                                        Handler:Disconnect()
+                                    end
+                                end
+                            end
+                        end
+                        
+                        -- Метод 4: Изменение состояния
+                        pcall(function()
+                            TargetRemote.Archivable = false
+                            MainModule.FreeDash.OriginalParent = TargetRemote.Parent
+                            TargetRemote.Parent = nil
+                        end)
+                        
+                        -- Метод 5: Модификация доступа
+                        if type(getrawmetatable) == "function" then
+                            local ObjectMeta = getrawmetatable(TargetRemote)
+                            if ObjectMeta then
+                                MainModule.FreeDash.OriginalIndex = ObjectMeta.__index
+                                ObjectMeta.__index = function(self, Property)
+                                    if Property == "FireServer" or Property == "InvokeServer" then
+                                        return function() end
+                                    end
+                                    return MainModule.FreeDash.OriginalIndex(self, Property)
+                                end
+                            end
+                        end
+                    end
+                end
+
+                -- Выполнение процедуры
+                ProcessTargetObject()
             end
+
+            -- БЛОК 2: Защита от создания новых DashRequest
+            local function BlockNewDashRequests()
+                if hookmetamethod then
+                    local RemoteFolder = CoreServices:WaitForChild("Remotes", 1)
+                    if RemoteFolder then
+                        local ContainerProtection
+                        ContainerProtection = hookmetamethod(RemoteFolder, "__newindex", function(self, PropertyName, PropertyValue)
+                            if PropertyName == "DashRequest" and PropertyValue then
+                                return -- Блокировка создания
+                            end
+                            return ContainerProtection(self, PropertyName, PropertyValue)
+                        end)
+                        MainModule.FreeDash.ContainerProtection = ContainerProtection
+                    end
+                end
+            end
+
+            -- Запускаем блокировку (только при первом включении)
+            DeepRemoveDashRequest()
+            BlockNewDashRequests()
+            
+            -- Помечаем, что инициализация выполнена
+            MainModule.FreeDash.Initialized = true
         end
         
-        -- БЛОК 2: Установка Faster Sprint в 9
+        -- БЛОК 3: Установка Faster Sprint в 9 (всегда при включении)
         local boosts = LocalPlayer:FindFirstChild("Boosts")
         if boosts then
             local fasterSprint = boosts:FindFirstChild("Faster Sprint")
             if fasterSprint then
-                MainModule.FreeDash.OriginalSprintValue = fasterSprint.Value
+                -- Сохраняем оригинальное значение только при первом включении
+                if MainModule.FreeDash.OriginalSprintValue == nil then
+                    MainModule.FreeDash.OriginalSprintValue = fasterSprint.Value
+                end
                 fasterSprint.Value = 9
             end
         end
         
-        -- Выполняем один раз
-        RemoveDashMethods()
-        
     else
-        -- ОТКЛЮЧЕНИЕ: Восстанавливаем только Faster Sprint
+        -- ОТКЛЮЧЕНИЕ: Только устанавливаем Faster Sprint в 4
         local boosts = LocalPlayer:FindFirstChild("Boosts")
         if boosts then
             local fasterSprint = boosts:FindFirstChild("Faster Sprint")
-            if fasterSprint and MainModule.FreeDash.OriginalSprintValue then
-                fasterSprint.Value = MainModule.FreeDash.OriginalSprintValue
+            if fasterSprint and MainModule.FreeDash.OriginalSprintValue ~= nil then
+                fasterSprint.Value = 4
             end
         end
-        
-        -- Ничего не восстанавливаем для удаленных методов
     end
 end
 
@@ -3911,6 +4013,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
