@@ -1,4 +1,4 @@
- local MainModule = {}
+local MainModule = {}
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -3961,6 +3961,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
