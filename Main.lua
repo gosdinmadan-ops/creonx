@@ -583,77 +583,100 @@ function MainModule.ToggleFreeDash(enabled)
     MainModule.FreeDash.Enabled = enabled
     
     if enabled then
+        -- Проверяем доступность хуков
+        local hasHookFunction = type(hookmetamethod) == "function"
+        
         -- Поиск DashRequest
         local remote = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
         if remote then
             remote = remote:FindFirstChild("DashRequest")
             if remote then
-                -- Хук для скрытного destroy через __namecall
-                if hookmetamethod then
-                    local originalNamecall
-                    originalNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+                -- Метод 1: Через хуки если доступно
+                if hasHookFunction then
+                    local originalNamecall = hookmetamethod(game, "__namecall", function(self, ...)
                         local method = getnamecallmethod()
                         
                         -- Перехватываем вызов Destroy для DashRequest
                         if method == "Destroy" and self == remote then
-                            -- Прячем родителя вместо прямого удаления (менее заметно)
+                            -- Быстро скрываем и удаляем
                             task.spawn(function()
                                 self.Parent = nil
-                                -- Настоящее удаление через некоторое время
-                                task.wait(0.5)
-                                if not originalNamecall then return end
-                                originalNamecall(self, ...)
+                                task.wait(0.1)
+                                -- Вызываем оригинальный destroy через pcall для безопасности
+                                pcall(function()
+                                    if originalNamecall then
+                                        originalNamecall(self, ...)
+                                    end
+                                end)
                             end)
-                            return -- Не возвращаем вызов, чтобы скрыть
+                            return
                         end
                         
-                        return originalNamecall(self, ...)
+                        if originalNamecall then
+                            return originalNamecall(self, ...)
+                        end
                     end)
                     
                     MainModule.FreeDash.DestroyHook = originalNamecall
                     
-                    -- Вызываем destroy с задержкой
+                    -- Вызываем destroy
                     task.spawn(function()
-                        task.wait(0.1)
-                        remote:Destroy() -- Будет перехвачено хукoм
+                        task.wait(0.05)
+                        pcall(function() remote:Destroy() end)
                     end)
+                    
+                -- Метод 2: Без хуков (простое скрытие)
                 else
-                    -- Fallback если хуки недоступны
                     task.spawn(function()
+                        -- Сначала скрываем
                         remote.Parent = nil
                         task.wait(0.2)
-                        remote:Destroy()
+                        -- Потом пытаемся уничтожить
+                        pcall(function() remote:Destroy() end)
                     end)
                 end
             end
         end
         
         -- Установка Faster Sprint на 9
-        local boosts = LocalPlayer:FindFirstChild("Boosts")
-        if boosts then
+        local playerSuccess, boosts = pcall(function()
+            return LocalPlayer:WaitForChild("Boosts", 2)
+        end)
+        
+        if playerSuccess and boosts then
             local fasterSprint = boosts:FindFirstChild("Faster Sprint")
             if fasterSprint then
                 MainModule.FreeDash.OriginalSprintValue = fasterSprint.Value
                 fasterSprint.Value = 9
+                print("Faster Sprint установлен на 9")
+            else
+                warn("Faster Sprint не найден")
             end
+        else
+            warn("Boosts не найден у игрока")
         end
         
     else
         -- Восстановление Sprint
         if MainModule.FreeDash.OriginalSprintValue then
-            local boosts = LocalPlayer:FindFirstChild("Boosts")
-            if boosts then
+            local playerSuccess, boosts = pcall(function()
+                return LocalPlayer:WaitForChild("Boosts", 2)
+            end)
+            
+            if playerSuccess and boosts then
                 local fasterSprint = boosts:FindFirstChild("Faster Sprint")
                 if fasterSprint then
                     fasterSprint.Value = MainModule.FreeDash.OriginalSprintValue
+                    print("Faster Sprint восстановлен на оригинальное значение")
                 end
             end
         end
         
-        -- Отключение хука
-        if MainModule.FreeDash.DestroyHook and hookmetamethod then
-            -- Восстанавливаем оригинальный __namecall
-            hookmetamethod(game, "__namecall", MainModule.FreeDash.DestroyHook)
+        -- Отключение хука если был установлен
+        if MainModule.FreeDash.DestroyHook and type(hookmetamethod) == "function" then
+            pcall(function()
+                hookmetamethod(game, "__namecall", MainModule.FreeDash.DestroyHook)
+            end)
             MainModule.FreeDash.DestroyHook = nil
         end
     end
@@ -3938,6 +3961,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
