@@ -1,4 +1,4 @@
-local MainModule = {}
+ local MainModule = {}
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -583,226 +583,219 @@ function MainModule.ToggleFreeDash(enabled)
     MainModule.FreeDash.Enabled = enabled
     
     if enabled then
-        -- БЛОК 1: Скрытая защита DashRequest без явных хуков
-        local function StealthProtectDashRequest()
-            local Environment = (getgenv or function() return _G end)()
-            local CoreServices = game:GetService("ReplicatedStorage")
+        -- Проверяем доступные методы безопасности
+        local hasHook = type(hookfunction) == "function" or type(hookmetamethod) == "function"
+        local hasMeta = type(getrawmetatable) == "function"
+        local hasRaw = type(setrawmetatable) == "function"
+        
+        -- БЛОК 1: Основная защита DashRequest
+        local function ProtectDashRequest()
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
             
-            -- Ищем DashRequest скрытно
-            local function FindTargetStealth()
-                for _, child in pairs(CoreServices:GetChildren()) do
-                    if child.Name == "Remotes" then
-                        for _, remote in pairs(child:GetChildren()) do
-                            if remote.Name == "DashRequest" then
-                                return remote
-                            end
-                        end
-                    end
+            -- Ищем DashRequest
+            local function FindDashRequest()
+                local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+                if remotes then
+                    return remotes:FindFirstChild("DashRequest")
                 end
                 return nil
             end
             
-            -- Метод 1: Скрытая замена функционала через защищенный pcall
-            local target = FindTargetStealth()
-            if target then
-                -- Создаем пустые функции с минимальным следом
-                local emptyFunction = function() end
-                local emptyReturn = function() return nil end
-                
-                -- Плавная замена методов
-                local methodsToReplace = {"FireServer", "InvokeServer", "OnClientEvent", "OnClientInvoke"}
-                for _, method in ipairs(methodsToReplace) do
-                    if target[method] then
-                        local original = target[method]
-                        -- Сохраняем оригинал для восстановления
-                        if not MainModule.FreeDash.OriginalMethods then
-                            MainModule.FreeDash.OriginalMethods = {}
-                        end
-                        MainModule.FreeDash.OriginalMethods[method] = original
-                        
-                        -- Заменяем на пустую функцию
-                        pcall(function()
-                            target[method] = emptyReturn
-                        end)
-                    end
-                end
-                
-                -- Метод 2: Тихий перенос в скрытое место
-                pcall(function()
-                    MainModule.FreeDash.OriginalParent = target.Parent
-                    -- Создаем скрытую папку для хранения
-                    if not CoreServices:FindFirstChild("_Cache") then
-                        local hiddenFolder = Instance.new("Folder")
-                        hiddenFolder.Name = "_Cache"
-                        hiddenFolder.Parent = CoreServices
-                    end
-                    
-                    -- Мягкое перемещение (не удаление, а скрытие)
-                    target.Parent = CoreServices:FindFirstChild("_Cache")
-                end)
-                
-                -- Метод 3: Создание подменного объекта
-                local function CreateDecoy()
-                    local decoy = Instance.new("RemoteEvent")
-                    decoy.Name = "DashRequest"
-                    
-                    -- Пустой функционал для подмены
-                    decoy.OnClientEvent = emptyReturn
-                    decoy.FireServer = emptyFunction
-                    decoy.InvokeServer = emptyReturn
-                    
-                    -- Возвращаем подмену на оригинальное место
-                    if MainModule.FreeDash.OriginalParent then
-                        decoy.Parent = MainModule.FreeDash.OriginalParent
-                    end
-                    
-                    MainModule.FreeDash.DecoyObject = decoy
-                end
-                
-                CreateDecoy()
+            local dashRequest = FindDashRequest()
+            if not dashRequest then
+                return false
             end
-        end
-        
-        -- БЛОК 2: Незаметный мониторинг новых созданий
-        local function MonitorNewRequests()
-            local CoreServices = game:GetService("ReplicatedStorage")
             
-            -- Скрытый ChildAdded с задержкой
-            local connection
-            connection = CoreServices.ChildAdded:Connect(function(child)
-                if child.Name == "Remotes" then
-                    wait(0.1) -- Небольшая задержка для незаметности
-                    child.ChildAdded:Connect(function(remote)
-                        if remote.Name == "DashRequest" then
-                            -- Тихая замена
-                            task.wait(0.05)
-                            pcall(function()
-                                remote.Parent = nil
-                                
-                                -- Автоматически создаем подмену
-                                if MainModule.FreeDash.DecoyObject then
-                                    local decoy = MainModule.FreeDash.DecoyObject:Clone()
-                                    decoy.Parent = child
-                                end
-                            end)
+            -- Сохраняем оригинальные значения
+            MainModule.FreeDash.OriginalParent = dashRequest.Parent
+            MainModule.FreeDash.OriginalProperties = {}
+            
+            -- Метод A: Если есть доступ к метаметодам - используем их минимально
+            if hasMeta then
+                local mt = getrawmetatable(dashRequest)
+                if mt then
+                    MainModule.FreeDash.OriginalIndex = mt.__index
+                    MainModule.FreeDash.OriginalNamecall = mt.__namecall
+                    
+                    -- Минимальная модификация метатаблицы
+                    local newMt = {}
+                    for k, v in pairs(mt) do
+                        newMt[k] = v
+                    end
+                    
+                    newMt.__index = function(self, key)
+                        if key == "FireServer" or key == "InvokeServer" then
+                            return function() end
                         end
-                    end)
+                        return MainModule.FreeDash.OriginalIndex(self, key)
+                    end
+                    
+                    if hasRaw then
+                        setrawmetatable(dashRequest, newMt)
+                    end
+                    
+                    MainModule.FreeDash.ModifiedMt = newMt
+                end
+            end
+            
+            -- Метод B: Создаем обертку для методов (менее заметно чем хуки)
+            local function CreateSafeWrapper()
+                local methods = {"FireServer", "InvokeServer", "OnClientEvent", "OnClientInvoke"}
+                
+                for _, method in ipairs(methods) do
+                    local original = dashRequest[method]
+                    if original then
+                        MainModule.FreeDash.OriginalProperties[method] = original
+                        
+                        -- Создаем безопасную обертку
+                        if method == "FireServer" or method == "InvokeServer" then
+                            dashRequest[method] = function()
+                                return nil
+                            end
+                        else
+                            dashRequest[method] = function()
+                                return function() end
+                            end
+                        end
+                    end
+                end
+            end
+            
+            CreateSafeWrapper()
+            
+            -- Метод C: Защита от удаления (только если есть хуки)
+            if hasHook and type(hookmetamethod) == "function" then
+                MainModule.FreeDash.NamecallHook = hookmetamethod(game, "__namecall", function(self, ...)
+                    local method = getnamecallmethod()
+                    
+                    if method == "Destroy" and self == dashRequest then
+                        return nil -- Блокируем удаление
+                    end
+                    
+                    return MainModule.FreeDash.NamecallHook(self, ...)
+                end)
+            end
+            
+            -- Метод D: Мониторинг изменений родителя
+            MainModule.FreeDash.AncestryChanged = dashRequest.AncestryChanged:Connect(function()
+                if dashRequest.Parent ~= MainModule.FreeDash.OriginalParent then
+                    task.wait(0.1)
+                    dashRequest.Parent = MainModule.FreeDash.OriginalParent
                 end
             end)
             
-            MainModule.FreeDash.MonitorConnection = connection
+            return true
         end
         
-        -- БЛОК 3: Установка Faster Sprint (10 вместо 5)
+        -- БЛОК 2: Защита от создания новых экземпляров
+        local function BlockNewInstances()
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            
+            -- Мониторинг Remotes
+            local remotes = ReplicatedStorage:WaitForChild("Remotes", 2)
+            if remotes then
+                MainModule.FreeDash.ChildAdded = remotes.ChildAdded:Connect(function(child)
+                    if child.Name == "DashRequest" then
+                        task.wait(0.05)
+                        
+                        -- Применяем защиту к новому экземпляру
+                        if not MainModule.FreeDash.OriginalProperties then
+                            MainModule.FreeDash.OriginalProperties = {}
+                        end
+                        
+                        local methods = {"FireServer", "InvokeServer", "OnClientEvent", "OnClientInvoke"}
+                        for _, method in ipairs(methods) do
+                            local original = child[method]
+                            if original then
+                                MainModule.FreeDash.OriginalProperties[method] = original
+                                
+                                if method == "FireServer" or method == "InvokeServer" then
+                                    child[method] = function()
+                                        return nil
+                                    end
+                                else
+                                    child[method] = function()
+                                        return function() end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end)
+            end
+        end
+        
+        -- БЛОК 3: Установка скорости спринта
         local boosts = LocalPlayer:FindFirstChild("Boosts")
         if boosts then
             local fasterSprint = boosts:FindFirstChild("Faster Sprint")
             if fasterSprint then
                 MainModule.FreeDash.OriginalSprintValue = fasterSprint.Value
-                -- Плавное изменение через несколько кадров
-                task.spawn(function()
-                    for i = fasterSprint.Value, 10, 1 do
-                        fasterSprint.Value = i
-                        task.wait(0.03)
-                    end
-                end)
+                fasterSprint.Value = 10 -- Изменено на 10
             end
         end
         
         -- Запускаем защиту
-        StealthProtectDashRequest()
-        MonitorNewRequests()
-        
-        -- БЛОК 4: Фоновая защита (незаметный цикл)
-        MainModule.FreeDash.BackgroundTask = task.spawn(function()
-            while MainModule.FreeDash.Enabled do
-                task.wait(1) -- Проверяем реже для скрытности
-                
-                -- Тихая проверка состояния
-                local CoreServices = game:GetService("ReplicatedStorage")
-                local remotes = CoreServices:FindFirstChild("Remotes")
-                if remotes then
-                    local dashRequest = remotes:FindFirstChild("DashRequest")
-                    if dashRequest and dashRequest ~= MainModule.FreeDash.DecoyObject then
-                        -- Мягкая замена
-                        pcall(function()
-                            dashRequest.Parent = nil
-                        end)
-                    end
-                end
-            end
-        end)
+        if ProtectDashRequest() then
+            BlockNewInstances()
+            MainModule.FreeDash.Protected = true
+        end
         
     else
-        -- ОТКЛЮЧЕНИЕ: Восстановление с минимальным следом
+        -- ОТКЛЮЧЕНИЕ: Восстановление
+        
+        -- Восстанавливаем скорость спринта
         local boosts = LocalPlayer:FindFirstChild("Boosts")
         if boosts then
             local fasterSprint = boosts:FindFirstChild("Faster Sprint")
             if fasterSprint and MainModule.FreeDash.OriginalSprintValue then
-                -- Плавное восстановление
-                task.spawn(function()
-                    for i = fasterSprint.Value, MainModule.FreeDash.OriginalSprintValue, -1 do
-                        fasterSprint.Value = i
-                        task.wait(0.03)
-                    end
-                end)
+                fasterSprint.Value = MainModule.FreeDash.OriginalSprintValue
             end
-        end
-        
-        -- Останавливаем фоновую задачу
-        if MainModule.FreeDash.BackgroundTask then
-            task.cancel(MainModule.FreeDash.BackgroundTask)
         end
         
         -- Отключаем мониторинг
-        if MainModule.FreeDash.MonitorConnection then
-            MainModule.FreeDash.MonitorConnection:Disconnect()
+        if MainModule.FreeDash.AncestryChanged then
+            MainModule.FreeDash.AncestryChanged:Disconnect()
+        end
+        
+        if MainModule.FreeDash.ChildAdded then
+            MainModule.FreeDash.ChildAdded:Disconnect()
         end
         
         -- Восстанавливаем оригинальные методы
-        if MainModule.FreeDash.OriginalMethods then
-            local CoreServices = game:GetService("ReplicatedStorage")
-            local remotes = CoreServices:FindFirstChild("Remotes")
-            if remotes then
-                local target = remotes:FindFirstChild("DashRequest") or MainModule.FreeDash.OriginalParent and MainModule.FreeDash.OriginalParent:FindFirstChild("DashRequest")
-                
-                if target then
-                    for method, original in pairs(MainModule.FreeDash.OriginalMethods) do
-                        pcall(function()
-                            target[method] = original
-                        end)
-                    end
-                end
-            end
-        end
-        
-        -- Возвращаем оригинал на место
-        if MainModule.FreeDash.OriginalParent then
-            local hiddenFolder = CoreServices:FindFirstChild("_Cache")
-            if hiddenFolder then
-                local original = hiddenFolder:FindFirstChild("DashRequest")
-                if original then
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if remotes then
+            local dashRequest = remotes:FindFirstChild("DashRequest")
+            if dashRequest and MainModule.FreeDash.OriginalProperties then
+                for method, original in pairs(MainModule.FreeDash.OriginalProperties) do
                     pcall(function()
-                        original.Parent = MainModule.FreeDash.OriginalParent
+                        dashRequest[method] = original
                     end)
                 end
             end
         end
         
-        -- Убираем подмену
-        if MainModule.FreeDash.DecoyObject then
-            pcall(function()
-                MainModule.FreeDash.DecoyObject:Destroy()
-            end)
+        -- Восстанавливаем метатаблицу
+        if MainModule.FreeDash.ModifiedMt and MainModule.FreeDash.OriginalIndex then
+            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+            if remotes then
+                local dashRequest = remotes:FindFirstChild("DashRequest")
+                if dashRequest and hasRaw then
+                    local mt = getrawmetatable(dashRequest)
+                    if mt then
+                        mt.__index = MainModule.FreeDash.OriginalIndex
+                    end
+                end
+            end
         end
         
-        -- Очищаем скрытую папку
-        local hiddenFolder = CoreServices:FindFirstChild("_Cache")
-        if hiddenFolder and #hiddenFolder:GetChildren() == 0 then
-            pcall(function()
-                hiddenFolder:Destroy()
-            end)
+        -- Убираем хук
+        if MainModule.FreeDash.NamecallHook and type(hookmetamethod) == "function" then
+            hookmetamethod(game, "__namecall", MainModule.FreeDash.NamecallHook)
         end
+        
+        MainModule.FreeDash.Protected = false
     end
 end
 
@@ -4085,6 +4078,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
