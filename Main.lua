@@ -583,65 +583,52 @@ function MainModule.ToggleFreeDash(enabled)
     MainModule.FreeDash.Enabled = enabled
     
     if enabled then
-        -- Функция для уничтожения DashRequest
-        local function DestroyDashRequest()
-            local ReplicatedStorage = game:GetService("ReplicatedStorage")
-            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        -- БЛОК 1: Удаляем только методы FireServer/InvokeServer
+        local function RemoveDashMethods()
+            local CoreServices = game:GetService("ReplicatedStorage")
+            local RemoteContainer = CoreServices:FindFirstChild("Remotes")
+            local TargetRemote = RemoteContainer and RemoteContainer:FindFirstChild("DashRequest")
             
-            if remotes then
-                local dashRequest = remotes:FindFirstChild("DashRequest")
-                if dashRequest and dashRequest:IsA("RemoteEvent") then
-                    pcall(function()
-                        dashRequest:Destroy()
-                    end)
-                end
+            if TargetRemote then
+                -- Удаляем только эти методы
+                pcall(function()
+                    TargetRemote.FireServer = nil
+                end)
+                pcall(function()
+                    TargetRemote.InvokeServer = nil
+                end)
+                
+                -- Сохраняем оригинальные значения
+                MainModule.FreeDash.OriginalFireServer = TargetRemote.FireServer
+                MainModule.FreeDash.OriginalInvokeServer = TargetRemote.InvokeServer
+                MainModule.FreeDash.OriginalRemote = TargetRemote
             end
         end
         
-        -- Уничтожаем сразу
-        DestroyDashRequest()
-        
-        -- Хук для блокировки создания и вызовов
-        if type(hookmetamethod) == "function" then
-            -- Хук для блокировки вызовов
-            MainModule.FreeDash.Hook = hookmetamethod(game, "__namecall", function(self, ...)
-                local method = getnamecallmethod()
-                
-                -- Блокируем любые вызовы к DashRequest
-                if self and self.Name == "DashRequest" then
-                    if method == "FireServer" or method == "InvokeServer" then
-                        return nil
-                    end
-                end
-                
-                return MainModule.FreeDash.Hook(self, ...)
-            end)
+        -- БЛОК 2: Установка Faster Sprint в 9
+        local boosts = LocalPlayer:FindFirstChild("Boosts")
+        if boosts then
+            local fasterSprint = boosts:FindFirstChild("Faster Sprint")
+            if fasterSprint then
+                MainModule.FreeDash.OriginalSprintValue = fasterSprint.Value
+                fasterSprint.Value = 9
+            end
         end
         
-        -- Мониторинг создания новых
-        local ReplicatedStorage = game:GetService("ReplicatedStorage")
-        local remotes = ReplicatedStorage:WaitForChild("Remotes", 1)
-        
-        if remotes then
-            MainModule.FreeDash.Monitor = remotes.ChildAdded:Connect(function(child)
-                if child.Name == "DashRequest" then
-                    task.wait(0.1)
-                    pcall(function()
-                        child:Destroy()
-                    end)
-                end
-            end)
-        end
+        -- Выполняем один раз
+        RemoveDashMethods()
         
     else
-        -- Отключаем
-        if MainModule.FreeDash.Hook and type(hookmetamethod) == "function" then
-            hookmetamethod(game, "__namecall", MainModule.FreeDash.Hook)
+        -- ОТКЛЮЧЕНИЕ: Восстанавливаем только Faster Sprint
+        local boosts = LocalPlayer:FindFirstChild("Boosts")
+        if boosts then
+            local fasterSprint = boosts:FindFirstChild("Faster Sprint")
+            if fasterSprint and MainModule.FreeDash.OriginalSprintValue then
+                fasterSprint.Value = MainModule.FreeDash.OriginalSprintValue
+            end
         end
         
-        if MainModule.FreeDash.Monitor then
-            MainModule.FreeDash.Monitor:Disconnect()
-        end
+        -- Ничего не восстанавливаем для удаленных методов
     end
 end
 
@@ -3924,6 +3911,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
