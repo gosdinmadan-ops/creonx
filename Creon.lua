@@ -1182,42 +1182,16 @@ local function CreateMainContent()
         setupNoclipListener()
     end, 5)
     
-    -- Free Dash (only player) - СПЕЦИАЛЬНАЯ ОБРАБОТКА ДЛЯ МОБИЛЬНЫХ
-    if UIS.TouchEnabled then
-        -- Для мобильных: просто надпись
-        local mobileDashLabel = Instance.new("TextLabel")
-        mobileDashLabel.Size = UDim2.new(1, -10, 0, 36)
-        mobileDashLabel.BackgroundColor3 = COLORS.MEDIUM_GRAY
-        mobileDashLabel.BackgroundTransparency = 0.4
-        mobileDashLabel.BorderSizePixel = 0
-        mobileDashLabel.Text = "Free Dash (only player) - PC Only"
-        mobileDashLabel.TextColor3 = COLORS.SILVER
-        mobileDashLabel.TextSize = 13
-        mobileDashLabel.Font = Enum.Font.Gotham
-        mobileDashLabel.Parent = ContentScrolling
-        mobileDashLabel.LayoutOrder = 6
-        
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 8)
-        corner.Parent = mobileDashLabel
-        
-        local stroke = Instance.new("UIStroke")
-        stroke.Color = COLORS.SILVER
-        stroke.Thickness = 1.2
-        stroke.Transparency = 0.3
-        stroke.Parent = mobileDashLabel
-    else
-        -- Для ПК: обычный переключатель
-        CreateToggle("Free Dash (only player)", function() 
-            return MainModule and MainModule.FreeDash and MainModule.FreeDash.Enabled or false
-        end, function(enabled)
-            if MainModule and MainModule.ToggleFreeDash then
-                MainModule.ToggleFreeDash(enabled)
-            elseif MainModule and MainModule.FreeDash then
-                MainModule.FreeDash.Enabled = enabled
-            end
-        end, 6)
-    end
+    -- Free Dash (only player) - ДОСТУПЕН ДЛЯ ВСЕХ ПЛАТФОРМ
+    CreateToggle("Free Dash (only player)", function() 
+        return MainModule and MainModule.FreeDash and MainModule.FreeDash.Enabled or false
+    end, function(enabled)
+        if MainModule and MainModule.ToggleFreeDash then
+            MainModule.ToggleFreeDash(enabled)
+        elseif MainModule and MainModule.FreeDash then
+            MainModule.FreeDash.Enabled = enabled
+        end
+    end, 6)
     
     -- Anti Stun QTE
     CreateToggle("Anti Stun QTE", function() 
@@ -2160,3 +2134,4 @@ end)
 
 -- Отображение сообщения о загрузке
 print("🎄 Creon X v2.5 loaded successfully 🎅")
+
