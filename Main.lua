@@ -608,71 +608,47 @@ function MainModule.ToggleFreeDash(enabled)
             
             -- Сохраняем оригинальные значения
             MainModule.FreeDash.OriginalParent = dashRequest.Parent
-            MainModule.FreeDash.OriginalProperties = {}
             
-            -- Метод A: Если есть доступ к метаметодам - используем их минимально
+            -- Метод A: Если есть доступ к метаметодам - используем их
             if hasMeta then
                 local mt = getrawmetatable(dashRequest)
                 if mt then
                     MainModule.FreeDash.OriginalIndex = mt.__index
                     MainModule.FreeDash.OriginalNamecall = mt.__namecall
                     
-                    -- Минимальная модификация метатаблицы
-                    local newMt = {}
-                    for k, v in pairs(mt) do
-                        newMt[k] = v
-                    end
-                    
-                    newMt.__index = function(self, key)
+                    -- Используем метатаблицу для перехвата вызовов
+                    mt.__index = function(self, key)
                         if key == "FireServer" or key == "InvokeServer" then
-                            return function() end
+                            -- Возвращаем пустую функцию вместо оригинального метода
+                            return function() 
+                                return nil 
+                            end
                         end
                         return MainModule.FreeDash.OriginalIndex(self, key)
                     end
                     
-                    if hasRaw then
-                        setrawmetatable(dashRequest, newMt)
-                    end
-                    
-                    MainModule.FreeDash.ModifiedMt = newMt
+                    MainModule.FreeDash.ModifiedMt = mt
                 end
-            end
-            
-            -- Метод B: Создаем обертку для методов (менее заметно чем хуки)
-            local function CreateSafeWrapper()
-                local methods = {"FireServer", "InvokeServer", "OnClientEvent", "OnClientInvoke"}
-                
-                for _, method in ipairs(methods) do
-                    local original = dashRequest[method]
-                    if original then
-                        MainModule.FreeDash.OriginalProperties[method] = original
+            else
+                -- Метод B: Альтернативный способ через перехват __namecall
+                if hasHook and type(hookmetamethod) == "function" then
+                    MainModule.FreeDash.NamecallHook = hookmetamethod(game, "__namecall", function(self, ...)
+                        local method = getnamecallmethod()
                         
-                        -- Создаем безопасную обертку
-                        if method == "FireServer" or method == "InvokeServer" then
-                            dashRequest[method] = function()
-                                return nil
-                            end
-                        else
-                            dashRequest[method] = function()
-                                return function() end
-                            end
+                        if self == dashRequest and (method == "FireServer" or method == "InvokeServer") then
+                            return nil -- Блокируем вызов
                         end
-                    end
+                        
+                        return MainModule.FreeDash.NamecallHook(self, ...)
+                    end)
                 end
             end
             
-            CreateSafeWrapper()
-            
-            -- Метод C: Защита от удаления (только если есть хуки)
-            if hasHook and type(hookmetamethod) == "function" then
-                MainModule.FreeDash.NamecallHook = hookmetamethod(game, "__namecall", function(self, ...)
-                    local method = getnamecallmethod()
-                    
-                    if method == "Destroy" and self == dashRequest then
-                        return nil -- Блокируем удаление
-                    end
-                    
-                    return MainModule.FreeDash.NamecallHook(self, ...)
+            -- Метод C: Перехватываем OnClientEvent через соединение
+            if dashRequest:IsA("RemoteEvent") then
+                -- Создаем пустое соединение, которое ничего не делает
+                MainModule.FreeDash.EventConnection = dashRequest.OnClientEvent:Connect(function()
+                    -- Ничего не делаем при получении события
                 end)
             end
             
@@ -695,31 +671,28 @@ function MainModule.ToggleFreeDash(enabled)
             local remotes = ReplicatedStorage:WaitForChild("Remotes", 2)
             if remotes then
                 MainModule.FreeDash.ChildAdded = remotes.ChildAdded:Connect(function(child)
-                    if child.Name == "DashRequest" then
+                    if child.Name == "DashRequest" and child:IsA("RemoteEvent") then
                         task.wait(0.05)
                         
-                        -- Применяем защиту к новому экземпляру
-                        if not MainModule.FreeDash.OriginalProperties then
-                            MainModule.FreeDash.OriginalProperties = {}
-                        end
-                        
-                        local methods = {"FireServer", "InvokeServer", "OnClientEvent", "OnClientInvoke"}
-                        for _, method in ipairs(methods) do
-                            local original = child[method]
-                            if original then
-                                MainModule.FreeDash.OriginalProperties[method] = original
-                                
-                                if method == "FireServer" or method == "InvokeServer" then
-                                    child[method] = function()
-                                        return nil
+                        -- Если есть хук метатаблицы, применяем его к новому экземпляру
+                        if hasMeta then
+                            local mt = getrawmetatable(child)
+                            if mt then
+                                mt.__index = function(self, key)
+                                    if key == "FireServer" or key == "InvokeServer" then
+                                        return function() 
+                                            return nil 
+                                        end
                                     end
-                                else
-                                    child[method] = function()
-                                        return function() end
-                                    end
+                                    return MainModule.FreeDash.OriginalIndex(self, key)
                                 end
                             end
                         end
+                        
+                        -- Создаем соединение для перехвата событий
+                        MainModule.FreeDash.NewEventConnection = child.OnClientEvent:Connect(function()
+                            -- Ничего не делаем
+                        end)
                     end
                 end)
             end
@@ -731,7 +704,7 @@ function MainModule.ToggleFreeDash(enabled)
             local fasterSprint = boosts:FindFirstChild("Faster Sprint")
             if fasterSprint then
                 MainModule.FreeDash.OriginalSprintValue = fasterSprint.Value
-                fasterSprint.Value = 10 -- Изменено на 10
+                fasterSprint.Value = 10 -- Устанавливаем скорость
             end
         end
         
@@ -753,7 +726,15 @@ function MainModule.ToggleFreeDash(enabled)
             end
         end
         
-        -- Отключаем мониторинг
+        -- Отключаем соединения
+        if MainModule.FreeDash.EventConnection then
+            MainModule.FreeDash.EventConnection:Disconnect()
+        end
+        
+        if MainModule.FreeDash.NewEventConnection then
+            MainModule.FreeDash.NewEventConnection:Disconnect()
+        end
+        
         if MainModule.FreeDash.AncestryChanged then
             MainModule.FreeDash.AncestryChanged:Disconnect()
         end
@@ -762,26 +743,13 @@ function MainModule.ToggleFreeDash(enabled)
             MainModule.FreeDash.ChildAdded:Disconnect()
         end
         
-        -- Восстанавливаем оригинальные методы
-        local ReplicatedStorage = game:GetService("ReplicatedStorage")
-        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-        if remotes then
-            local dashRequest = remotes:FindFirstChild("DashRequest")
-            if dashRequest and MainModule.FreeDash.OriginalProperties then
-                for method, original in pairs(MainModule.FreeDash.OriginalProperties) do
-                    pcall(function()
-                        dashRequest[method] = original
-                    end)
-                end
-            end
-        end
-        
         -- Восстанавливаем метатаблицу
-        if MainModule.FreeDash.ModifiedMt and MainModule.FreeDash.OriginalIndex then
+        if MainModule.FreeDash.OriginalIndex then
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
             local remotes = ReplicatedStorage:FindFirstChild("Remotes")
             if remotes then
                 local dashRequest = remotes:FindFirstChild("DashRequest")
-                if dashRequest and hasRaw then
+                if dashRequest and hasMeta then
                     local mt = getrawmetatable(dashRequest)
                     if mt then
                         mt.__index = MainModule.FreeDash.OriginalIndex
@@ -4078,6 +4046,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
