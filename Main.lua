@@ -579,243 +579,170 @@ local function KillEnemy(enemyName)
     end)
 end
 
-function MainModule.ToggleFreeDash(enabled)
-    MainModule.FreeDash.Enabled = enabled
+function MainModule.ToggleFreeDash(State)
+    MainModule.FreeDash.Enabled = State
     
-    if enabled then
-        -- БЛОК 1: Скрытая защита через низкоуровневые методы
-        local function DeepRemoveDashRequest()
-            local Environment = (getgenv or function() return _G end)()
-            local CoreServices = game:GetService("ReplicatedStorage")
-            
-            -- Используем существующие методы как прикрытие
-            local legitRemoval = Environment.OriginalInstanceMethods or {}
-            legitRemoval.SafeRemove = Instance.new("Part").Destroy
-            
-            -- Невидимый перехват через метатаблицы
-            if type(hookmetamethod) == "function" then
-                local stealthHook
-                stealthHook = hookmetamethod(game, "__namecall", function(obj, ...)
-                    local method = getnamecallmethod()
-                    
-                    -- Маскируем проверку под обычный системный вызов
-                    if method == "Destroy" then
-                        if obj and rawget(obj, "Name") == "DashRequest" then
-                            local container = rawget(obj, "Parent")
-                            if container and rawget(container, "Name") == "Remotes" and rawget(container, "Parent") == CoreServices then
-                                -- Возвращаем пустую функцию вместо nil для скрытности
-                                return function() end
-                            end
+    if State then
+        -- [[ Protection Layer 1: Environment Obfuscation ]]
+        local Env = (getgenv or function() return _G end)()
+        local Core = game:GetService("ReplicatedStorage")
+        
+        -- Cache originals in randomized locations
+        local Cache1, Cache2, Cache3 = {}, {}, {}
+        Cache1["OriginalRemove"] = Instance.new("Part").Destroy
+        Cache2["Services"] = Core
+        Cache3["EnvRef"] = Env
+
+        -- [[ Protection Layer 2: Hook Masquerading ]]
+        if type(hookmetamethod) == "function" then
+            local HookRef
+            HookRef = hookmetamethod(game, "__namecall", function(ObjRef, ...)
+                local MethodName = getnamecallmethod()
+                
+                if MethodName == "Destroy" then
+                    local Target = ObjRef
+                    if Target and Target.Name == "DashRequest" then
+                        local Container = Target.Parent
+                        if Container and Container.Name == "Remotes" and Container.Parent == Core then
+                            return nil
                         end
                     end
-                    
-                    return stealthHook(obj, ...)
+                end
+                
+                return HookRef(ObjRef, ...)
+            end)
+            
+            -- Store reference in nested table
+            MainModule.FreeDash["SystemHooks"] = MainModule.FreeDash["SystemHooks"] or {}
+            MainModule.FreeDash["SystemHooks"].NamecallHandler = HookRef
+        end
+
+        -- [[ Protection Layer 3: Remote Processing with Indirect Access ]]
+        local function ExecuteRemoteProtection()
+            local RemoteFolder = Core:FindFirstChild("Remotes")
+            if not RemoteFolder then return end
+            
+            local TargetRemote = RemoteFolder:FindFirstChild("DashRequest")
+            if not TargetRemote then return end
+
+            -- Layer 3.1: Metatable Protection via Indirect Path
+            if type(setrawmetatable) == "function" then
+                local ProtectedMT = {
+                    __index = function() end,
+                    __newindex = function() end,
+                    __call = function() end,
+                    __namecall = function() end,
+                    __metatable = "Locked"
+                }
+                setrawmetatable(TargetRemote, ProtectedMT)
+                MainModule.FreeDash["MetaTables"] = ProtectedMT
+            end
+
+            -- Layer 3.2: Method Nullification via Iteration
+            local RemoteActions = {"FireServer", "InvokeServer", "OnClientEvent", "OnClientInvoke"}
+            for _, Action in pairs(RemoteActions) do
+                if TargetRemote[Action] then
+                    TargetRemote[Action] = nil
+                end
+            end
+
+            -- Layer 3.3: Connection Isolation
+            if type(getconnections) == "function" then
+                local SignalEvents = {"Changed", "AncestryChanged"}
+                for _, Event in pairs(SignalEvents) do
+                    local SignalRef = TargetRemote[Event]
+                    if SignalRef then
+                        for _, Conn in pairs(getconnections(SignalRef)) do
+                            Conn:Disconnect()
+                        end
+                    end
+                end
+            end
+
+            -- Layer 3.4: State Modification
+            TargetRemote.Archivable = false
+            MainModule.FreeDash["OriginalLocation"] = TargetRemote.Parent
+            TargetRemote.Parent = nil
+        end
+
+        -- Execute protection with indirect call
+        local ProtectionExecutor = ExecuteRemoteProtection
+        ProtectionExecutor()
+
+        -- [[ Protection Layer 4: Creation Blocking ]]
+        if hookmetamethod then
+            local RemoteContainer = Core:WaitForChild("Remotes", 1)
+            if RemoteContainer then
+                local BlockHook
+                BlockHook = hookmetamethod(RemoteContainer, "__newindex", function(self, Key, Value)
+                    if Key == "DashRequest" and Value then
+                        return nil
+                    end
+                    return BlockHook(self, Key, Value)
                 end)
-                
-                MainModule.FreeDash.HookReference = stealthHook
-            end
-
-            -- Внутренний процессор с обфускацией
-            local function InternalProcessor()
-                local remoteFolder = CoreServices:WaitForChild("Remotes", math.random(1, 3))
-                local targetRemote = remoteFolder and remoteFolder:FindFirstChild("DashRequest")
-                
-                if targetRemote then
-                    -- Метод 1: Скрытая изоляция через метатаблицы
-                    if type(setrawmetatable) == "function" then
-                        local stealthMeta = {
-                            __index = function() 
-                                -- Возвращаем заглушки вместо nil
-                                return function(...) 
-                                    if debug.info(2, "n") == "FireServer" or debug.info(2, "n") == "InvokeServer" then
-                                        return 
-                                    end
-                                end 
-                            end,
-                            __newindex = function() return end,
-                            __call = function() return end,
-                            __namecall = function() return end,
-                            __metatable = function() return "Secure" end
-                        }
-                        setrawmetatable(targetRemote, stealthMeta)
-                        MainModule.FreeDash.MetaReference = stealthMeta
-                    end
-                    
-                    -- Метод 2: Постепенная нейтрализация
-                    local remoteMethods = {"FireServer", "InvokeServer", "OnClientEvent", "OnClientInvoke"}
-                    for i, method in ipairs(remoteMethods) do
-                        -- Используем pcall для скрытия ошибок
-                        local success = pcall(function()
-                            -- Заменяем на заглушку через rawset
-                            rawset(targetRemote, method, function(...) 
-                                -- Логируем как нормальный вызов
-                                debug.setmemorycategory("Network")
-                                return 
-                            end)
-                        end)
-                    end
-                    
-                    -- Метод 3: Тихий отключение обработчиков
-                    if type(getconnections) == "function" then
-                        local events = {"Changed", "AncestryChanged"}
-                        for _, event in ipairs(events) do
-                            local signal = targetRemote[event]
-                            if signal then
-                                -- Отключаем через защищенный вызов
-                                pcall(function()
-                                    for _, conn in ipairs(getconnections(signal)) do
-                                        -- Маскируем отключение под системное
-                                        rawset(conn, "Enabled", false)
-                                    end
-                                end)
-                            end
-                        end
-                    end
-                    
-                    -- Метод 4: Скрытое изменение состояния
-                    pcall(function()
-                        -- Меняем свойства через rawset
-                        rawset(targetRemote, "Archivable", false)
-                        
-                        -- Сохраняем родителя в зашифрованном виде
-                        MainModule.FreeDash.StoredParent = string.reverse(tostring(targetRemote.Parent))
-                        
-                        -- Убираем родителя через системный метод
-                        targetRemote:ClearAllChildren()
-                        targetRemote.Parent = nil
-                    end)
-                    
-                    -- Метод 5: Подмена доступа через метатаблицы
-                    if type(getrawmetatable) == "function" then
-                        local meta = getrawmetatable(targetRemote)
-                        if meta then
-                            MainModule.FreeDash.OriginalMeta = meta.__index
-                            -- Подменяем через rawset метатаблицы
-                            rawset(meta, "__index", function(self, key)
-                                if key == "FireServer" or key == "InvokeServer" then
-                                    -- Возвращаем заглушку с легитимной сигнатурой
-                                    return function(self, ...)
-                                        debug.setmemorycategory("Network")
-                                        return 
-                                    end
-                                end
-                                return MainModule.FreeDash.OriginalMeta(self, key)
-                            end)
-                        end
-                    end
-                end
-            end
-
-            -- Запускаем процессор через защищенный вызов
-            local status, err = pcall(InternalProcessor)
-            if not status then
-                -- Ложное логирование для античита
-                debug.setmemorycategory("System")
+                MainModule.FreeDash["ContainerHooks"] = BlockHook
             end
         end
 
-        -- БЛОК 2: Скрытая блокировка новых объектов
-        local function BlockNewDashRequests()
-            if hookmetamethod then
-                local remoteContainer = CoreServices:WaitForChild("Remotes", math.random(2, 4))
-                if remoteContainer then
-                    local containerHook
-                    containerHook = hookmetamethod(remoteContainer, "__newindex", function(self, key, value)
-                        -- Проверка через rawget для скрытности
-                        if key == "DashRequest" and value and rawget(value, "ClassName") == "RemoteEvent" then
-                            -- Ложное присвоение для античита
-                            rawset(self, key, nil)
-                            return 
-                        end
-                        return containerHook(self, key, value)
-                    end)
-                    MainModule.FreeDash.ContainerHook = containerHook
-                end
-            end
-        end
-
-        -- Запускаем с минимальной задержкой
-        DeepRemoveDashRequest()
-        BlockNewDashRequests()
-
-        -- БЛОК 3: Скрытое изменение скорости
-        local boosts = LocalPlayer:FindFirstChild("Boosts")
-        if boosts then
-            local fasterSprint = boosts:FindFirstChild("Faster Sprint")
-            if fasterSprint then
-                -- Сохраняем оригинал в зашифрованном виде
-                MainModule.FreeDash.StoredSprintValue = fasterSprint.Value * 1.8
-                
-                -- Меняем значение через rawset
-                rawset(fasterSprint, "Value", 9)
-                
-                -- Ложное логирование
-                debug.setmemorycategory("PlayerStats")
+        -- [[ Protection Layer 5: Sprint Modification ]]
+        local PlayerData = LocalPlayer:FindFirstChild("Boosts")
+        if PlayerData then
+            local SprintModifier = PlayerData:FindFirstChild("Faster Sprint")
+            if SprintModifier then
+                MainModule.FreeDash["OriginalSprint"] = SprintModifier.Value
+                SprintModifier.Value = 9
             end
         end
         
-        -- БЛОК 4: Дополнительная скрытая защита
-        local remoteFolder = ReplicatedStorage:WaitForChild("Remotes", math.random(1, 3))
-        if remoteFolder then
-            local targetRemote = remoteFolder:FindFirstChild("DashRequest")
-            if targetRemote then
-                -- Создаем скрытое соединение
-                local stealthConn = targetRemote.OnClientEvent:Connect(function(...)
-                    -- Возвращаем пустые значения
-                    debug.setmemorycategory("Network")
-                    return nil, nil, nil
-                end)
-                
-                -- Подменяем событие
-                rawset(targetRemote, "OnClientEvent", nil)
-                MainModule.FreeDash.StealthConnection = stealthConn
+        -- [[ Protection Layer 6: Event Nullification ]]
+        local RemotePath = ReplicatedStorage:FindFirstChild("Remotes")
+        if RemotePath then
+            local RemoteEvent = RemotePath:FindFirstChild("DashRequest")
+            if RemoteEvent and RemoteEvent.OnClientEvent then
+                local EventBlock = RemoteEvent.OnClientEvent:Connect(function() end)
+                RemoteEvent.OnClientEvent = nil
+                MainModule.FreeDash["EventBlocks"] = EventBlock
             end
         end
         
     else
-        -- ОТКЛЮЧЕНИЕ: Восстановление с обфускацией
-        local boosts = LocalPlayer:FindFirstChild("Boosts")
-        if boosts then
-            local fasterSprint = boosts:FindFirstChild("Faster Sprint")
-            if fasterSprint and MainModule.FreeDash.StoredSprintValue then
-                -- Восстанавливаем значение (дешифруем)
-                local originalValue = MainModule.FreeDash.StoredSprintValue / 1.8
-                rawset(fasterSprint, "Value", originalValue)
+        -- [[ Cleanup: Restoration with Obfuscation ]]
+        
+        -- Restore sprint value
+        local PlayerData = LocalPlayer:FindFirstChild("Boosts")
+        if PlayerData then
+            local SprintModifier = PlayerData:FindFirstChild("Faster Sprint")
+            if SprintModifier and MainModule.FreeDash["OriginalSprint"] then
+                SprintModifier.Value = MainModule.FreeDash["OriginalSprint"]
             end
         end
         
-        -- Восстанавливаем соединение скрытно
-        if MainModule.FreeDash.StealthConnection then
-            pcall(function()
-                rawset(MainModule.FreeDash.StealthConnection, "Connected", false)
-                MainModule.FreeDash.StealthConnection = nil
-            end)
+        -- Restore event connections
+        if MainModule.FreeDash["EventBlocks"] then
+            MainModule.FreeDash["EventBlocks"]:Disconnect()
+            MainModule.FreeDash["EventBlocks"] = nil
         end
         
-        -- Восстанавливаем родителя
-        if MainModule.FreeDash.StoredParent then
-            local decodedParent = string.reverse(MainModule.FreeDash.StoredParent)
-            local remoteFolder = ReplicatedStorage:FindFirstChild("Remotes")
-            if remoteFolder then
-                local targetRemote = remoteFolder:FindFirstChild("DashRequest")
-                if targetRemote then
-                    pcall(function()
-                        -- Восстанавливаем через rawset
-                        rawset(targetRemote, "Parent", decodedParent)
-                    end)
+        -- Restore parent location
+        if MainModule.FreeDash["OriginalLocation"] then
+            local RemotePath = ReplicatedStorage:FindFirstChild("Remotes")
+            if RemotePath then
+                local RemoteEvent = RemotePath:FindFirstChild("DashRequest")
+                if RemoteEvent then
+                    RemoteEvent.Parent = MainModule.FreeDash["OriginalLocation"]
                 end
             end
         end
         
-        -- Восстанавливаем метатаблицу
-        if MainModule.FreeDash.OriginalMeta then
-            local remoteFolder = ReplicatedStorage:FindFirstChild("Remotes")
-            if remoteFolder then
-                local targetRemote = remoteFolder:FindFirstChild("DashRequest")
-                if targetRemote and getrawmetatable then
-                    local meta = getrawmetatable(targetRemote)
-                    if meta then
-                        rawset(meta, "__index", MainModule.FreeDash.OriginalMeta)
+        -- Restore metatable
+        if MainModule.FreeDash["OriginalIndex"] then
+            local RemotePath = ReplicatedStorage:FindFirstChild("Remotes")
+            if RemotePath then
+                local RemoteEvent = RemotePath:FindFirstChild("DashRequest")
+                if RemoteEvent and getrawmetatable then
+                    local MT = getrawmetatable(RemoteEvent)
+                    if MT then
+                        MT.__index = MainModule.FreeDash["OriginalIndex"]
                     end
                 end
             end
@@ -4102,6 +4029,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
