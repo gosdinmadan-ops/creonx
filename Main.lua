@@ -579,173 +579,82 @@ local function KillEnemy(enemyName)
     end)
 end
 
-function MainModule.ToggleFreeDash(State)
-    MainModule.FreeDash.Enabled = State
+function MainModule.ToggleFreeDash(enabled)
+    MainModule.FreeDash.Enabled = enabled
     
-    if State then
-        -- [[ Protection Layer 1: Environment Obfuscation ]]
-        local Env = (getgenv or function() return _G end)()
-        local Core = game:GetService("ReplicatedStorage")
-        
-        -- Cache originals in randomized locations
-        local Cache1, Cache2, Cache3 = {}, {}, {}
-        Cache1["OriginalRemove"] = Instance.new("Part").Destroy
-        Cache2["Services"] = Core
-        Cache3["EnvRef"] = Env
-
-        -- [[ Protection Layer 2: Hook Masquerading ]]
-        if type(hookmetamethod) == "function" then
-            local HookRef
-            HookRef = hookmetamethod(game, "__namecall", function(ObjRef, ...)
-                local MethodName = getnamecallmethod()
-                
-                if MethodName == "Destroy" then
-                    local Target = ObjRef
-                    if Target and Target.Name == "DashRequest" then
-                        local Container = Target.Parent
-                        if Container and Container.Name == "Remotes" and Container.Parent == Core then
-                            return nil
+    if enabled then
+        -- Поиск DashRequest
+        local remote = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+        if remote then
+            remote = remote:FindFirstChild("DashRequest")
+            if remote then
+                -- Хук для скрытного destroy через __namecall
+                if hookmetamethod then
+                    local originalNamecall
+                    originalNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+                        local method = getnamecallmethod()
+                        
+                        -- Перехватываем вызов Destroy для DashRequest
+                        if method == "Destroy" and self == remote then
+                            -- Прячем родителя вместо прямого удаления (менее заметно)
+                            task.spawn(function()
+                                self.Parent = nil
+                                -- Настоящее удаление через некоторое время
+                                task.wait(0.5)
+                                if not originalNamecall then return end
+                                originalNamecall(self, ...)
+                            end)
+                            return -- Не возвращаем вызов, чтобы скрыть
                         end
-                    end
+                        
+                        return originalNamecall(self, ...)
+                    end)
+                    
+                    MainModule.FreeDash.DestroyHook = originalNamecall
+                    
+                    -- Вызываем destroy с задержкой
+                    task.spawn(function()
+                        task.wait(0.1)
+                        remote:Destroy() -- Будет перехвачено хукoм
+                    end)
+                else
+                    -- Fallback если хуки недоступны
+                    task.spawn(function()
+                        remote.Parent = nil
+                        task.wait(0.2)
+                        remote:Destroy()
+                    end)
                 end
-                
-                return HookRef(ObjRef, ...)
-            end)
-            
-            -- Store reference in nested table
-            MainModule.FreeDash["SystemHooks"] = MainModule.FreeDash["SystemHooks"] or {}
-            MainModule.FreeDash["SystemHooks"].NamecallHandler = HookRef
-        end
-
-        -- [[ Protection Layer 3: Remote Processing with Indirect Access ]]
-        local function ExecuteRemoteProtection()
-            local RemoteFolder = Core:FindFirstChild("Remotes")
-            if not RemoteFolder then return end
-            
-            local TargetRemote = RemoteFolder:FindFirstChild("DashRequest")
-            if not TargetRemote then return end
-
-            -- Layer 3.1: Metatable Protection via Indirect Path
-            if type(setrawmetatable) == "function" then
-                local ProtectedMT = {
-                    __index = function() end,
-                    __newindex = function() end,
-                    __call = function() end,
-                    __namecall = function() end,
-                    __metatable = "Locked"
-                }
-                setrawmetatable(TargetRemote, ProtectedMT)
-                MainModule.FreeDash["MetaTables"] = ProtectedMT
-            end
-
-            -- Layer 3.2: Method Nullification via Iteration
-            local RemoteActions = {"FireServer", "InvokeServer", "OnClientEvent", "OnClientInvoke"}
-            for _, Action in pairs(RemoteActions) do
-                if TargetRemote[Action] then
-                    TargetRemote[Action] = nil
-                end
-            end
-
-            -- Layer 3.3: Connection Isolation
-            if type(getconnections) == "function" then
-                local SignalEvents = {"Changed", "AncestryChanged"}
-                for _, Event in pairs(SignalEvents) do
-                    local SignalRef = TargetRemote[Event]
-                    if SignalRef then
-                        for _, Conn in pairs(getconnections(SignalRef)) do
-                            Conn:Disconnect()
-                        end
-                    end
-                end
-            end
-
-            -- Layer 3.4: State Modification
-            TargetRemote.Archivable = false
-            MainModule.FreeDash["OriginalLocation"] = TargetRemote.Parent
-            TargetRemote.Parent = nil
-        end
-
-        -- Execute protection with indirect call
-        local ProtectionExecutor = ExecuteRemoteProtection
-        ProtectionExecutor()
-
-        -- [[ Protection Layer 4: Creation Blocking ]]
-        if hookmetamethod then
-            local RemoteContainer = Core:WaitForChild("Remotes", 1)
-            if RemoteContainer then
-                local BlockHook
-                BlockHook = hookmetamethod(RemoteContainer, "__newindex", function(self, Key, Value)
-                    if Key == "DashRequest" and Value then
-                        return nil
-                    end
-                    return BlockHook(self, Key, Value)
-                end)
-                MainModule.FreeDash["ContainerHooks"] = BlockHook
-            end
-        end
-
-        -- [[ Protection Layer 5: Sprint Modification ]]
-        local PlayerData = LocalPlayer:FindFirstChild("Boosts")
-        if PlayerData then
-            local SprintModifier = PlayerData:FindFirstChild("Faster Sprint")
-            if SprintModifier then
-                MainModule.FreeDash["OriginalSprint"] = SprintModifier.Value
-                SprintModifier.Value = 9
             end
         end
         
-        -- [[ Protection Layer 6: Event Nullification ]]
-        local RemotePath = ReplicatedStorage:FindFirstChild("Remotes")
-        if RemotePath then
-            local RemoteEvent = RemotePath:FindFirstChild("DashRequest")
-            if RemoteEvent and RemoteEvent.OnClientEvent then
-                local EventBlock = RemoteEvent.OnClientEvent:Connect(function() end)
-                RemoteEvent.OnClientEvent = nil
-                MainModule.FreeDash["EventBlocks"] = EventBlock
+        -- Установка Faster Sprint на 9
+        local boosts = LocalPlayer:FindFirstChild("Boosts")
+        if boosts then
+            local fasterSprint = boosts:FindFirstChild("Faster Sprint")
+            if fasterSprint then
+                MainModule.FreeDash.OriginalSprintValue = fasterSprint.Value
+                fasterSprint.Value = 9
             end
         end
         
     else
-        -- [[ Cleanup: Restoration with Obfuscation ]]
-        
-        -- Restore sprint value
-        local PlayerData = LocalPlayer:FindFirstChild("Boosts")
-        if PlayerData then
-            local SprintModifier = PlayerData:FindFirstChild("Faster Sprint")
-            if SprintModifier and MainModule.FreeDash["OriginalSprint"] then
-                SprintModifier.Value = MainModule.FreeDash["OriginalSprint"]
-            end
-        end
-        
-        -- Restore event connections
-        if MainModule.FreeDash["EventBlocks"] then
-            MainModule.FreeDash["EventBlocks"]:Disconnect()
-            MainModule.FreeDash["EventBlocks"] = nil
-        end
-        
-        -- Restore parent location
-        if MainModule.FreeDash["OriginalLocation"] then
-            local RemotePath = ReplicatedStorage:FindFirstChild("Remotes")
-            if RemotePath then
-                local RemoteEvent = RemotePath:FindFirstChild("DashRequest")
-                if RemoteEvent then
-                    RemoteEvent.Parent = MainModule.FreeDash["OriginalLocation"]
+        -- Восстановление Sprint
+        if MainModule.FreeDash.OriginalSprintValue then
+            local boosts = LocalPlayer:FindFirstChild("Boosts")
+            if boosts then
+                local fasterSprint = boosts:FindFirstChild("Faster Sprint")
+                if fasterSprint then
+                    fasterSprint.Value = MainModule.FreeDash.OriginalSprintValue
                 end
             end
         end
         
-        -- Restore metatable
-        if MainModule.FreeDash["OriginalIndex"] then
-            local RemotePath = ReplicatedStorage:FindFirstChild("Remotes")
-            if RemotePath then
-                local RemoteEvent = RemotePath:FindFirstChild("DashRequest")
-                if RemoteEvent and getrawmetatable then
-                    local MT = getrawmetatable(RemoteEvent)
-                    if MT then
-                        MT.__index = MainModule.FreeDash["OriginalIndex"]
-                    end
-                end
-            end
+        -- Отключение хука
+        if MainModule.FreeDash.DestroyHook and hookmetamethod then
+            -- Восстанавливаем оригинальный __namecall
+            hookmetamethod(game, "__namecall", MainModule.FreeDash.DestroyHook)
+            MainModule.FreeDash.DestroyHook = nil
         end
     end
 end
@@ -4029,6 +3938,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
