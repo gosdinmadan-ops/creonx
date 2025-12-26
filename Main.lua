@@ -586,7 +586,6 @@ function MainModule.ToggleFreeDash(enabled)
         -- Проверяем доступные методы безопасности
         local hasHook = type(hookfunction) == "function" or type(hookmetamethod) == "function"
         local hasMeta = type(getrawmetatable) == "function"
-        local hasRaw = type(setrawmetatable) == "function"
         
         -- БЛОК 1: Основная защита DashRequest
         local function ProtectDashRequest()
@@ -602,51 +601,46 @@ function MainModule.ToggleFreeDash(enabled)
             end
             
             local dashRequest = FindDashRequest()
-            if not dashRequest then
+            if not dashRequest or not dashRequest:IsA("RemoteEvent") then
                 return false
             end
             
             -- Сохраняем оригинальные значения
             MainModule.FreeDash.OriginalParent = dashRequest.Parent
             
-            -- Метод A: Если есть доступ к метаметодам - используем их
-            if hasMeta then
-                local mt = getrawmetatable(dashRequest)
-                if mt then
-                    MainModule.FreeDash.OriginalIndex = mt.__index
-                    MainModule.FreeDash.OriginalNamecall = mt.__namecall
+            -- Метод A: Пытаемся использовать hookmetamethod для перехвата
+            if hasHook and type(hookmetamethod) == "function" then
+                MainModule.FreeDash.NamecallHook = hookmetamethod(game, "__namecall", function(self, ...)
+                    local method = getnamecallmethod()
                     
-                    -- Используем метатаблицу для перехвата вызовов
-                    mt.__index = function(self, key)
-                        if key == "FireServer" or key == "InvokeServer" then
-                            -- Возвращаем пустую функцию вместо оригинального метода
-                            return function() 
-                                return nil 
-                            end
-                        end
-                        return MainModule.FreeDash.OriginalIndex(self, key)
+                    if self == dashRequest and (method == "FireServer" or method == "InvokeServer") then
+                        return nil -- Блокируем вызов
                     end
                     
-                    MainModule.FreeDash.ModifiedMt = mt
-                end
-            else
-                -- Метод B: Альтернативный способ через перехват __namecall
-                if hasHook and type(hookmetamethod) == "function" then
-                    MainModule.FreeDash.NamecallHook = hookmetamethod(game, "__namecall", function(self, ...)
-                        local method = getnamecallmethod()
-                        
-                        if self == dashRequest and (method == "FireServer" or method == "InvokeServer") then
-                            return nil -- Блокируем вызов
-                        end
-                        
-                        return MainModule.FreeDash.NamecallHook(self, ...)
-                    end)
-                end
+                    return MainModule.FreeDash.NamecallHook(self, ...)
+                end)
+            end
+            
+            -- Метод B: Альтернативный способ - перехват через метод
+            if type(newcclosure) == "function" then
+                -- Сохраняем оригинальные методы
+                MainModule.FreeDash.OriginalFireServer = dashRequest.FireServer
+                MainModule.FreeDash.OriginalInvokeServer = dashRequest.InvokeServer
+                
+                -- Создаем пустые функции
+                local emptyFunction = newcclosure(function()
+                    return nil
+                end)
+                
+                -- Заменяем методы (используем pcall для безопасности)
+                pcall(function()
+                    dashRequest.FireServer = emptyFunction
+                    dashRequest.InvokeServer = emptyFunction
+                end)
             end
             
             -- Метод C: Перехватываем OnClientEvent через соединение
             if dashRequest:IsA("RemoteEvent") then
-                -- Создаем пустое соединение, которое ничего не делает
                 MainModule.FreeDash.EventConnection = dashRequest.OnClientEvent:Connect(function()
                     -- Ничего не делаем при получении события
                 end)
@@ -656,7 +650,9 @@ function MainModule.ToggleFreeDash(enabled)
             MainModule.FreeDash.AncestryChanged = dashRequest.AncestryChanged:Connect(function()
                 if dashRequest.Parent ~= MainModule.FreeDash.OriginalParent then
                     task.wait(0.1)
-                    dashRequest.Parent = MainModule.FreeDash.OriginalParent
+                    pcall(function()
+                        dashRequest.Parent = MainModule.FreeDash.OriginalParent
+                    end)
                 end
             end)
             
@@ -674,19 +670,16 @@ function MainModule.ToggleFreeDash(enabled)
                     if child.Name == "DashRequest" and child:IsA("RemoteEvent") then
                         task.wait(0.05)
                         
-                        -- Если есть хук метатаблицы, применяем его к новому экземпляру
-                        if hasMeta then
-                            local mt = getrawmetatable(child)
-                            if mt then
-                                mt.__index = function(self, key)
-                                    if key == "FireServer" or key == "InvokeServer" then
-                                        return function() 
-                                            return nil 
-                                        end
-                                    end
-                                    return MainModule.FreeDash.OriginalIndex(self, key)
-                                end
-                            end
+                        -- Блокируем методы нового экземпляра
+                        if type(newcclosure) == "function" then
+                            local emptyFunction = newcclosure(function()
+                                return nil
+                            end)
+                            
+                            pcall(function()
+                                child.FireServer = emptyFunction
+                                child.InvokeServer = emptyFunction
+                            end)
                         end
                         
                         -- Создаем соединение для перехвата событий
@@ -728,39 +721,46 @@ function MainModule.ToggleFreeDash(enabled)
         
         -- Отключаем соединения
         if MainModule.FreeDash.EventConnection then
-            MainModule.FreeDash.EventConnection:Disconnect()
+            pcall(function() MainModule.FreeDash.EventConnection:Disconnect() end)
         end
         
         if MainModule.FreeDash.NewEventConnection then
-            MainModule.FreeDash.NewEventConnection:Disconnect()
+            pcall(function() MainModule.FreeDash.NewEventConnection:Disconnect() end)
         end
         
         if MainModule.FreeDash.AncestryChanged then
-            MainModule.FreeDash.AncestryChanged:Disconnect()
+            pcall(function() MainModule.FreeDash.AncestryChanged:Disconnect() end)
         end
         
         if MainModule.FreeDash.ChildAdded then
-            MainModule.FreeDash.ChildAdded:Disconnect()
+            pcall(function() MainModule.FreeDash.ChildAdded:Disconnect() end)
         end
         
-        -- Восстанавливаем метатаблицу
-        if MainModule.FreeDash.OriginalIndex then
-            local ReplicatedStorage = game:GetService("ReplicatedStorage")
-            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-            if remotes then
-                local dashRequest = remotes:FindFirstChild("DashRequest")
-                if dashRequest and hasMeta then
-                    local mt = getrawmetatable(dashRequest)
-                    if mt then
-                        mt.__index = MainModule.FreeDash.OriginalIndex
-                    end
+        -- Восстанавливаем оригинальные методы
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if remotes then
+            local dashRequest = remotes:FindFirstChild("DashRequest")
+            if dashRequest and dashRequest:IsA("RemoteEvent") then
+                if MainModule.FreeDash.OriginalFireServer then
+                    pcall(function()
+                        dashRequest.FireServer = MainModule.FreeDash.OriginalFireServer
+                    end)
+                end
+                
+                if MainModule.FreeDash.OriginalInvokeServer then
+                    pcall(function()
+                        dashRequest.InvokeServer = MainModule.FreeDash.OriginalInvokeServer
+                    end)
                 end
             end
         end
         
-        -- Убираем хук
+        -- Убираем хук если он был установлен
         if MainModule.FreeDash.NamecallHook and type(hookmetamethod) == "function" then
-            hookmetamethod(game, "__namecall", MainModule.FreeDash.NamecallHook)
+            pcall(function()
+                hookmetamethod(game, "__namecall", MainModule.FreeDash.NamecallHook)
+            end)
         end
         
         MainModule.FreeDash.Protected = false
@@ -4046,6 +4046,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
