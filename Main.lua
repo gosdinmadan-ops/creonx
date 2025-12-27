@@ -65,8 +65,11 @@ MainModule.Fly = {
     Connection = nil,
     BodyVelocity = nil,
     HumanoidDiedConnection = nil,
-    CharacterAddedConnection = nil
+    CharacterAddedConnection = nil,
+    IsMobile = UserInputService.TouchEnabled,
+    VirtualJoystick = nil
 }
+
 
 MainModule.AutoQTE = {
     AntiStunEnabled = false
@@ -3270,6 +3273,21 @@ function MainModule.EnableFlight()
     
     MainModule.Fly.BodyVelocity = flyBV
     
+    -- Находим виртуальный джойстик для мобильных
+    if MainModule.Fly.IsMobile then
+        -- Ищем виртуальный джойстик в интерфейсе
+        local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+        if PlayerGui then
+            local TouchGui = PlayerGui:FindFirstChild("TouchGui")
+            if TouchGui then
+                local TouchControlFrame = TouchGui:FindFirstChild("TouchControlFrame")
+                if TouchControlFrame then
+                    MainModule.Fly.VirtualJoystick = TouchControlFrame:FindFirstChild("DynamicThumbstickFrame")
+                end
+            end
+        end
+    end
+    
     -- Основной цикл полета
     MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
         if not MainModule.Fly.Enabled or not character or not character.Parent then 
@@ -3288,25 +3306,75 @@ function MainModule.EnableFlight()
         
         -- Направление движения
         local moveDirection = Vector3.new(0, 0, 0)
-        
-        -- WASD управление
         local lookVector = Camera.CFrame.LookVector
         local rightVector = Camera.CFrame.RightVector
         
-        -- Вперед/назад (W/S)
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-            moveDirection = moveDirection + lookVector
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-            moveDirection = moveDirection - lookVector
-        end
-        
-        -- Влево/вправо (A/D)
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-            moveDirection = moveDirection - rightVector
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-            moveDirection = moveDirection + rightVector
+        if MainModule.Fly.IsMobile then
+            -- Для мобильных: используем виртуальный джойстик
+            if MainModule.Fly.VirtualJoystick then
+                local Thumbstick = MainModule.Fly.VirtualJoystick:FindFirstChild("Thumbstick")
+                if Thumbstick then
+                    local position = Thumbstick.Position
+                    local absolutePosition = Thumbstick.AbsolutePosition
+                    local absoluteSize = Thumbstick.AbsoluteSize
+                    
+                    -- Получаем центр джойстика
+                    local center = absolutePosition + absoluteSize / 2
+                    
+                    -- Получаем текущую позицию касания
+                    local touchInputs = UserInputService:GetConnectedGamepads()
+                    if #touchInputs > 0 then
+                        local touchPositions = UserInputService:GetTouchInputs()
+                        if #touchPositions > 0 then
+                            local touchPos = touchPositions[1].Position
+                            
+                            -- Вычисляем направление относительно центра
+                            local direction = Vector2.new(
+                                touchPos.X - center.X,
+                                touchPos.Y - center.Y
+                            )
+                            
+                            -- Нормализуем и масштабируем
+                            local magnitude = math.min(direction.Magnitude / (absoluteSize.X / 2), 1)
+                            if magnitude > 0.1 then -- Мертвая зона
+                                direction = direction.Unit
+                                
+                                -- Преобразуем 2D направление в 3D движение
+                                -- Перед/назад
+                                moveDirection = moveDirection + (lookVector * direction.Y)
+                                -- Влево/вправо
+                                moveDirection = moveDirection + (rightVector * direction.X)
+                                
+                                -- Умножаем на величину нажатия для плавности
+                                moveDirection = moveDirection * magnitude
+                            end
+                        end
+                    end
+                end
+            else
+                -- Альтернатива: просто летим вперед при любом касании
+                if UserInputService:IsMouseButtonPressed(Enum.UserInputType.Touch) then
+                    moveDirection = moveDirection + lookVector
+                end
+            end
+        else
+            -- Для ПК: WASD управление
+            
+            -- Вперед/назад (W/S)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                moveDirection = moveDirection + lookVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                moveDirection = moveDirection - lookVector
+            end
+            
+            -- Влево/вправо (A/D)
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                moveDirection = moveDirection - rightVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                moveDirection = moveDirection + rightVector
+            end
         end
         
         -- Применяем скорость если есть направление
@@ -3373,6 +3441,7 @@ function MainModule.DisableFlight()
     end
     
     MainModule.Fly.BodyVelocity = nil
+    MainModule.Fly.VirtualJoystick = nil
 end
 
 function MainModule.ToggleFly(enabled)
@@ -3975,6 +4044,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
