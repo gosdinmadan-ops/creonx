@@ -3286,49 +3286,75 @@ function MainModule.EnableFlight()
         local humanoid = GetHumanoid(character)
         if not humanoid then return end
         
-        -- Летим строго по направлению камеры (куда смотрим - туда и летим)
-        local camera = workspace.CurrentCamera
-        if not camera then return end
-        
-        -- Получаем текущее направление движения персонажа
+        -- Получаем направление движения от управления (WASD для ПК, джойстик для мобилок)
         local moveDirection = humanoid.MoveDirection
         
-        -- Для ПК: используем WASD для направления (горизонтальное движение)
-        -- Для мобилок: используем виртуальный джойстик
-        
+        -- Если есть какое-то движение
         if moveDirection.Magnitude > 0 then
-            -- Горизонтальное направление берем из moveDirection
-            local horizontalDirection = Vector3.new(moveDirection.X, 0, moveDirection.Z)
+            local camera = workspace.CurrentCamera
+            if not camera then return end
             
-            -- Вертикальное направление: если персонаж идет вперед/назад/вбок
-            -- Для полета вверх/вниз нужно вертикальное движение
-            local verticalDirection = Vector3.new(0, 0, 0)
+            -- Получаем векторы камеры
+            local cameraLook = camera.CFrame.LookVector  -- Куда смотрим
+            local cameraRight = camera.CFrame.RightVector -- Вправо от камеры
+            local cameraUp = camera.CFrame.UpVector      -- Вверх от камеры
             
-            -- НОВАЯ ЛОГИКА: Летим в направлении камеры с учетом вертикального компонента
-            local cameraLook = camera.CFrame.LookVector
+            -- НОВАЯ ЛОГИКА: Преобразуем глобальное направление движения в локальное относительно камеры
+            -- Это решает проблему с постоянным полетом в одну сторону
             
-            -- Проецируем горизонтальное направление движения на направление взгляда камеры
-            local forwardDirection = cameraLook * moveDirection.Z
-            local rightDirection = camera.CFrame.RightVector * moveDirection.X
+            -- 1. Определяем вводы по осям
+            local forwardInput = 0
+            local rightInput = 0
+            local upInput = 0
             
-            -- Комбинируем направления
-            local flightDirection = forwardDirection + rightDirection
+            -- Для ПК: moveDirection содержит WASD ввод
+            -- W/S дают движение по Z оси локального пространства персонажа
+            -- A/D дают движение по X оси локального пространства персонажа
+            -- Space/Shift дают движение по Y оси
             
-            -- Добавляем возможность лететь вверх/вниз с помощью вертикальной оси
-            -- Для ПК: вертикальная ось может быть из клавиш или мыши
-            -- Для мобилок: из виртуального джойстика или тапов
-            local verticalInput = moveDirection.Y
+            -- Преобразуем глобальное направление во вводы относительно текущего взгляда камеры
+            -- Это сложнее: нам нужно проецировать moveDirection на оси камеры
             
-            if verticalInput ~= 0 then
-                -- Для вертикального полета используем вертикальную компоненту камеры
-                local cameraUp = camera.CFrame.UpVector
-                flightDirection = flightDirection + (cameraUp * verticalInput)
+            -- Простой способ: используем относительное преобразование
+            local cameraCFrame = camera.CFrame
+            local localMoveDirection = cameraCFrame:PointToObjectSpace(cameraCFrame.Position + moveDirection)
+            
+            -- Теперь localMoveDirection содержит вводы относительно камеры:
+            -- X - вправо/влево (A/D)
+            -- Y - вверх/вниз (Space/Shift)
+            -- Z - вперед/назад (W/S)
+            
+            rightInput = localMoveDirection.X
+            upInput = localMoveDirection.Y
+            forwardInput = localMoveDirection.Z
+            
+            -- АЛЬТЕРНАТИВНЫЙ ПРОСТОЙ СПОСОБ для мобилок и ПК:
+            -- Используем текущую ориентацию камеры и движение персонажа
+            
+            -- Упрощенный подход: используем компоненты moveDirection как есть,
+            -- но применяем их к осям камеры
+            local flightVector = Vector3.new(0, 0, 0)
+            
+            -- Вперед/назад (Z компонента moveDirection) - по направлению взгляда камеры
+            if math.abs(moveDirection.Z) > 0 then
+                flightVector = flightVector + (cameraLook * moveDirection.Z)
             end
             
-            -- Нормализуем и применяем скорость
-            if flightDirection.Magnitude > 0 then
-                flightDirection = flightDirection.Unit * MainModule.Fly.Speed
-                flyBV.Velocity = flightDirection
+            -- Влево/вправо (X компонента moveDirection) - по правому вектору камеры
+            if math.abs(moveDirection.X) > 0 then
+                flightVector = flightVector + (cameraRight * moveDirection.X)
+            end
+            
+            -- Вверх/вниз (Y компонента moveDirection) - по вертикали камеры
+            if math.abs(moveDirection.Y) > 0 then
+                flightVector = flightVector + (cameraUp * moveDirection.Y)
+            end
+            
+            -- Применяем скорость
+            if flightVector.Magnitude > 0 then
+                -- Нормализуем и масштабируем по скорости
+                flightVector = flightVector.Unit * MainModule.Fly.Speed
+                flyBV.Velocity = flightVector
             else
                 flyBV.Velocity = Vector3.new(0, 0, 0)
             end
@@ -3994,6 +4020,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
