@@ -65,8 +65,10 @@ MainModule.Fly = {
     Connection = nil,
     BodyVelocity = nil,
     HumanoidDiedConnection = nil,
-    CharacterAddedConnection = nil
+    CharacterAddedConnection = nil,
+    InputConnections = {}
 }
+
 
 MainModule.AutoQTE = {
     AntiStunEnabled = false
@@ -3261,7 +3263,10 @@ function MainModule.EnableFlight()
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
     
-    -- Создаем BodyVelocity только при полете
+    -- Отключаем обычное движение персонажа при полёте
+    humanoid.PlatformStand = true
+    
+    -- Создаем BodyVelocity
     local flyBV = Instance.new("BodyVelocity")
     flyBV.Name = "FlyBodyVelocity"
     flyBV.MaxForce = Vector3.new(40000, 40000, 40000)
@@ -3270,94 +3275,143 @@ function MainModule.EnableFlight()
     
     MainModule.Fly.BodyVelocity = flyBV
     
+    -- Переменные для управления
+    local forwardInput = 0
+    local rightInput = 0
+    local upInput = 0
+    
+    -- Очищаем старые подключения
+    for _, conn in pairs(MainModule.Fly.InputConnections) do
+        conn:Disconnect()
+    end
+    MainModule.Fly.InputConnections = {}
+    
+    -- Определяем тип устройства
+    local isMobile = UserInputService.TouchEnabled
+    
+    if not isMobile then
+        -- КЛАВИАТУРА (ПК)
+        -- W/S - вперед/назад
+        MainModule.Fly.InputConnections["Forward"] = UserInputService.InputBegan:Connect(function(input)
+            if input.KeyCode == Enum.KeyCode.W then
+                forwardInput = 1
+            elseif input.KeyCode == Enum.KeyCode.S then
+                forwardInput = -1
+            elseif input.KeyCode == Enum.KeyCode.Space then
+                upInput = 1
+            elseif input.KeyCode == Enum.KeyCode.LeftShift then
+                upInput = -1
+            end
+        end)
+        
+        MainModule.Fly.InputConnections["Backward"] = UserInputService.InputEnded:Connect(function(input)
+            if input.KeyCode == Enum.KeyCode.W or input.KeyCode == Enum.KeyCode.S then
+                forwardInput = 0
+            elseif input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.LeftShift then
+                upInput = 0
+            end
+        end)
+        
+        -- A/D - влево/вправо
+        MainModule.Fly.InputConnections["Right"] = UserInputService.InputBegan:Connect(function(input)
+            if input.KeyCode == Enum.KeyCode.D then
+                rightInput = 1
+            elseif input.KeyCode == Enum.KeyCode.A then
+                rightInput = -1
+            end
+        end)
+        
+        MainModule.Fly.InputConnections["Left"] = UserInputService.InputEnded:Connect(function(input)
+            if input.KeyCode == Enum.KeyCode.D or input.KeyCode == Enum.KeyCode.A then
+                rightInput = 0
+            end
+        end)
+    else
+        -- МОБИЛЬНЫЕ УСТРОЙСТВА
+        -- Будем использовать виртуальный джойстик
+        local touchStartPos = nil
+        local touchActive = false
+        
+        MainModule.Fly.InputConnections["TouchBegan"] = UserInputService.TouchStarted:Connect(function(touch)
+            -- Определяем, это джойстик или нет (можно улучшить логику)
+            touchStartPos = touch.Position
+            touchActive = true
+        end)
+        
+        MainModule.Fly.InputConnections["TouchMoved"] = UserInputService.TouchMoved:Connect(function(touch)
+            if not touchActive then return end
+            
+            -- Простая логика джойстика
+            local delta = touch.Position - touchStartPos
+            local maxRadius = 50
+            
+            -- Нормализуем ввод
+            local magnitude = math.min(delta.Magnitude, maxRadius) / maxRadius
+            
+            if magnitude > 0.1 then
+                local direction = delta.Unit
+                
+                -- Вперед/назад по Y оси касания
+                forwardInput = direction.Y
+                
+                -- Влево/вправо по X оси касания
+                rightInput = direction.X
+            else
+                forwardInput = 0
+                rightInput = 0
+            end
+        end)
+        
+        MainModule.Fly.InputConnections["TouchEnded"] = UserInputService.TouchEnded:Connect(function(touch)
+            touchActive = false
+            forwardInput = 0
+            rightInput = 0
+            upInput = 0
+        end)
+        
+        -- Для мобилок также можно добавить кнопки вверх/вниз
+    end
+    
     -- Основной цикл полета
     MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
         if not MainModule.Fly.Enabled or not character or not character.Parent then 
-            if MainModule.Fly.Connection then
-                MainModule.Fly.Connection:Disconnect()
-                MainModule.Fly.Connection = nil
-            end
             return 
         end
         
         rootPart = GetRootPart(character)
         if not rootPart or not flyBV then return end
         
-        local humanoid = GetHumanoid(character)
-        if not humanoid then return end
+        local camera = workspace.CurrentCamera
+        if not camera then return end
         
-        -- Получаем направление движения от управления (WASD для ПК, джойстик для мобилок)
-        local moveDirection = humanoid.MoveDirection
+        -- Получаем векторы камеры
+        local cameraLook = camera.CFrame.LookVector  -- Куда смотрим (вперед)
+        local cameraRight = camera.CFrame.RightVector -- Вправо
+        local cameraUp = camera.CFrame.UpVector      -- Вверх
         
-        -- Если есть какое-то движение
-        if moveDirection.Magnitude > 0 then
-            local camera = workspace.CurrentCamera
-            if not camera then return end
-            
-            -- Получаем векторы камеры
-            local cameraLook = camera.CFrame.LookVector  -- Куда смотрим
-            local cameraRight = camera.CFrame.RightVector -- Вправо от камеры
-            local cameraUp = camera.CFrame.UpVector      -- Вверх от камеры
-            
-            -- НОВАЯ ЛОГИКА: Преобразуем глобальное направление движения в локальное относительно камеры
-            -- Это решает проблему с постоянным полетом в одну сторону
-            
-            -- 1. Определяем вводы по осям
-            local forwardInput = 0
-            local rightInput = 0
-            local upInput = 0
-            
-            -- Для ПК: moveDirection содержит WASD ввод
-            -- W/S дают движение по Z оси локального пространства персонажа
-            -- A/D дают движение по X оси локального пространства персонажа
-            -- Space/Shift дают движение по Y оси
-            
-            -- Преобразуем глобальное направление во вводы относительно текущего взгляда камеры
-            -- Это сложнее: нам нужно проецировать moveDirection на оси камеры
-            
-            -- Простой способ: используем относительное преобразование
-            local cameraCFrame = camera.CFrame
-            local localMoveDirection = cameraCFrame:PointToObjectSpace(cameraCFrame.Position + moveDirection)
-            
-            -- Теперь localMoveDirection содержит вводы относительно камеры:
-            -- X - вправо/влево (A/D)
-            -- Y - вверх/вниз (Space/Shift)
-            -- Z - вперед/назад (W/S)
-            
-            rightInput = localMoveDirection.X
-            upInput = localMoveDirection.Y
-            forwardInput = localMoveDirection.Z
-            
-            -- АЛЬТЕРНАТИВНЫЙ ПРОСТОЙ СПОСОБ для мобилок и ПК:
-            -- Используем текущую ориентацию камеры и движение персонажа
-            
-            -- Упрощенный подход: используем компоненты moveDirection как есть,
-            -- но применяем их к осям камеры
-            local flightVector = Vector3.new(0, 0, 0)
-            
-            -- Вперед/назад (Z компонента moveDirection) - по направлению взгляда камеры
-            if math.abs(moveDirection.Z) > 0 then
-                flightVector = flightVector + (cameraLook * moveDirection.Z)
-            end
-            
-            -- Влево/вправо (X компонента moveDirection) - по правому вектору камеры
-            if math.abs(moveDirection.X) > 0 then
-                flightVector = flightVector + (cameraRight * moveDirection.X)
-            end
-            
-            -- Вверх/вниз (Y компонента moveDirection) - по вертикали камеры
-            if math.abs(moveDirection.Y) > 0 then
-                flightVector = flightVector + (cameraUp * moveDirection.Y)
-            end
-            
-            -- Применяем скорость
-            if flightVector.Magnitude > 0 then
-                -- Нормализуем и масштабируем по скорости
-                flightVector = flightVector.Unit * MainModule.Fly.Speed
-                flyBV.Velocity = flightVector
-            else
-                flyBV.Velocity = Vector3.new(0, 0, 0)
-            end
+        -- Вычисляем направление полета на основе ввода
+        local flightDirection = Vector3.new(0, 0, 0)
+        
+        -- Вперед/назад (по направлению взгляда)
+        if math.abs(forwardInput) > 0 then
+            flightDirection = flightDirection + (cameraLook * forwardInput)
+        end
+        
+        -- Влево/вправо (относительно камеры)
+        if math.abs(rightInput) > 0 then
+            flightDirection = flightDirection + (cameraRight * rightInput)
+        end
+        
+        -- Вверх/вниз (вертикально)
+        if math.abs(upInput) > 0 then
+            flightDirection = flightDirection + (Vector3.new(0, 1, 0) * upInput)
+        end
+        
+        -- Применяем скорость
+        if flightDirection.Magnitude > 0 then
+            -- Нормализуем и масштабируем
+            flightDirection = flightDirection.Unit * MainModule.Fly.Speed
+            flyBV.Velocity = flightDirection
         else
             flyBV.Velocity = Vector3.new(0, 0, 0)
         end
@@ -3397,6 +3451,11 @@ function MainModule.DisableFlight()
         MainModule.Fly.Connection = nil
     end
     
+    for _, conn in pairs(MainModule.Fly.InputConnections) do
+        conn:Disconnect()
+    end
+    MainModule.Fly.InputConnections = {}
+    
     if MainModule.Fly.HumanoidDiedConnection then
         MainModule.Fly.HumanoidDiedConnection:Disconnect()
         MainModule.Fly.HumanoidDiedConnection = nil
@@ -3407,9 +3466,14 @@ function MainModule.DisableFlight()
         MainModule.Fly.CharacterAddedConnection = nil
     end
     
-    -- Удаляем BodyVelocity
+    -- Восстанавливаем нормальное управление
     local character = GetCharacter()
     if character then
+        local humanoid = GetHumanoid(character)
+        if humanoid then
+            humanoid.PlatformStand = false
+        end
+        
         local rootPart = GetRootPart(character)
         if rootPart then
             local bv = rootPart:FindFirstChild("FlyBodyVelocity")
@@ -4020,6 +4084,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
