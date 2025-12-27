@@ -3248,7 +3248,6 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
--- Упрощенный универсальный Fly: летим в направлении движения персонажа
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
@@ -3260,6 +3259,10 @@ function MainModule.EnableFlight()
     local humanoid = GetHumanoid(character)
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
+    
+    -- Отключаем гравитацию для плавного полета
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, false)
     
     -- Создаем BodyVelocity только при полете
     local flyBV = Instance.new("BodyVelocity")
@@ -3283,51 +3286,24 @@ function MainModule.EnableFlight()
         rootPart = GetRootPart(character)
         if not rootPart or not flyBV then return end
         
-        local humanoid = GetHumanoid(character)
-        if not humanoid then return end
+        local camera = workspace.CurrentCamera
+        if not camera then return end
         
-        -- Получаем текущее направление движения персонажа
-        local moveDirection = humanoid.MoveDirection
+        -- Получаем направление взгляда камеры
+        local lookVector = camera.CFrame.LookVector
         
-        -- Если персонаж движется, летим в этом направлении
-        if moveDirection.Magnitude > 0 then
-            -- Горизонтальное направление берем из moveDirection (WASD/джойстик)
-            local horizontalDirection = Vector3.new(moveDirection.X, 0, moveDirection.Z)
-            
-            -- Для вертикального движения проверяем камеру
-            local verticalDirection = Vector3.new(0, 0, 0)
-            if moveDirection.Y ~= 0 then
-                local camera = workspace.CurrentCamera
-                if camera then
-                    -- Если есть вертикальный ввод (вверх/вниз), летим по направлению взгляда камеры
-                    local cameraLook = camera.CFrame.LookVector
-                    -- Берем вертикальную компоненту из вектора взгляда камеры
-                    local cameraUp = camera.CFrame.UpVector
-                    
-                    if moveDirection.Y > 0 then -- Вверх
-                        verticalDirection = cameraUp * math.abs(moveDirection.Y)
-                    elseif moveDirection.Y < 0 then -- Вниз
-                        verticalDirection = -cameraUp * math.abs(moveDirection.Y)
-                    end
-                else
-                    -- Если камеры нет, используем обычное вертикальное направление
-                    verticalDirection = Vector3.new(0, moveDirection.Y, 0)
-                end
-            end
-            
-            -- Комбинируем горизонтальное и вертикальное направления
-            local finalDirection = horizontalDirection + verticalDirection
-            
-            if finalDirection.Magnitude > 0 then
-                finalDirection = finalDirection.Unit * MainModule.Fly.Speed
-                flyBV.Velocity = finalDirection
-            else
-                flyBV.Velocity = Vector3.new(0, 0, 0)
-            end
-        else
-            flyBV.Velocity = Vector3.new(0, 0, 0)
+        -- Нормализуем и умножаем на скорость
+        local velocity = lookVector.Unit * MainModule.Fly.Speed
+        
+        -- Устанавливаем скорость для полета в направлении взгляда
+        flyBV.Velocity = velocity
+        
+        -- Поворачиваем персонажа в направлении полета (опционально)
+        local horizontalLook = Vector3.new(lookVector.X, 0, lookVector.Z)
+        if horizontalLook.Magnitude > 0.1 then
+            rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + horizontalLook)
         end
-    end)
+    end))
     
     -- Обработка смерти персонажа
     if MainModule.Fly.HumanoidDiedConnection then
@@ -3986,6 +3962,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
