@@ -245,30 +245,30 @@ MainModule.FreeDashGuards = {
 
 MainModule.Killaura = {
     Enabled = false,
-    TargetAnimations = {
-        [79649041083405] = true,
-        [73242877658272] = true,
-        [85793691404836] = true,
-        [86197206792061] = true,
-        [99157505926076] = true
+    TeleportAnimations = {
+        "79649041083405",
+        "73242877658272", 
+        "85793691404836",
+        "86197206792061",
+        "99157505926076"
     },
+    Connections = {},
     CurrentTarget = nil,
+    IsAttached = false,
     AttachmentType = "behind",
-    
-    -- Настройки движения
-    SmoothSpeed = 0.85,
-    MaxForce = 3500,
-    DistanceTolerance = 1.5,
-    
-    -- Скрытые методы управления
-    MovementCache = {},
-    VelocityPrediction = {},
-    LastValidPosition = nil,
-    
-    -- Состояние
     IsLifted = false,
     LiftHeight = 8,
-    SpeedThreshold = 16.5
+    TargetAnimationsSet = {},
+    LastPositionUpdate = 0,
+    
+    -- Параметры позиционирования
+    BehindDistance = 1.5,
+    FrontDistance = 4,
+    SpeedThreshold = 16.5,
+    
+    -- Служебные переменные
+    ControlSystem = nil,
+    OriginalState = nil
 }
 
 MainModule.Misc = {
@@ -3387,284 +3387,421 @@ function MainModule.SetFlySpeed(speed)
     return MainModule.Fly.Speed
 end
 
--- Псевдо-случайный смеситель для скрытия паттернов
-local function getPseudoRandom(seed)
-    local time = tick()
-    return ((seed * 1.6180339887 + time) % 1) * 0.15 + 0.85
+-- Инициализируем набор анимаций
+for _, animId in pairs(MainModule.Killaura.TeleportAnimations) do
+    MainModule.Killaura.TargetAnimationsSet[animId] = true
 end
 
--- Определение цели через Raycast вместо прямого расстояния
-local function findTargetViaRaycast()
+-- Поиск ближайшего живого игрока (меняем методы поиска)
+local function findClosestPlayer()
+    local workspace = game:GetService("Workspace")
     local players = game:GetService("Players")
     local localPlayer = players.LocalPlayer
-    local character = localPlayer.Character
+    if not localPlayer then return nil end
+    
+    local character = workspace:FindFirstChild(localPlayer.Name)
     if not character then return nil end
     
-    local root = character:FindFirstChild("HumanoidRootPart") or 
-                character:FindFirstChild("Torso")
-    if not root then return nil end
+    local rootPart = character:FindFirstChild("HumanoidRootPart") or 
+                     character:FindFirstChild("UpperTorso") or
+                     character:FindFirstChild("LowerTorso") or
+                     character.PrimaryPart
+    if not rootPart then return nil end
     
-    local closest = nil
-    local minDistance = math.huge
+    local closestPlayer = nil
+    local closestDistance = 999999
     
-    for _, player in pairs(players:GetPlayers()) do
-        if player ~= localPlayer and player.Character then
-            local targetChar = player.Character
-            local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
-            
-            if targetHumanoid and targetHumanoid.Health > 0 then
-                -- Raycast проверка вместо прямой дистанции
-                local origin = root.Position
-                local targetPos = targetChar:GetPivot().Position
-                local direction = (targetPos - origin).Unit
-                local raycastParams = RaycastParams.new()
-                raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-                raycastParams.FilterDescendantsInstances = {character, targetChar}
+    -- Используем альтернативный метод получения игроков
+    local allModels = workspace:GetChildren()
+    for _, model in pairs(allModels) do
+        if model:IsA("Model") then
+            local player = players:GetPlayerFromCharacter(model)
+            if player and player ~= localPlayer then
+                local targetRoot = model:FindFirstChild("HumanoidRootPart") or 
+                                 model:FindFirstChild("UpperTorso") or
+                                 model:FindFirstChild("LowerTorso")
+                local humanoid = model:FindFirstChildOfClass("Humanoid")
                 
-                local rayResult = workspace:Raycast(origin, direction * 500, raycastParams)
-                
-                if rayResult and rayResult.Instance:IsDescendantOf(targetChar) then
-                    local distance = (targetPos - origin).Magnitude
-                    if distance < minDistance then
-                        minDistance = distance
-                        closest = player
+                if targetRoot and humanoid and humanoid.Health > 0 then
+                    local distance = (targetRoot.Position - rootPart.Position).magnitude
+                    if distance < closestDistance then
+                        closestDistance = distance
+                        closestPlayer = player
                     end
                 end
             end
         end
     end
     
-    return closest
+    return closestPlayer
 end
 
--- Проверка анимаций через состояние Humanoid
-local function checkTargetState(targetPlayer)
-    if not targetPlayer or not targetPlayer.Character then return false end
+-- Проверка анимаций жертвы (меняем методы проверки)
+local function checkTargetAnimations(targetPlayer)
+    if not targetPlayer then return false end
     
-    local humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+    local character = targetPlayer.Character
+    if not character then return false end
+    
+    -- Проверка через альтернативные методы
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
     
-    -- Проверяем через различные состояния вместо прямого отслеживания анимаций
-    if humanoid:GetState() == Enum.HumanoidStateType.Freefall or
-       humanoid:GetState() == Enum.HumanoidStateType.Jumping then
-        return true
+    -- Метод 1: Проверка через GetDescendants
+    for _, child in pairs(character:GetDescendants()) do
+        if child:IsA("AnimationTrack") and child.IsPlaying then
+            local anim = child.Animation
+            if anim then
+                local animId = tostring(anim.AnimationId):match("%d+")
+                if animId and MainModule.Killaura.TargetAnimationsSet[animId] then
+                    return true
+                end
+            end
+        end
     end
     
-    -- Косвенная проверка скорости анимации
-    local velocity = humanoid.RootPart and humanoid.RootPart.Velocity
-    if velocity then
-        local horizontalSpeed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
-        if horizontalSpeed > 50 then -- Нереально высокая скорость для пешего перемещения
-            return true
+    -- Метод 2: Проверка через свойства Humanoid
+    if humanoid:GetPropertyChangedSignal("MoveDirection"):Wait() then
+        -- Косвенная проверка по движению
+        local moveDir = humanoid.MoveDirection
+        if moveDir.magnitude > 0 then
+            -- Проверяем WalkSpeed как индикатор анимации
+            if humanoid.WalkSpeed > 16 then
+                return true
+            end
         end
     end
     
     return false
 end
 
--- Предсказание движения цели
-local function predictMovement(targetRoot, deltaTime)
-    if not MainModule.Killaura.VelocityPrediction[targetRoot] then
-        MainModule.Killaura.VelocityPrediction[targetRoot] = {
-            velocity = Vector3.new(),
-            lastPosition = targetRoot.Position,
-            lastUpdate = tick()
-        }
+-- Создаем систему контроля (меняем физические методы)
+local function createControlSystem(character)
+    if not character then return nil end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart") or 
+                     character:FindFirstChild("UpperTorso") or
+                     character.PrimaryPart
+    
+    if not rootPart then return nil end
+    
+    -- Сохраняем оригинальное состояние
+    MainModule.Killaura.OriginalState = {
+        Anchored = rootPart.Anchored,
+        CanCollide = rootPart.CanCollide,
+        Massless = if rootPart:IsA("BasePart") then rootPart.Massless else nil,
+        Transparency = rootPart.Transparency
+    }
+    
+    -- Используем VectorForce вместо BodyPosition (менее детектится)
+    local positionForce = Instance.new("VectorForce")
+    positionForce.Name = "PositionSyncForce"
+    positionForce.ApplyAtCenterOfMass = true
+    positionForce.RelativeTo = Enum.ActuatorRelativeTo.World
+    positionForce.Force = Vector3.new(0, 0, 0)
+    positionForce.Parent = rootPart
+    
+    -- Используем AlignOrientation вместо BodyGyro
+    local orientationAlign = Instance.new("AlignOrientation")
+    orientationAlign.Name = "OrientationSyncAlign"
+    orientationAlign.MaxTorque = 100000
+    orientationAlign.Responsiveness = 200
+    orientationAlign.Parent = rootPart
+    
+    local alignAttachment = Instance.new("Attachment")
+    alignAttachment.Name = "AlignAttachment"
+    alignAttachment.Parent = rootPart
+    orientationAlign.Attachment0 = alignAttachment
+    
+    -- Настраиваем свойства для плавного движения
+    rootPart.Anchored = false
+    rootPart.CanCollide = false
+    if rootPart:IsA("BasePart") then
+        rootPart.Massless = true
     end
     
-    local prediction = MainModule.Killaura.VelocityPrediction[targetRoot]
-    local currentTime = tick()
-    
-    if currentTime - prediction.lastUpdate > 0.05 then
-        local delta = targetRoot.Position - prediction.lastPosition
-        prediction.velocity = delta / (currentTime - prediction.lastUpdate)
-        prediction.lastPosition = targetRoot.Position
-        prediction.lastUpdate = currentTime
-    end
-    
-    return prediction.velocity
-end
-
--- Естественное движение через Humanoid вместо BodyPosition
-local function applyNaturalMovement(character, targetPosition, targetLook)
     local humanoid = character:FindFirstChildOfClass("Humanoid")
-    local root = character:FindFirstChild("HumanoidRootPart") or 
-                 character:FindFirstChild("Torso")
-    
-    if not humanoid or not root then return end
-    
-    -- Вычисляем направление
-    local direction = (targetPosition - root.Position)
-    local distance = direction.Magnitude
-    
-    if distance < 0.5 then return end
-    
-    direction = direction.Unit
-    
-    -- Применяем движение через Humanoid
-    humanoid:Move(direction)
-    
-    -- Корректируем скорость в зависимости от расстояния
-    local speedMultiplier = math.min(distance * 2, 1)
-    local moveDirection = direction * speedMultiplier
-    
-    -- Мягкая поворотная коррекция
-    if targetLook then
-        local currentLook = root.CFrame.LookVector
-        local desiredLook = targetLook.Unit
-        
-        local angle = math.acos(math.clamp(currentLook:Dot(desiredLook), -1, 1))
-        if angle > 0.1 then
-            local rotationSpeed = math.min(angle * 5, 1)
-            local slerpFactor = rotationSpeed * 0.1
-            
-            local slerpedLook = currentLook:Lerp(desiredLook, slerpFactor)
-            root.CFrame = CFrame.lookAt(root.Position, root.Position + slerpedLook)
-        end
+    if humanoid then
+        humanoid.AutoRotate = false
+        humanoid:ChangeState(Enum.HumanoidStateType.Physics)
     end
+    
+    return {
+        PositionForce = positionForce,
+        OrientationAlign = orientationAlign,
+        Attachment = alignAttachment
+    }
 end
 
--- Основная функция позиционирования
-local function positionCharacter(targetPlayer)
-    local players = game:GetService("Players")
-    local localPlayer = players.LocalPlayer
-    local character = localPlayer.Character
+-- Восстанавливаем оригинальное состояние
+local function restoreOriginalState(character)
     if not character then return end
     
-    local targetChar = targetPlayer.Character
-    if not targetChar then return end
+    local rootPart = character:FindFirstChild("HumanoidRootPart") or 
+                     character:FindFirstChild("UpperTorso") or
+                     character.PrimaryPart
     
-    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart") or 
-                      targetChar:FindFirstChild("Torso")
-    local characterRoot = character:FindFirstChild("HumanoidRootPart") or 
-                         character:FindFirstChild("Torso")
+    if rootPart and MainModule.Killaura.OriginalState then
+        rootPart.Anchored = MainModule.Killaura.OriginalState.Anchored
+        rootPart.CanCollide = MainModule.Killaura.OriginalState.CanCollide
+        if rootPart:IsA("BasePart") and MainModule.Killaura.OriginalState.Massless ~= nil then
+            rootPart.Massless = MainModule.Killaura.OriginalState.Massless
+        end
+    end
     
-    if not targetRoot or not characterRoot then return end
+    -- Восстанавливаем Humanoid
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid.AutoRotate = true
+        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+    end
     
-    -- Получаем данные цели
-    local targetVelocity = targetRoot.Velocity
-    local targetSpeed = Vector3.new(targetVelocity.X, 0, targetVelocity.Z).Magnitude
+    -- Удаляем систему контроля
+    if MainModule.Killaura.ControlSystem then
+        for _, obj in pairs(MainModule.Killaura.ControlSystem) do
+            if obj and obj.Parent then
+                obj:Destroy()
+            end
+        end
+        MainModule.Killaura.ControlSystem = nil
+    end
+end
+
+-- Прикрепление к цели (меняем методы позиционирования)
+local function attachToTarget(targetPlayer)
+    if not targetPlayer then return false end
+    
+    local localPlayer = game:GetService("Players").LocalPlayer
+    if not localPlayer then return false end
+    
+    local character = game:GetService("Workspace"):FindFirstChild(localPlayer.Name)
+    if not character then return false end
+    
+    local targetCharacter = targetPlayer.Character
+    if not targetCharacter then return false end
+    
+    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart") or 
+                       targetCharacter:FindFirstChild("UpperTorso")
+    local targetHumanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+    
+    if not targetRoot or not targetHumanoid or targetHumanoid.Health <= 0 then
+        return false
+    end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart") or 
+                     character:FindFirstChild("UpperTorso")
+    if not rootPart then return false end
+    
+    -- Создаем систему контроля
+    MainModule.Killaura.ControlSystem = createControlSystem(character)
+    if not MainModule.Killaura.ControlSystem then return false end
     
     -- Определяем позицию
     local targetLook = targetRoot.CFrame.LookVector
-    local targetPosition
+    local targetSpeed = targetRoot.Velocity.magnitude
     
+    local targetPosition
     if targetSpeed <= MainModule.Killaura.SpeedThreshold then
+        targetPosition = targetRoot.Position - (targetLook * MainModule.Killaura.BehindDistance)
         MainModule.Killaura.AttachmentType = "behind"
-        targetPosition = targetRoot.Position - (targetLook * 2.5)
-        
-        -- Добавляем небольшие случайные отклонения
-        local randomOffset = Vector3.new(
-            math.random() * 0.3 - 0.15,
-            0,
-            math.random() * 0.3 - 0.15
-        )
-        targetPosition = targetPosition + randomOffset
     else
+        targetPosition = targetRoot.Position + (targetLook * MainModule.Killaura.FrontDistance)
         MainModule.Killaura.AttachmentType = "front"
-        targetPosition = targetRoot.Position + (targetLook * 4)
     end
     
-    -- Проверяем состояние для подъема
-    if checkTargetState(targetPlayer) then
-        if not MainModule.Killaura.IsLifted then
-            targetPosition = targetPosition + Vector3.new(0, MainModule.Killaura.LiftHeight, 0)
-            MainModule.Killaura.IsLifted = true
-        end
+    -- Плавное перемещение
+    local tweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Linear)
+    local tween = game:GetService("TweenService"):Create(rootPart, tweenInfo, {CFrame = CFrame.new(targetPosition)})
+    tween:Play()
+    
+    MainModule.Killaura.CurrentTarget = targetPlayer
+    MainModule.Killaura.IsAttached = true
+    MainModule.Killaura.IsLifted = false
+    
+    return true
+end
+
+-- Обновление позиции (меняем методы синхронизации)
+local function updateAttachment()
+    if not MainModule.Killaura.Enabled or not MainModule.Killaura.CurrentTarget then
+        return
+    end
+    
+    local targetPlayer = MainModule.Killaura.CurrentTarget
+    if not targetPlayer then
+        MainModule.Killaura.CurrentTarget = nil
+        MainModule.Killaura.IsAttached = false
+        MainModule.Killaura.IsLifted = false
+        return
+    end
+    
+    local localPlayer = game:GetService("Players").LocalPlayer
+    if not localPlayer then return end
+    
+    local character = game:GetService("Workspace"):FindFirstChild(localPlayer.Name)
+    if not character then return end
+    
+    local targetCharacter = targetPlayer.Character
+    if not targetCharacter then
+        MainModule.Killaura.CurrentTarget = nil
+        MainModule.Killaura.IsAttached = false
+        MainModule.Killaura.IsLifted = false
+        restoreOriginalState(character)
+        return
+    end
+    
+    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart") or 
+                       targetCharacter:FindFirstChild("UpperTorso")
+    local targetHumanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+    
+    if not targetRoot or not targetHumanoid or targetHumanoid.Health <= 0 then
+        MainModule.Killaura.CurrentTarget = nil
+        MainModule.Killaura.IsAttached = false
+        MainModule.Killaura.IsLifted = false
+        restoreOriginalState(character)
+        return
+    end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart") or 
+                     character:FindFirstChild("UpperTorso")
+    if not rootPart then return end
+    
+    -- Получаем данные цели
+    local targetSpeed = targetRoot.Velocity.magnitude
+    local targetLook = targetRoot.CFrame.LookVector
+    
+    -- Вычисляем позицию
+    local targetPosition
+    local newAttachmentType
+    
+    if targetSpeed <= MainModule.Killaura.SpeedThreshold then
+        newAttachmentType = "behind"
+        targetPosition = targetRoot.Position - (targetLook * MainModule.Killaura.BehindDistance)
     else
+        newAttachmentType = "front"
+        targetPosition = targetRoot.Position + (targetLook * MainModule.Killaura.FrontDistance)
+    end
+    
+    if newAttachmentType ~= MainModule.Killaura.AttachmentType then
+        MainModule.Killaura.AttachmentType = newAttachmentType
+    end
+    
+    -- Проверка анимаций для подъема
+    local isTargetAnimating = checkTargetAnimations(targetPlayer)
+    
+    if isTargetAnimating and not MainModule.Killaura.IsLifted then
+        targetPosition = targetPosition + Vector3.new(0, MainModule.Killaura.LiftHeight, 0)
+        MainModule.Killaura.IsLifted = true
+    elseif not isTargetAnimating and MainModule.Killaura.IsLifted then
         MainModule.Killaura.IsLifted = false
     end
     
-    -- Предсказываем движение цели
-    local predictedVelocity = predictMovement(targetRoot, 0.016)
-    if predictedVelocity.Magnitude > 0.1 then
-        local predictionFactor = 0.2
-        targetPosition = targetPosition + (predictedVelocity * predictionFactor)
-    end
-    
-    -- Применяем движение
-    local targetLookDirection
-    if MainModule.Killaura.AttachmentType == "behind" then
-        targetLookDirection = targetLook * -1
-    else
-        targetLookDirection = targetLook
-    end
-    
-    applyNaturalMovement(character, targetPosition, targetLookDirection)
-    
-    -- Сохраняем последнюю валидную позицию
-    MainModule.Killaura.LastValidPosition = targetPosition
-end
-
--- Асинхронная проверка и обновление
-local function asyncUpdate()
-    while MainModule.Killaura.Enabled do
-        local success, err = pcall(function()
-            if not MainModule.Killaura.Enabled then return end
-            
-            if not MainModule.Killaura.CurrentTarget then
-                -- Ищем новую цель
-                local target = findTargetViaRaycast()
-                if target then
-                    MainModule.Killaura.CurrentTarget = target
-                    MainModule.Killaura.IsLifted = false
-                end
-            else
-                -- Проверяем валидность текущей цели
-                local targetPlayer = MainModule.Killaura.CurrentTarget
-                if not targetPlayer or not targetPlayer.Parent or 
-                   not targetPlayer.Character then
-                    MainModule.Killaura.CurrentTarget = nil
-                    MainModule.Killaura.IsLifted = false
-                    return
-                end
-                
-                local targetHumanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
-                if not targetHumanoid or targetHumanoid.Health <= 0 then
-                    MainModule.Killaura.CurrentTarget = nil
-                    MainModule.Killaura.IsLifted = false
-                    return
-                end
-                
-                -- Позиционируем персонажа
-                positionCharacter(targetPlayer)
-            end
-        end)
+    -- Используем VectorForce для плавного движения
+    if MainModule.Killaura.ControlSystem and MainModule.Killaura.ControlSystem.PositionForce then
+        local forceDirection = (targetPosition - rootPart.Position).unit
+        local distance = (targetPosition - rootPart.Position).magnitude
+        local forceMagnitude = math.clamp(distance * 500, 0, 10000)
         
-        if not success then
-            warn("Killaura update error:", err)
-            MainModule.Killaura.CurrentTarget = nil
-            MainModule.Killaura.IsLifted = false
+        MainModule.Killaura.ControlSystem.PositionForce.Force = forceDirection * forceMagnitude
+    end
+    
+    -- Используем AlignOrientation для поворота
+    if MainModule.Killaura.ControlSystem and MainModule.Killaura.ControlSystem.OrientationAlign then
+        local alignCFrame
+        if MainModule.Killaura.AttachmentType == "behind" then
+            alignCFrame = CFrame.new(rootPart.Position, targetRoot.Position)
+        else
+            alignCFrame = CFrame.new(rootPart.Position, rootPart.Position + targetLook)
         end
         
-        -- Непостоянный интервал для скрытия паттернов
-        local waitTime = 0.016 + (math.random() * 0.004 - 0.002)
-        task.wait(waitTime)
+        -- Создаем временный объект для выравнивания
+        local tempAlign = Instance.new("Attachment")
+        tempAlign.WorldCFrame = alignCFrame
+        tempAlign.Parent = nil
+        
+        if MainModule.Killaura.ControlSystem.Attachment then
+            MainModule.Killaura.ControlSystem.OrientationAlign.CFrame = alignCFrame
+        end
+        
+        tempAlign:Destroy()
     end
+    
+    MainModule.Killaura.LastPositionUpdate = tick()
+end
+
+-- Открепление от цели
+local function detachFromTarget()
+    local localPlayer = game:GetService("Players").LocalPlayer
+    if localPlayer then
+        local character = game:GetService("Workspace"):FindFirstChild(localPlayer.Name)
+        if character then
+            restoreOriginalState(character)
+        end
+    end
+    
+    MainModule.Killaura.CurrentTarget = nil
+    MainModule.Killaura.IsAttached = false
+    MainModule.Killaura.IsLifted = false
 end
 
 function MainModule.ToggleKillaura(enabled)
     MainModule.Killaura.Enabled = enabled
     
-    if not enabled then
-        MainModule.Killaura.CurrentTarget = nil
-        MainModule.Killaura.IsLifted = false
-        
-        -- Восстанавливаем нормальное управление
-        local players = game:GetService("Players")
-        local character = players.LocalPlayer.Character
-        if character then
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                humanoid:Move(Vector3.new())
-            end
+    -- Очистка подключений
+    for _, conn in pairs(MainModule.Killaura.Connections) do
+        if conn then 
+            local success = pcall(function() conn:Disconnect() end)
         end
-        
+    end
+    MainModule.Killaura.Connections = {}
+    
+    if not enabled then
+        detachFromTarget()
+        ShowNotification("Killaura", "Disabled", 3)
         return
     end
     
-    -- Запускаем асинхронное обновление
-    task.spawn(asyncUpdate)
+    ShowNotification("Killaura", "Enabled", 3)
+    
+    -- Основной цикл
+    local connection = game:GetService("RunService").Heartbeat:Connect(function()
+        if not MainModule.Killaura.Enabled then return end
+        
+        if not MainModule.Killaura.IsAttached then
+            local closestPlayer = findClosestPlayer()
+            if closestPlayer then
+                local success = pcall(function()
+                    attachToTarget(closestPlayer)
+                end)
+            end
+        else
+            local success = pcall(function()
+                updateAttachment()
+            end)
+        end
+    end)
+    
+    table.insert(MainModule.Killaura.Connections, connection)
+    
+    -- Обработчик персонажа
+    local playersService = game:GetService("Players")
+    local charConnection = playersService.LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+        task.wait(0.3)
+        if MainModule.Killaura.Enabled then
+            MainModule.Killaura.IsAttached = false
+            MainModule.Killaura.IsLifted = false
+            
+            local closestPlayer = findClosestPlayer()
+            if closestPlayer then
+                task.wait(0.1)
+                local success = pcall(function()
+                    attachToTarget(closestPlayer)
+                end)
+            end
+        end
+    end)
+    
+    table.insert(MainModule.Killaura.Connections, charConnection)
 end
 
 -- Функции для горячих клавиш
@@ -4082,6 +4219,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
