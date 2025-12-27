@@ -245,74 +245,14 @@ MainModule.FreeDashGuards = {
 
 MainModule.Killaura = {
     Enabled = false,
-    Radius = 15,
-    MaxRadius = 100,
-    CurrentTarget = nil,
-    TargetAnimationIds = {
-        "85623602463927",
-        "87978085217719", 
+    TeleportAnimations = {
+        "79649041083405",
+        "73242877658272",
+        "85793691404836",
+        "86197206792061",
         "99157505926076"
     },
-    Connections = {},
-    IsAttached = false,
-    OriginalGravity = 196.2,
-    AnimationStartTime = 0,
-    IsLifted = false,
-    LiftHeight = 10,
-    TargetAnimationsSet = {},
-    LastPositionUpdate = 0,
-    PositionUpdateInterval = 0.033,
-    AttachYOffset = 5,
-    SearchCooldown = 0,
-    LastTargetSwitch = 0,
-    LastValidTargetPos = nil,
-    ReturnAfterAnimation = false,
-    IsActive = false,
-    HiddenForces = {},
-    UseNetworkMethods = false,
-    SmoothReturn = false,
-    MaxForceMultiplier = 1,
-    NetworkOwnershipEnabled = false,
-    UseCFrameManipulation = false,
-    LastValidCFrame = nil,
-    FakeVelocity = Vector3.new(0, 0, 0),
-    OriginalProperties = {},
-    NetworkSyncRate = 0.1,
-    LastNetworkSync = 0,
-    UseAssemblyLinearVelocity = false,
-    ForceMultipliers = {
-        Position = 1,
-        Gyro = 1,
-        Velocity = 1,
-        AntiGravity = 1
-    },
-    OriginalHumanoidState = nil,
-    OriginalPlatformStand = nil,
-    IsSearching = false,
-    SearchAttempts = 0,
-    MaxSearchAttempts = 5,
-    SearchRadius = 50,
-    ReturnToNormalTimer = 0,
-    LastTargetDistance = 0,
-    SmoothLookFactor = 0,
-    MovementSimulation = {
-        Enabled = false,
-        WalkCycle = 0,
-        LegMovement = 0,
-        ArmMovement = 0
-    },
-    CombatItems = {"Fork", "Bottle", "Knife"},
-    PlayerHasCombatItem = false,
-    LastCombatCheck = 0,
-    CombatCheckInterval = 0.1,
-    OriginalCFrame = nil,
-    OriginalVelocity = nil,
-    OriginalAnchored = nil,
-    OriginalCanCollide = nil,
-    OriginalMassless = nil,
-    SavedProperties = {},
-    DefaultHotkey = nil,
-    CurrentHotkey = nil
+    Connections = {}
 }
 
 MainModule.Misc = {
@@ -3435,13 +3375,13 @@ function MainModule.SetFlySpeed(speed)
     return MainModule.Fly.Speed
 end
 
--- Новая улучшенная функция Killaura
+-- Функция поиска ближайшего игрока
 local function findClosestPlayer()
     local character = GetCharacter()
-    if not character then return nil end
+    if not character then return nil, 0 end
     
     local rootPart = GetRootPart(character)
-    if not rootPart then return nil end
+    if not rootPart then return nil, 0 end
     
     local closestPlayer = nil
     local closestDistance = math.huge
@@ -3464,106 +3404,68 @@ local function findClosestPlayer()
     return closestPlayer, closestDistance
 end
 
-local function attachToTarget(targetPlayer)
+-- Функция телепортации к цели
+local function teleportToTarget(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return false end
     
     local character = GetCharacter()
     if not character then return false end
     
     local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local targetHumanoid = targetPlayer.Character:FindFirstChild("Humanoid")
+    local humanoid = targetPlayer.Character:FindFirstChild("Humanoid")
     
-    if not (targetRoot and targetHumanoid) or targetHumanoid.Health <= 0 then
+    if not targetRoot or not humanoid or humanoid.Health <= 0 then
         return false
     end
     
     local rootPart = GetRootPart(character)
     if not rootPart then return false end
     
-    local humanoid = GetHumanoid(character)
-    if not humanoid then return false end
+    local targetSpeed = targetRoot.Velocity.Magnitude
+    local targetLookVector = targetRoot.CFrame.LookVector
     
-    MainModule.Killaura.CurrentTarget = targetPlayer
-    MainModule.Killaura.IsAttached = true
-    MainModule.Killaura.OriginalCFrame = rootPart.CFrame
+    if targetSpeed >= 16 and targetSpeed <= 18 then
+        -- Телепортация вплотную к игроку
+        rootPart.CFrame = CFrame.new(targetRoot.Position)
+    elseif targetSpeed >= 20 and targetSpeed <= 30 then
+        -- Телепортация вперед игрока на 5 блоков
+        local teleportPos = targetRoot.Position + (targetLookVector * 5)
+        rootPart.CFrame = CFrame.new(teleportPos)
+    end
     
     return true
 end
 
-local function updateAttachment()
-    if not MainModule.Killaura.Enabled or not MainModule.Killaura.CurrentTarget then return end
-    
-    local targetPlayer = MainModule.Killaura.CurrentTarget
-    if not targetPlayer or not targetPlayer.Character then
-        MainModule.Killaura.CurrentTarget = nil
-        MainModule.Killaura.IsAttached = false
-        return
-    end
-    
+-- Функция проверки анимаций нашего персонажа
+local function checkOurAnimations()
     local character = GetCharacter()
-    if not character then return end
-    
-    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local targetHumanoid = targetPlayer.Character:FindFirstChild("Humanoid")
-    
-    if not (targetRoot and targetHumanoid) or targetHumanoid.Health <= 0 then
-        MainModule.Killaura.CurrentTarget = nil
-        MainModule.Killaura.IsAttached = false
-        return
-    end
-    
-    local rootPart = GetRootPart(character)
-    if not rootPart then return end
+    if not character then return false end
     
     local humanoid = GetHumanoid(character)
-    if not humanoid then return end
+    if not humanoid then return false end
     
-    local targetLookVector = targetRoot.CFrame.LookVector
-    local targetVelocity = targetRoot.Velocity
-    
-    local baseDistance = 1
-    if targetVelocity.Magnitude > 2 then
-        baseDistance = 5
-    end
-    
-    local targetPosition = targetRoot.Position + (targetLookVector * -baseDistance)
-    local currentPos = rootPart.Position
-    local smoothedPosition = currentPos:Lerp(targetPosition, 0.8)
-    
-    rootPart.CFrame = CFrame.new(smoothedPosition)
-    
-    local isTargetAnimating = false
-    for _, track in pairs(targetHumanoid:GetPlayingAnimationTracks()) do
+    for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do
         if track and track.Animation then
             local animId = track.Animation.AnimationId
-            if MainModule.Killaura.TargetAnimationsSet[animId] then
-                isTargetAnimating = true
-                break
+            for _, targetAnim in pairs(MainModule.Killaura.TeleportAnimations) do
+                if animId:find(targetAnim) then
+                    return true
+                end
             end
         end
     end
     
-    if isTargetAnimating and not MainModule.Killaura.IsLifted then
-        MainModule.Killaura.IsLifted = true
-        rootPart.CFrame = rootPart.CFrame + Vector3.new(0, MainModule.Killaura.LiftHeight, 0)
-    elseif not isTargetAnimating and MainModule.Killaura.IsLifted then
-        MainModule.Killaura.IsLifted = false
-    end
-    
-    MainModule.Killaura.LastValidTargetPos = targetRoot.Position
+    return false
 end
 
 function MainModule.ToggleKillaura(enabled)
     MainModule.Killaura.Enabled = enabled
     
+    -- Очистка старых подключений
     for _, conn in pairs(MainModule.Killaura.Connections) do
         if conn then conn:Disconnect() end
     end
     MainModule.Killaura.Connections = {}
-    
-    MainModule.Killaura.CurrentTarget = nil
-    MainModule.Killaura.IsAttached = false
-    MainModule.Killaura.IsLifted = false
     
     if not enabled then
         ShowNotification("Killaura", "Disabled", 3)
@@ -3572,37 +3474,24 @@ function MainModule.ToggleKillaura(enabled)
     
     ShowNotification("Killaura", "Enabled", 3)
     
+    -- Основное подключение для проверки анимаций и телепортации
     table.insert(MainModule.Killaura.Connections, RunService.Heartbeat:Connect(function()
         if not MainModule.Killaura.Enabled then return end
         
-        if not MainModule.Killaura.CurrentTarget then
+        -- Проверяем, идет ли у нас одна из целевых анимаций
+        if checkOurAnimations() then
+            -- Ищем ближайшего игрока
             local closestPlayer, distance = findClosestPlayer()
             if closestPlayer then
-                attachToTarget(closestPlayer)
+                teleportToTarget(closestPlayer)
             end
-        else
-            updateAttachment()
         end
     end))
     
-    table.insert(MainModule.Killaura.Connections, LocalPlayer.CharacterAdded:Connect(function(newCharacter)
-        task.wait(1)
-        if MainModule.Killaura.Enabled then
-            MainModule.Killaura.CurrentTarget = nil
-            MainModule.Killaura.IsAttached = false
-            
-            local closestPlayer, distance = findClosestPlayer()
-            if closestPlayer then
-                attachToTarget(closestPlayer)
-            end
-        end
+    -- Обработчик изменения персонажа
+    table.insert(MainModule.Killaura.Connections, LocalPlayer.CharacterAdded:Connect(function()
+        task.wait(1) -- Ждем загрузки персонажа
     end))
-end
-
-function MainModule.SetKillauraRadius(radius)
-    radius = math.clamp(radius, 15, MainModule.Killaura.MaxRadius)
-    MainModule.Killaura.Radius = radius
-    return radius
 end
 
 -- Функции для горячих клавиш
