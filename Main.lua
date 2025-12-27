@@ -243,7 +243,7 @@ MainModule.FreeDashGuards = {
     OriginalSprintValue = 4
 }
 
--- Ultra Smooth Killaura - незаметная синхронизация
+-- Perfect Sync Killaura - полная синхронизация с анти-детектом
 MainModule.Killaura = {
     Enabled = false,
     TeleportAnimations = {
@@ -261,32 +261,32 @@ MainModule.Killaura = {
     LiftHeight = 8,
     TargetAnimationsSet = {},
     
-    -- Плавные параметры синхронизации
-    BehindDistance = 2,          -- Ближе на 1 блок сзади
-    FrontDistance = 3.5,         -- Ближе на 1 блок спереди
-    SpeedThreshold = 16.5,
+    -- Параметры синхронизации
+    BehindDistance = 2,          -- 2 блока сзади
+    FrontDistance = 3.5,         -- 3.5 блока впереди
+    SpeedThreshold = 18,         -- Только с 18 скорости впереди!
     
-    -- Ultra Smooth параметры
-    MovementSpeed = 45,          -- Скорость перемещения (выше = плавнее)
-    RotationSpeed = 12,          -- Скорость поворота
-    Smoothness = 0.88,           -- Плавность перемещения
-    MaxForce = 12000,            -- Сила передвижения
-    HeightAdjustSpeed = 25,      -- Скорость подъема/опускания
+    -- Плавные параметры
+    MovementSpeed = 42,          -- Скорость перемещения
+    RotationSpeed = 10,          -- Скорость поворота
+    Smoothness = 0.9,            -- Плавность
     
     -- Анти-детект параметры
-    NaturalMovement = true,      -- Естественные движения
-    VelocityBlend = 0.7,         -- Смешивание скорости с целью
-    GroundOffset = 3.5,          -- Отступ от земли
-    NoiseAmount = 0.1,           -- Случайные микродвижения
+    MaxVelocity = 65,            -- Макс скорость для анти-детекта
+    VelocitySmoothness = 0.85,   -- Сглаживание скорости
+    HumanizeFactor = 0.15,       -- Фактор "очеловечивания"
+    NaturalNoise = 0.08,         -- Естественный шум движений
+    AntiDetectionMode = true,    -- Режим анти-детекта
     
     -- Внутренние переменные
     LastPosition = Vector3.new(),
-    TargetVelocity = Vector3.new(),
-    SmoothY = 0,
-    CurrentHeight = 0,
+    TargetLastVelocity = Vector3.new(),
+    LastHeight = 0,
+    JumpSync = false,
+    IsJumping = false,
+    JumpStartTime = 0,
     TimeOffset = 0
 }
-
 
 MainModule.Misc = {
     InstaInteract = false,
@@ -3409,7 +3409,7 @@ for _, animId in pairs(MainModule.Killaura.TeleportAnimations) do
     MainModule.Killaura.TargetAnimationsSet[animId] = true
 end
 
--- Поиск ближайшего игрока
+-- Быстрый поиск игрока
 local function findClosestPlayer()
     local players = game:GetService("Players")
     local localPlayer = players.LocalPlayer
@@ -3423,6 +3423,7 @@ local function findClosestPlayer()
     
     local closestPlayer = nil
     local closestDistance = math.huge
+    local myPos = rootPart.Position
     
     for _, player in pairs(players:GetPlayers()) do
         if player ~= localPlayer and player.Character then
@@ -3431,7 +3432,7 @@ local function findClosestPlayer()
             local humanoid = targetChar:FindFirstChildOfClass("Humanoid")
             
             if targetRoot and humanoid and humanoid.Health > 0 then
-                local distance = (targetRoot.Position - rootPart.Position).Magnitude
+                local distance = (targetRoot.Position - myPos).Magnitude
                 if distance < closestDistance then
                     closestDistance = distance
                     closestPlayer = player
@@ -3443,7 +3444,7 @@ local function findClosestPlayer()
     return closestPlayer
 end
 
--- Проверка анимаций с кэшированием
+-- Проверка анимаций цели
 local animationCache = {}
 local function checkTargetAnimations(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return false end
@@ -3452,8 +3453,10 @@ local function checkTargetAnimations(targetPlayer)
     if not humanoid then return false end
     
     local cacheKey = tostring(targetPlayer.UserId)
-    if animationCache[cacheKey] and tick() - animationCache[cacheKey].time < 0.5 then
-        return animationCache[cacheKey].result
+    local cacheData = animationCache[cacheKey]
+    
+    if cacheData and tick() - cacheData.time < 0.3 then
+        return cacheData.result
     end
     
     local result = false
@@ -3479,10 +3482,53 @@ local function checkTargetAnimations(targetPlayer)
     return result
 end
 
--- Ultra Smooth функция синхронизации
-local function smoothSyncWithTarget(targetRoot, localRoot, deltaTime)
-    if not targetRoot or not localRoot then return end
+-- Проверка прыжка цели
+local function checkTargetJumping(targetRoot, targetHumanoid)
+    if not targetRoot or not targetHumanoid then return false end
     
+    local velocityY = targetRoot.Velocity.Y
+    local floorMaterial = targetHumanoid.FloorMaterial
+    
+    -- Определяем прыжок по вертикальной скорости и отсутствию под ногами
+    if velocityY > 5 and floorMaterial == Enum.Material.Air then
+        return true
+    end
+    
+    return false
+end
+
+-- Анти-детект функция для скорости
+local function applyAntiDetection(localRoot, targetVel, desiredVel, deltaTime)
+    local config = MainModule.Killaura
+    if not config.AntiDetectionMode then return desiredVel end
+    
+    -- Ограничиваем максимальную скорость
+    if desiredVel.Magnitude > config.MaxVelocity then
+        desiredVel = desiredVel.Unit * config.MaxVelocity
+    end
+    
+    -- Смешиваем с скоростью цели для естественности
+    local blendedVel = desiredVel:Lerp(targetVel, config.VelocitySmoothness)
+    
+    -- Добавляем человеческий фактор (микрозадержки, колебания)
+    config.TimeOffset = config.TimeOffset + deltaTime
+    local noise = Vector3.new(
+        math.sin(config.TimeOffset * 1.7) * config.NaturalNoise,
+        math.cos(config.TimeOffset * 2.1) * config.NaturalNoise * 0.3,
+        math.sin(config.TimeOffset * 1.9) * config.NaturalNoise
+    )
+    
+    blendedVel = blendedVel + noise * 10
+    
+    -- Имитация естественной инерции
+    local currentVel = localRoot.Velocity
+    local finalVel = currentVel:Lerp(blendedVel, 0.7)
+    
+    return finalVel
+end
+
+-- Основная функция синхронизации с исправлениями
+local function perfectSyncWithTarget(targetRoot, targetHumanoid, localRoot, deltaTime)
     local config = MainModule.Killaura
     
     -- Получаем данные цели
@@ -3490,225 +3536,223 @@ local function smoothSyncWithTarget(targetRoot, localRoot, deltaTime)
     local targetVel = targetRoot.Velocity
     local targetLook = targetRoot.CFrame.LookVector
     local targetSpeed = targetVel.Magnitude
+    local horizontalSpeed = Vector3.new(targetVel.X, 0, targetVel.Z).Magnitude
     
-    -- Плавно определяем тип прикрепления
-    local newType = targetSpeed > config.SpeedThreshold and "front" or "behind"
-    if config.AttachmentType ~= newType then
-        config.AttachmentType = newType
+    -- ПРОВЕРКА ПРЫЖКА ЦЕЛИ
+    local isTargetJumping = checkTargetJumping(targetRoot, targetHumanoid)
+    
+    if isTargetJumping and not config.JumpSync then
+        config.JumpSync = true
+        config.IsJumping = true
+        config.JumpStartTime = tick()
+    elseif not isTargetJumping and config.JumpSync then
+        if tick() - config.JumpStartTime > 0.5 then
+            config.JumpSync = false
+            config.IsJumping = false
+        end
     end
     
-    -- Вычисляем желаемую позицию ПРАВИЛЬНО
+    -- ОПРЕДЕЛЯЕМ ПОЛОЖЕНИЕ (ИСПРАВЛЕНО!)
+    -- Только когда ГОРИЗОНТАЛЬНАЯ скорость > 18 и цель НЕ прыгает
+    local shouldBeInFront = (horizontalSpeed > config.SpeedThreshold) and not config.IsJumping
+    
+    if shouldBeInFront then
+        if config.AttachmentType ~= "front" then
+            config.AttachmentType = "front"
+        end
+    else
+        if config.AttachmentType ~= "behind" then
+            config.AttachmentType = "behind"
+        end
+    end
+    
+    -- ВЫЧИСЛЯЕМ ПОЗИЦИЮ С УЧЕТОМ ПРЫЖКА
     local desiredOffset
     if config.AttachmentType == "behind" then
         desiredOffset = -targetLook * config.BehindDistance
     else
-        -- Стоим ВПЕРЕДИ и смотрим на цель (исправлено!)
         desiredOffset = targetLook * config.FrontDistance
     end
     
-    local desiredPos = targetPos + desiredOffset
-    
-    -- Микродвижения для естественности
-    if config.NaturalMovement then
-        config.TimeOffset = config.TimeOffset + deltaTime
-        local noise = Vector3.new(
-            math.sin(config.TimeOffset * 2) * config.NoiseAmount,
-            math.sin(config.TimeOffset * 3) * config.NoiseAmount * 0.5,
-            math.cos(config.TimeOffset * 2) * config.NoiseAmount
-        )
-        desiredPos = desiredPos + noise
+    -- СИНХРОНИЗАЦИЯ ПРЫЖКА
+    local verticalOffset = 0
+    if config.IsJumping then
+        -- Полная синхронизация по Y при прыжке
+        local targetHeight = targetPos.Y
+        local myHeight = localRoot.Position.Y
+        verticalOffset = targetHeight - myHeight
     end
     
-    -- ОБРАБОТКА ПОДЪЕМА ПРИ АНИМАЦИЯХ
+    local desiredPos = targetPos + desiredOffset + Vector3.new(0, verticalOffset, 0)
+    
+    -- ПОДЪЕМ ПРИ АНИМАЦИЯХ
     if config.CurrentTarget then
         local isAnimating = checkTargetAnimations(config.CurrentTarget)
         
         if isAnimating and not config.IsLifted then
             config.IsLifted = true
-            config.CurrentHeight = 0
+            config.LastHeight = localRoot.Position.Y
         elseif not isAnimating and config.IsLifted then
             config.IsLifted = false
         end
         
-        -- Плавное изменение высоты
-        local targetHeight = config.IsLifted and config.LiftHeight or 0
-        local heightDiff = targetHeight - config.CurrentHeight
-        config.CurrentHeight = config.CurrentHeight + heightDiff * deltaTime * config.HeightAdjustSpeed
-        
-        if math.abs(heightDiff) < 0.1 then
-            config.CurrentHeight = targetHeight
+        if config.IsLifted then
+            desiredPos = desiredPos + Vector3.new(0, config.LiftHeight, 0)
         end
-        
-        desiredPos = desiredPos + Vector3.new(0, config.CurrentHeight, 0)
     end
     
-    -- ULTRA SMOOTH ПЕРЕМЕЩЕНИЕ
+    -- ПЛАВНОЕ ПЕРЕМЕЩЕНИЕ
     local currentPos = localRoot.Position
-    local direction = (desiredPos - currentPos)
+    local direction = desiredPos - currentPos
     local distance = direction.Magnitude
     
-    if distance > 0.01 then
-        -- Плавное вычисление скорости (синусоидальное для естественности)
-        local speedFactor = math.min(1, distance / 5)
-        local targetSpeed = config.MovementSpeed * speedFactor
+    if distance > 0.05 then
+        -- Динамическая скорость
+        local speedMultiplier = math.min(1, distance / 4)
+        local effectiveSpeed = config.MovementSpeed * speedMultiplier
         
-        -- Плавная интерполяция позиции
-        local alpha = config.Smoothness * deltaTime * 60
-        alpha = math.clamp(alpha, 0.01, 0.95)
+        -- Плавная интерполяция
+        local alpha = config.Smoothness * deltaTime * 50
+        alpha = math.clamp(alpha, 0.05, 0.9)
         
         local newPos = currentPos:Lerp(desiredPos, alpha)
         
-        -- ПРАВИЛЬНЫЙ ПОВОРОТ ДЛЯ СИНХРОННОСТИ
-        local targetRotation
+        -- ВСЕГДА СМОТРИМ НА ЦЕЛЬ (исправлено!)
+        local lookAtPos
         if config.AttachmentType == "behind" then
             -- Сзади - смотрим на цель
-            targetRotation = CFrame.new(newPos, targetPos)
+            lookAtPos = targetPos
         else
-            -- Впереди - смотрим В ТУ ЖЕ СТОРОНУ, что и цель (синхронно!)
-            targetRotation = CFrame.new(newPos, newPos + targetLook)
+            -- Впереди - смотрим ПРЯМО ВПЕРЕД (в направлении цели)
+            lookAtPos = targetPos + targetLook * 50
         end
+        
+        local targetCF = CFrame.new(newPos, lookAtPos)
         
         -- Плавный поворот
         local currentCF = localRoot.CFrame
-        local smoothCF = currentCF:Lerp(targetRotation, config.RotationSpeed * deltaTime)
+        local smoothCF = currentCF:Lerp(targetCF, config.RotationSpeed * deltaTime)
         
-        -- Применяем с учетом плавности
-        localRoot.CFrame = CFrame.new(
-            Vector3.new(
-                newPos.X,
-                newPos.Y,
-                newPos.Z
-            ),
-            smoothCF.Position + smoothCF.LookVector
-        )
+        -- Применяем позицию и поворот
+        localRoot.CFrame = smoothCF
         
-        -- Естественная скорость
+        -- Вычисляем и применяем скорость с анти-детектом
         local moveVector = (newPos - currentPos) / deltaTime
-        local blendedVel = moveVector:Lerp(targetVel, config.VelocityBlend)
-        
-        -- Ограничиваем скорость для натуральности
-        if blendedVel.Magnitude > config.MovementSpeed * 2 then
-            blendedVel = blendedVel.Unit * config.MovementSpeed * 2
-        end
-        
-        localRoot.Velocity = blendedVel
+        local finalVelocity = applyAntiDetection(localRoot, targetVel, moveVector, deltaTime)
+        localRoot.Velocity = finalVelocity
         
     else
-        -- Точно на месте - синхронный поворот
-        local targetCF
+        -- Точно на месте
+        local lookAtPos
         if config.AttachmentType == "behind" then
-            targetCF = CFrame.new(desiredPos, targetPos)
+            lookAtPos = targetPos
         else
-            targetCF = CFrame.new(desiredPos, desiredPos + targetLook)
+            lookAtPos = desiredPos + targetLook * 50
         end
         
-        localRoot.CFrame = targetCF
+        localRoot.CFrame = CFrame.new(desiredPos, lookAtPos)
         
-        -- Синхронизируем скорость с целью для натуральности
-        localRoot.Velocity = targetVel * config.VelocityBlend
+        -- Анти-детект скорость на месте
+        local naturalVel = applyAntiDetection(localRoot, targetVel, targetVel * 0.3, deltaTime)
+        localRoot.Velocity = naturalVel
     end
     
-    -- Естественное прилипание к земле
-    local rayOrigin = localRoot.Position + Vector3.new(0, 3, 0)
-    local ray = Ray.new(rayOrigin, Vector3.new(0, -10, 0))
-    local hit, groundPos = workspace:FindPartOnRayWithIgnoreList(ray, {localRoot.Parent})
-    
-    if hit then
-        local heightAboveGround = localRoot.Position.Y - groundPos.Y
-        if heightAboveGround > config.GroundOffset then
-            local gravity = Vector3.new(0, -98.1 * deltaTime * 2, 0)
-            localRoot.Velocity = localRoot.Velocity + gravity
-        end
+    -- ЕСТЕСТВЕННАЯ ГРАВИТАЦИЯ И ПРИЛИПАНИЕ К ЗЕМЛЕ
+    if not config.IsJumping and not config.IsLifted then
+        local rayOrigin = localRoot.Position + Vector3.new(0, 3, 0)
+        local ray = Ray.new(rayOrigin, Vector3.new(0, -8, 0))
+        local hit, groundPos = workspace:FindPartOnRayWithIgnoreList(ray, {localRoot.Parent})
         
-        -- Микрокоррекция высоты для естественности
-        if heightAboveGround < config.GroundOffset - 0.5 then
-            localRoot.Velocity = localRoot.Velocity + Vector3.new(0, 25 * deltaTime, 0)
+        if hit then
+            local heightDiff = localRoot.Position.Y - groundPos.Y
+            if heightDiff > 3.5 then
+                localRoot.Velocity = localRoot.Velocity + Vector3.new(0, -50, 0)
+            end
         end
     end
     
-    -- Сохраняем для следующего кадра
+    -- Сохраняем данные
     config.LastPosition = localRoot.Position
-    config.TargetVelocity = targetVel
+    config.TargetLastVelocity = targetVel
 end
 
--- Основной цикл синхронизации
-local function updateSmoothSync(deltaTime)
+-- Основной цикл
+local function updatePerfectSync(deltaTime)
     if not MainModule.Killaura.Enabled then return end
     
-    local localPlayer = game:GetService("Players").LocalPlayer
+    local players = game:GetService("Players")
+    local localPlayer = players.LocalPlayer
     if not localPlayer then return end
     
     local character = localPlayer.Character
     if not character then return end
     
     local localRoot = character:FindFirstChild("HumanoidRootPart")
-    if not localRoot then return end
+    local localHumanoid = character:FindFirstChildOfClass("Humanoid")
+    if not localRoot or not localHumanoid then return end
     
     local config = MainModule.Killaura
     
-    -- Поиск или валидация цели
+    -- Поиск цели
     if not config.CurrentTarget or not config.IsAttached then
         local closestPlayer = findClosestPlayer()
         if closestPlayer then
             config.CurrentTarget = closestPlayer
             config.IsAttached = true
             config.IsLifted = false
-            config.CurrentHeight = 0
+            config.IsJumping = false
+            config.JumpSync = false
             
-            -- Плавная начальная позиция без телепорта
-            local targetRoot = closestPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if targetRoot then
-                local targetSpeed = targetRoot.Velocity.Magnitude
+            local targetChar = closestPlayer.Character
+            local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+            local targetHumanoid = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
+            
+            if targetRoot and targetHumanoid then
+                local targetVel = targetRoot.Velocity
+                local horizontalSpeed = Vector3.new(targetVel.X, 0, targetVel.Z).Magnitude
                 local targetLook = targetRoot.CFrame.LookVector
-                local targetPos = targetRoot.Position
                 
                 local startPos
-                local startLook
-                
-                if targetSpeed <= config.SpeedThreshold then
-                    startPos = targetPos - (targetLook * config.BehindDistance)
-                    startLook = targetPos
-                    config.AttachmentType = "behind"
-                else
-                    startPos = targetPos + (targetLook * config.FrontDistance)
-                    startLook = startPos + targetLook
+                if horizontalSpeed > config.SpeedThreshold then
+                    startPos = targetRoot.Position + (targetLook * config.FrontDistance)
                     config.AttachmentType = "front"
+                else
+                    startPos = targetRoot.Position - (targetLook * config.BehindDistance)
+                    config.AttachmentType = "behind"
                 end
                 
-                -- Плавное начало без резкого телепорта
-                localRoot.CFrame = CFrame.new(startPos, startLook)
+                localRoot.CFrame = CFrame.new(startPos, targetRoot.Position)
                 config.LastPosition = startPos
             end
-        else
-            return
         end
+        return
     end
     
-    -- Проверяем текущую цель
+    -- Валидация цели
     local targetPlayer = config.CurrentTarget
     if not targetPlayer or not targetPlayer.Character then
         config.CurrentTarget = nil
         config.IsAttached = false
-        config.IsLifted = false
         return
     end
     
     local targetChar = targetPlayer.Character
     local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-    local humanoid = targetChar:FindFirstChildOfClass("Humanoid")
+    local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
     
-    if not targetRoot or not humanoid or humanoid.Health <= 0 then
+    if not targetRoot or not targetHumanoid or targetHumanoid.Health <= 0 then
         config.CurrentTarget = nil
         config.IsAttached = false
         config.IsLifted = false
+        config.IsJumping = false
         return
     end
     
-    -- Выполняем плавную синхронизацию
-    smoothSyncWithTarget(targetRoot, localRoot, deltaTime)
+    -- Синхронизация
+    perfectSyncWithTarget(targetRoot, targetHumanoid, localRoot, deltaTime)
 end
 
--- Улучшенная функция включения/выключения
+-- Включение/выключение
 function MainModule.ToggleKillaura(enabled)
     local config = MainModule.Killaura
     
@@ -3716,11 +3760,9 @@ function MainModule.ToggleKillaura(enabled)
     
     config.Enabled = enabled
     
-    -- Очистка подключений
+    -- Очистка
     for _, conn in pairs(config.Connections) do
-        if conn then
-            pcall(function() conn:Disconnect() end)
-        end
+        if conn then pcall(function() conn:Disconnect() end) end
     end
     config.Connections = {}
     
@@ -3728,23 +3770,26 @@ function MainModule.ToggleKillaura(enabled)
         config.CurrentTarget = nil
         config.IsAttached = false
         config.IsLifted = false
-        config.CurrentHeight = 0
+        config.IsJumping = false
+        config.JumpSync = false
         ShowNotification("Killaura", "Отключено", 2)
         return
     end
     
-    ShowNotification("Killaura", "Включено - Ultra Smooth", 2)
+    ShowNotification("Killaura", "Включено - Perfect Sync", 2)
     
-    -- Основной цикл на Heartbeat
+    -- Основной цикл
     local heartbeatConn = game:GetService("RunService").Heartbeat:Connect(function(deltaTime)
         if not config.Enabled then return end
         
         local success, err = pcall(function()
-            updateSmoothSync(deltaTime)
+            updatePerfectSync(deltaTime)
         end)
         
-        if not success and config.NaturalMovement then
-            -- Тихая обработка ошибок
+        if not success and config.AntiDetectionMode then
+            -- Тихий сброс при ошибке
+            config.CurrentTarget = nil
+            config.IsAttached = false
         end
     end)
     
@@ -3754,20 +3799,19 @@ function MainModule.ToggleKillaura(enabled)
     local players = game:GetService("Players")
     local localPlayer = players.LocalPlayer
     
-    -- При изменении персонажа
+    -- Смена персонажа
     if localPlayer then
         local charConn = localPlayer.CharacterAdded:Connect(function()
             if not config.Enabled then return end
             
-            task.wait(0.5)
-            
+            task.wait(0.8)
             config.CurrentTarget = nil
             config.IsAttached = false
             config.IsLifted = false
-            config.CurrentHeight = 0
+            config.IsJumping = false
             
             task.spawn(function()
-                task.wait(0.3)
+                task.wait(0.2)
                 local closestPlayer = findClosestPlayer()
                 if closestPlayer then
                     config.CurrentTarget = closestPlayer
@@ -3775,19 +3819,17 @@ function MainModule.ToggleKillaura(enabled)
                 end
             end)
         end)
-        
         table.insert(config.Connections, charConn)
     end
     
-    -- При выходе игрока
-    local playerRemovingConn = players.PlayerRemoving:Connect(function(player)
+    -- Игрок вышел
+    local removeConn = players.PlayerRemoving:Connect(function(player)
         if config.Enabled and config.CurrentTarget == player then
             config.CurrentTarget = nil
             config.IsAttached = false
-            config.IsLifted = false
             
             task.spawn(function()
-                task.wait(0.1)
+                task.wait(0.15)
                 local closestPlayer = findClosestPlayer()
                 if closestPlayer then
                     config.CurrentTarget = closestPlayer
@@ -3796,17 +3838,16 @@ function MainModule.ToggleKillaura(enabled)
             end)
         end
     end)
+    table.insert(config.Connections, removeConn)
     
-    table.insert(config.Connections, playerRemovingConn)
+    -- Очистка кэша периодически
+    task.spawn(function()
+        while config.Enabled do
+            task.wait(5)
+            animationCache = {}
+        end
+    end)
 end
-
--- Автоочистка кэша
-task.spawn(function()
-    while true do
-        task.wait(10)
-        animationCache = {}
-    end
-end)
 
 -- Функции для горячих клавиш
 function MainModule.SetFlyHotkey(keyCode)
@@ -4223,52 +4264,3 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
