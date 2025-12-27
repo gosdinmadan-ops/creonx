@@ -65,9 +65,7 @@ MainModule.Fly = {
     Connection = nil,
     BodyVelocity = nil,
     HumanoidDiedConnection = nil,
-    CharacterAddedConnection = nil,
-    IsMobile = UserInputService.TouchEnabled,
-    VirtualJoystick = nil
+    CharacterAddedConnection = nil
 }
 
 
@@ -3251,7 +3249,7 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
--- Упрощенный Fly: летим туда, куда смотрим
+-- Универсальный Fly: летим в том направлении, куда обычно идет персонаж
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
@@ -3264,6 +3262,9 @@ function MainModule.EnableFlight()
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
     
+    -- Сохраняем оригинальную WalkSpeed
+    local originalWalkSpeed = humanoid.WalkSpeed
+    
     -- Создаем BodyVelocity только при полете
     local flyBV = Instance.new("BodyVelocity")
     flyBV.Name = "FlyBodyVelocity"
@@ -3272,21 +3273,6 @@ function MainModule.EnableFlight()
     flyBV.Parent = rootPart
     
     MainModule.Fly.BodyVelocity = flyBV
-    
-    -- Находим виртуальный джойстик для мобильных
-    if MainModule.Fly.IsMobile then
-        -- Ищем виртуальный джойстик в интерфейсе
-        local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-        if PlayerGui then
-            local TouchGui = PlayerGui:FindFirstChild("TouchGui")
-            if TouchGui then
-                local TouchControlFrame = TouchGui:FindFirstChild("TouchControlFrame")
-                if TouchControlFrame then
-                    MainModule.Fly.VirtualJoystick = TouchControlFrame:FindFirstChild("DynamicThumbstickFrame")
-                end
-            end
-        end
-    end
     
     -- Основной цикл полета
     MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
@@ -3301,89 +3287,25 @@ function MainModule.EnableFlight()
         rootPart = GetRootPart(character)
         if not rootPart or not flyBV then return end
         
-        local Camera = workspace.CurrentCamera
-        if not Camera then return end
-        
-        -- Направление движения
-        local moveDirection = Vector3.new(0, 0, 0)
-        local lookVector = Camera.CFrame.LookVector
-        local rightVector = Camera.CFrame.RightVector
-        
-        if MainModule.Fly.IsMobile then
-            -- Для мобильных: используем виртуальный джойстик
-            if MainModule.Fly.VirtualJoystick then
-                local Thumbstick = MainModule.Fly.VirtualJoystick:FindFirstChild("Thumbstick")
-                if Thumbstick then
-                    local position = Thumbstick.Position
-                    local absolutePosition = Thumbstick.AbsolutePosition
-                    local absoluteSize = Thumbstick.AbsoluteSize
-                    
-                    -- Получаем центр джойстика
-                    local center = absolutePosition + absoluteSize / 2
-                    
-                    -- Получаем текущую позицию касания
-                    local touchInputs = UserInputService:GetConnectedGamepads()
-                    if #touchInputs > 0 then
-                        local touchPositions = UserInputService:GetTouchInputs()
-                        if #touchPositions > 0 then
-                            local touchPos = touchPositions[1].Position
-                            
-                            -- Вычисляем направление относительно центра
-                            local direction = Vector2.new(
-                                touchPos.X - center.X,
-                                touchPos.Y - center.Y
-                            )
-                            
-                            -- Нормализуем и масштабируем
-                            local magnitude = math.min(direction.Magnitude / (absoluteSize.X / 2), 1)
-                            if magnitude > 0.1 then -- Мертвая зона
-                                direction = direction.Unit
-                                
-                                -- Преобразуем 2D направление в 3D движение
-                                -- Перед/назад
-                                moveDirection = moveDirection + (lookVector * direction.Y)
-                                -- Влево/вправо
-                                moveDirection = moveDirection + (rightVector * direction.X)
-                                
-                                -- Умножаем на величину нажатия для плавности
-                                moveDirection = moveDirection * magnitude
-                            end
-                        end
-                    end
-                end
-            else
-                -- Альтернатива: просто летим вперед при любом касании
-                if UserInputService:IsMouseButtonPressed(Enum.UserInputType.Touch) then
-                    moveDirection = moveDirection + lookVector
-                end
-            end
-        else
-            -- Для ПК: WASD управление
-            
-            -- Вперед/назад (W/S)
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-                moveDirection = moveDirection + lookVector
-            end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-                moveDirection = moveDirection - lookVector
-            end
-            
-            -- Влево/вправо (A/D)
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-                moveDirection = moveDirection - rightVector
-            end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-                moveDirection = moveDirection + rightVector
-            end
-        end
+        -- Получаем MoveDirection из Humanoid
+        local moveDirection = humanoid.MoveDirection
         
         -- Применяем скорость если есть направление
-        if moveDirection.Magnitude > 0 then
+        if moveDirection and moveDirection.Magnitude > 0 then
+            -- Нормализуем и применяем скорость полета
             moveDirection = moveDirection.Unit * MainModule.Fly.Speed
             flyBV.Velocity = moveDirection
+            
+            -- Изменяем состояние для анимаций
+            humanoid:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
         else
+            -- Если нет движения - останавливаемся
             flyBV.Velocity = Vector3.new(0, 0, 0)
+            humanoid:ChangeState(Enum.HumanoidStateType.Physics)
         end
+        
+        -- Отключаем гравитацию при полете
+        rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     end)
     
     -- Обработка смерти персонажа
@@ -3430,9 +3352,14 @@ function MainModule.DisableFlight()
         MainModule.Fly.CharacterAddedConnection = nil
     end
     
-    -- Удаляем BodyVelocity
+    -- Восстанавливаем нормальное поведение
     local character = GetCharacter()
     if character then
+        local humanoid = GetHumanoid(character)
+        if humanoid then
+            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        end
+        
         local rootPart = GetRootPart(character)
         if rootPart then
             local bv = rootPart:FindFirstChild("FlyBodyVelocity")
@@ -3441,7 +3368,6 @@ function MainModule.DisableFlight()
     end
     
     MainModule.Fly.BodyVelocity = nil
-    MainModule.Fly.VirtualJoystick = nil
 end
 
 function MainModule.ToggleFly(enabled)
@@ -4044,6 +3970,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
