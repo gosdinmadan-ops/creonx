@@ -64,11 +64,7 @@ MainModule.Fly = {
     Speed = 39,
     Connection = nil,
     BodyVelocity = nil,
-    OriginalStates = nil,
-    LastPhysicsCheck = 0,
-    PhysicsCheckInterval = 0.3,
-    IsMobile = false,
-    IsAntiCheatBypass = false
+    IsMobile = UserInputService.TouchEnabled
 }
 
 
@@ -3252,56 +3248,11 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
--- Функция для получения вектора движения на мобилке
-local function GetMobileMoveVector()
-    if not MainModule.Fly.IsMobile then 
-        return Vector3.new(0, 0, 0) 
-    end
-    
-    local moveVector = UserInputService:GetMoveVector()
-    
-    if moveVector.Magnitude > 0 then
-        local camera = workspace.CurrentCamera
-        if not camera then return Vector3.new(0, 0, 0) end
-        
-        local lookVector = camera.CFrame.LookVector
-        local rightVector = camera.CFrame.RightVector
-        
-        lookVector = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
-        rightVector = Vector3.new(rightVector.X, 0, rightVector.Z).Unit
-        
-        local direction = (lookVector * moveVector.Y) + (rightVector * moveVector.X)
-        return direction.Unit
-    end
-    
-    return Vector3.new(0, 0, 0)
-end
-
--- Функция создания BodyVelocity
-local function CreateFlyBV(rootPart)
-    if not rootPart then return nil end
-    
-    local flyBV = Instance.new("BodyVelocity")
-    flyBV.Name = "FlyBodyVelocity"
-    flyBV.MaxForce = Vector3.new(40000, 40000, 40000)
-    flyBV.Velocity = Vector3.new(0, 0, 0)
-    flyBV.Parent = rootPart
-    
-    return flyBV
-end
-
--- Улучшенный максимально скрытный Fly с новой логикой
+-- Простой флай: летим туда, куда смотрим/идем
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
     MainModule.Fly.Enabled = true
-    MainModule.Fly.IsMobile = UserInputService.TouchEnabled
-    
-    -- Отключаем все предыдущие соединения
-    if MainModule.Fly.Connection then
-        MainModule.Fly.Connection:Disconnect()
-        MainModule.Fly.Connection = nil
-    end
     
     local character = GetCharacter()
     if not character then return end
@@ -3310,22 +3261,47 @@ function MainModule.EnableFlight()
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
     
-    -- Сохраняем оригинальные состояния
-    MainModule.Fly.OriginalStates = {
-        WalkSpeed = humanoid.WalkSpeed,
-        JumpPower = humanoid.JumpPower,
-        AutoRotate = humanoid.AutoRotate,
-        PlatformStand = humanoid.PlatformStand
-    }
+    -- Создаем BodyVelocity только при полете
+    local function createFlyBV()
+        if MainModule.Fly.BodyVelocity then
+            MainModule.Fly.BodyVelocity:Destroy()
+        end
+        
+        local flyBV = Instance.new("BodyVelocity")
+        flyBV.Name = "FlyBodyVelocity"
+        flyBV.MaxForce = Vector3.new(40000, 40000, 40000)
+        flyBV.Velocity = Vector3.new(0, 0, 0)
+        flyBV.Parent = rootPart
+        
+        MainModule.Fly.BodyVelocity = flyBV
+        return flyBV
+    end
     
-    -- Отключаем авто-ротацию
-    humanoid.AutoRotate = false
-    humanoid.PlatformStand = false
+    -- Создаем BodyVelocity
+    local flyBV = createFlyBV()
     
-    -- Создаем BodyVelocity для движения
-    MainModule.Fly.BodyVelocity = CreateFlyBV(rootPart)
-    
-    MainModule.Fly.LastPhysicsCheck = tick()
+    -- Функция для получения вектора движения на мобилке
+    local function getMobileMoveVector()
+        local moveVector = UserInputService:GetMoveVector()
+        
+        if moveVector.Magnitude > 0 then
+            local camera = workspace.CurrentCamera
+            if not camera then return Vector3.new(0, 0, 0) end
+            
+            local lookVector = camera.CFrame.LookVector
+            local rightVector = camera.CFrame.RightVector
+            
+            -- Обнуляем Y компоненту у векторов направления для горизонтального движения
+            lookVector = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+            rightVector = Vector3.new(rightVector.X, 0, rightVector.Z).Unit
+            
+            -- Комбинируем направление
+            local direction = (lookVector * moveVector.Y) + (rightVector * moveVector.X)
+            return direction.Unit
+        end
+        
+        return Vector3.new(0, 0, 0)
+    end
     
     -- Основной цикл полета
     MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
@@ -3338,144 +3314,75 @@ function MainModule.EnableFlight()
         end
         
         rootPart = GetRootPart(character)
-        if not rootPart or not MainModule.Fly.BodyVelocity then return end
+        if not rootPart or not flyBV then 
+            MainModule.DisableFlight()
+            return 
+        end
         
         local camera = workspace.CurrentCamera
         if not camera then return end
         
-        -- Получаем вектор взгляда камеры
-        local lookVector = camera.CFrame.LookVector
-        local cameraCFrame = camera.CFrame
-        
-        -- Определяем направление движения
+        -- Направление движения
         local moveDirection = Vector3.new(0, 0, 0)
-        local isMoving = false
+        local lookVector = camera.CFrame.LookVector
         
         if MainModule.Fly.IsMobile then
-            -- Для мобильных устройств
-            local mobileDirection = GetMobileMoveVector()
+            -- Для мобильных: летим в направлении виртуального джойстика
+            local mobileDirection = getMobileMoveVector()
             if mobileDirection.Magnitude > 0 then
                 moveDirection = mobileDirection
-                isMoving = true
+            else
+                -- Если джойстик не используется, просто висим на месте
+                moveDirection = Vector3.new(0, 0, 0)
             end
         else
-            -- Для ПК: WASD управление
-            local rightVector = cameraCFrame.RightVector
+            -- Для ПК: WASD управление относительно взгляда камеры
+            local rightVector = camera.CFrame.RightVector
             
-            -- W/S - вперед/назад
+            -- Вперед/назад (W/S)
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then
                 moveDirection = moveDirection + lookVector
-                isMoving = true
             end
             if UserInputService:IsKeyDown(Enum.KeyCode.S) then
                 moveDirection = moveDirection - lookVector
-                isMoving = true
             end
             
-            -- A/D - влево/вправо
+            -- Влево/вправо (A/D)
             if UserInputService:IsKeyDown(Enum.KeyCode.A) then
                 moveDirection = moveDirection - rightVector
-                isMoving = true
             end
             if UserInputService:IsKeyDown(Enum.KeyCode.D) then
                 moveDirection = moveDirection + rightVector
-                isMoving = true
             end
         end
         
-        -- Вертикальное управление
-        local verticalControl = 0
-        if MainModule.Fly.IsMobile then
-            -- На мобильных: летим в направлении взгляда камеры
-            if math.abs(lookVector.Y) > 0.3 then
-                verticalControl = lookVector.Y * 0.7
-                isMoving = true
-            end
+        -- Применяем скорость если есть направление
+        if moveDirection.Magnitude > 0 then
+            moveDirection = moveDirection.Unit * MainModule.Fly.Speed
+            flyBV.Velocity = moveDirection
         else
-            -- На ПК: Space/Shift для высоты
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                verticalControl = 0.7
-                isMoving = true
-            end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
-                verticalControl = -0.7
-                isMoving = true
-            end
-        end
-        
-        if isMoving then
-            -- Нормализуем горизонтальное направление
-            if moveDirection.Magnitude > 0 then
-                moveDirection = moveDirection.Unit
-            end
-            
-            -- Комбинируем горизонтальное и вертикальное движение
-            local finalDirection = Vector3.new(
-                moveDirection.X,
-                verticalControl,
-                moveDirection.Z
-            )
-            
-            if finalDirection.Magnitude > 0 then
-                finalDirection = finalDirection.Unit
-            end
-            
-            -- Устанавливаем скорость движения
-            local targetVelocity = finalDirection * MainModule.Fly.Speed
-            
-            MainModule.Fly.BodyVelocity.Velocity = targetVelocity
-            
-            -- Устанавливаем состояние для анимаций
-            humanoid:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
-            
-            -- Анти-детект: имитируем нормальную физику
-            local currentTime = tick()
-            if currentTime - MainModule.Fly.LastPhysicsCheck > MainModule.Fly.PhysicsCheckInterval then
-                MainModule.Fly.LastPhysicsCheck = currentTime
-                
-                -- Случайное изменение параметров для обхода античита
-                MainModule.Fly.BodyVelocity.MaxForce = Vector3.new(
-                    math.random(35000, 45000),
-                    math.random(35000, 45000),
-                    math.random(35000, 45000)
-                )
-            end
-            
-            rootPart.AssemblyLinearVelocity = targetVelocity * 0.3
-            rootPart.Velocity = targetVelocity * 0.2
-            
-        else
-            -- Если не двигаемся, плавно останавливаемся
-            MainModule.Fly.BodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            
-            -- Плавный сброс скоростей
-            rootPart.AssemblyLinearVelocity = rootPart.AssemblyLinearVelocity * 0.9
-            rootPart.Velocity = rootPart.Velocity * 0.9
-            
-            humanoid:ChangeState(Enum.HumanoidStateType.Physics)
-        end
-        
-        -- Анти-детект: сохраняем оригинальные параметры humanoid
-        if humanoid then
-            humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
-            humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
+            flyBV.Velocity = Vector3.new(0, 0, 0)
         end
     end)
     
     -- Обработка смерти персонажа
-    if MainModule.Fly.HumanoidDiedConnection then
-        MainModule.Fly.HumanoidDiedConnection:Disconnect()
-    end
-    MainModule.Fly.HumanoidDiedConnection = humanoid.Died:Connect(function()
+    local function handleDeath()
         MainModule.DisableFlight()
-    end)
+    end
+    
+    if humanoid then
+        humanoid.Died:Connect(handleDeath)
+    end
     
     -- Обработка смены персонажа
-    if MainModule.Fly.CharacterAddedConnection then
-        MainModule.Fly.CharacterAddedConnection:Disconnect()
-    end
-    MainModule.Fly.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+    local characterAddedConnection
+    characterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newCharacter)
         task.wait(0.5)
+        
+        if characterAddedConnection then
+            characterAddedConnection:Disconnect()
+            characterAddedConnection = nil
+        end
         
         if MainModule.Fly.Enabled then
             MainModule.DisableFlight()
@@ -3490,52 +3397,27 @@ function MainModule.DisableFlight()
     
     MainModule.Fly.Enabled = false
     
-    -- Отключаем все соединения
+    -- Отключаем соединение
     if MainModule.Fly.Connection then
         MainModule.Fly.Connection:Disconnect()
         MainModule.Fly.Connection = nil
     end
     
-    if MainModule.Fly.HumanoidDiedConnection then
-        MainModule.Fly.HumanoidDiedConnection:Disconnect()
-        MainModule.Fly.HumanoidDiedConnection = nil
+    -- Удаляем BodyVelocity
+    if MainModule.Fly.BodyVelocity then
+        MainModule.Fly.BodyVelocity:Destroy()
+        MainModule.Fly.BodyVelocity = nil
     end
     
-    if MainModule.Fly.CharacterAddedConnection then
-        MainModule.Fly.CharacterAddedConnection:Disconnect()
-        MainModule.Fly.CharacterAddedConnection = nil
-    end
-    
+    -- Возвращаем персонажа в нормальное состояние
     local character = GetCharacter()
     if character then
         local rootPart = GetRootPart(character)
         if rootPart then
-            -- Удаляем BodyVelocity
-            local bv = rootPart:FindFirstChild("FlyBodyVelocity")
-            if bv then bv:Destroy() end
-            MainModule.Fly.BodyVelocity = nil
-            
-            -- Плавный сброс физических параметров
             rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             rootPart.Velocity = Vector3.new(0, 0, 0)
         end
-        
-        local humanoid = GetHumanoid(character)
-        if humanoid then
-            -- Восстанавливаем оригинальные состояния
-            if MainModule.Fly.OriginalStates then
-                humanoid.AutoRotate = MainModule.Fly.OriginalStates.AutoRotate
-                humanoid.PlatformStand = MainModule.Fly.OriginalStates.PlatformStand
-                humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
-                humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
-            end
-            
-            -- Возвращаем нормальное состояние
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
-        end
     end
-    
-    MainModule.Fly.OriginalStates = nil
 end
 
 function MainModule.ToggleFly(enabled)
@@ -4138,6 +4020,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
