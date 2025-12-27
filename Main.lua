@@ -243,7 +243,7 @@ MainModule.FreeDashGuards = {
     OriginalSprintValue = 4
 }
 
--- Fixed Ultra Fast Sync Killaura - с уклонением и правильным движением назад
+-- Fixed Killaura v3 - с исправлениями и улучшениями
 MainModule.Killaura = {
     Enabled = false,
     TeleportAnimations = {
@@ -258,12 +258,12 @@ MainModule.Killaura = {
     IsAttached = false,
     AttachmentType = "behind",
     IsLifted = false,
-    LiftHeight = 10, -- Телепорт на 10 блоков вверх
+    LiftHeight = 10,
     TargetAnimationsSet = {},
     
     -- Параметры синхронизации
     BehindDistance = 2,
-    FrontDistance = 6,
+    FrontDistance = 7, -- 7 блоков впереди
     SpeedThreshold = 18,
     
     -- Быстрые параметры
@@ -294,13 +294,16 @@ MainModule.Killaura = {
     LastSyncTime = 0,
     
     -- Уклонение переменные
-    DodgeHeight = 10, -- Телепорт на 10 блоков вверх
-    DodgeDuration = 0.5, -- Длительность уклонения
-    ReturnDuration = 0.3, -- Время возврата
-    DodgeState = "none", -- none, up, down
+    DodgeHeight = 10,
+    DodgeDuration = 0.5,
+    ReturnDuration = 0.3,
+    DodgeState = "none",
     OriginalYPosition = 0,
-    DodgeStartY = 0
+    DodgeStartY = 0,
+    OriginalTargetPosition = Vector3.new(), -- Сохраняем позицию цели при уклонении
+    ReturnAfterDodge = false
 }
+
 
 MainModule.Misc = {
     InstaInteract = false,
@@ -3423,7 +3426,7 @@ for _, animId in pairs(MainModule.Killaura.TeleportAnimations) do
     MainModule.Killaura.TargetAnimationsSet[animId] = true
 end
 
--- Быстрый поиск игрока
+-- Быстрый поиск игрока с проверкой здоровья
 local function findClosestPlayer()
     local players = game:GetService("Players")
     local localPlayer = players.LocalPlayer
@@ -3443,16 +3446,16 @@ local function findClosestPlayer()
     for i = 1, #playerList do
         local player = playerList[i]
         
-        if player ~= localPlayer then
+        if player ~= localPlayer and player.Character then
             local targetChar = player.Character
-            if targetChar then
-                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-                if targetRoot then
-                    local distance = (targetRoot.Position - myPos).Magnitude
-                    if distance < closestDistance then
-                        closestDistance = distance
-                        closestPlayer = player
-                    end
+            local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+            local humanoid = targetChar:FindFirstChildOfClass("Humanoid")
+            
+            if targetRoot and humanoid and humanoid.Health > 0 then
+                local distance = (targetRoot.Position - myPos).Magnitude
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestPlayer = player
                 end
             end
         end
@@ -3461,15 +3464,14 @@ local function findClosestPlayer()
     return closestPlayer
 end
 
--- Проверка анимаций цели с КЭШЕМ для моментального обнаружения
+-- Проверка анимаций цели
 local animationCache = {}
 local lastAnimationFrame = 0
 local function checkTargetAnimationsInstant(targetPlayer)
     if not targetPlayer then return false end
     
-    -- Проверяем каждый кадр, но с оптимизацией
     local currentTime = tick()
-    if currentTime - lastAnimationFrame < 0.016 then -- 60 FPS
+    if currentTime - lastAnimationFrame < 0.016 then
         return animationCache[targetPlayer.UserId] or false
     end
     lastAnimationFrame = currentTime
@@ -3486,7 +3488,6 @@ local function checkTargetAnimationsInstant(targetPlayer)
         return false 
     end
     
-    -- Быстрая проверка через GetPlayingAnimationTracks
     local tracks = humanoid:GetPlayingAnimationTracks()
     local foundAnimation = false
     
@@ -3517,49 +3518,37 @@ task.spawn(function()
     end
 end)
 
--- Быстрая проверка прыжка
+-- Проверка прыжка
 local function checkTargetJumping(targetRoot)
     if not targetRoot then return false end
     return targetRoot.Velocity.Y > 8
 end
 
--- ОПРЕДЕЛЕНИЕ НАПРАВЛЕНИЯ ДВИЖЕНИЯ ЦЕЛИ (ИСПРАВЛЕНО!)
-local function getTargetMovementDirection(targetRoot)
-    if not targetRoot then return "forward" end
+-- ОПРЕДЕЛЕНИЕ НАПРАВЛЕНИЯ ДВИЖЕНИЯ ЦЕЛИ (только вперед/не вперед)
+local function isTargetMovingForward(targetRoot)
+    if not targetRoot then return false end
     
     local targetVel = targetRoot.Velocity
     local targetLook = targetRoot.CFrame.LookVector
     
-    -- Горизонтальная скорость
     local horizontalVel = Vector3.new(targetVel.X, 0, targetVel.Z)
     local horizontalSpeed = horizontalVel.Magnitude
     
     if horizontalSpeed < 2 then
-        return "stationary"
+        return false
     end
     
-    -- Направление взгляда (горизонтальное)
     local lookDirection = Vector3.new(targetLook.X, 0, targetLook.Z).Unit
-    
-    -- Направление движения (горизонтальное)
     local moveDirection = horizontalVel.Unit
     
-    -- Угол между взглядом и движением
     local dotProduct = lookDirection:Dot(moveDirection)
     
-    -- ЕСЛИ ДВИЖЕТСЯ НАЗАД (угол > 120 градусов)
-    if dotProduct < -0.5 then -- Более строгий порог для "назад"
-        return "backward"
-    -- Если движется вперед
-    elseif dotProduct > 0.3 then
-        return "forward"
-    else
-        return "strafe"
-    end
+    -- ТОЛЬКО если движется ВПЕРЕД (угол < 45 градусов)
+    return dotProduct > 0.7 -- Строгий порог для "вперед"
 end
 
--- ТЕЛЕПОРТАЦИЯ НА 10 БЛОКОВ ВВЕРХ (уклонение от анимации)
-local function performTeleportDodge(localRoot, targetPos, deltaTime)
+-- УКЛОНЕНИЕ С СОХРАНЕНИЕМ ЦЕЛИ
+local function performTeleportDodge(localRoot, targetPos, targetLook, deltaTime)
     local config = MainModule.Killaura
     
     if config.DodgeState == "none" then
@@ -3570,32 +3559,37 @@ local function performTeleportDodge(localRoot, targetPos, deltaTime)
         config.DodgeStartY = config.OriginalYPosition
         config.IsLifted = true
         config.DodgeActive = true
+        
+        -- СОХРАНЯЕМ позицию и направление цели
+        config.OriginalTargetPosition = targetPos
+        
+        -- Сохраняем горизонтальную позицию
+        config.LastPosition = Vector3.new(
+            localRoot.Position.X,
+            config.OriginalYPosition,
+            localRoot.Position.Z
+        )
     end
     
     local elapsedTime = tick() - config.DodgeStartTime
     
     if config.DodgeState == "up" then
-        -- ТЕЛЕПОРТ ВВЕРХ (мгновенный!)
+        -- ТЕЛЕПОРТ ВВЕРХ
         local targetY = config.OriginalYPosition + config.DodgeHeight
-        
-        -- Мгновенная телепортация вверх
         local currentPos = localRoot.Position
         local newPos = Vector3.new(currentPos.X, targetY, currentPos.Z)
         
-        -- Сохраняем горизонтальное положение
-        localRoot.CFrame = CFrame.new(newPos, newPos + Vector3.new(0, 0, 1))
-        
-        -- Устанавливаем скорость вверх
+        -- Сохраняем горизонтальную позицию
+        localRoot.CFrame = CFrame.new(newPos, newPos + targetLook)
         localRoot.Velocity = Vector3.new(0, 50, 0)
         
-        -- Переходим в состояние удержания
-        if elapsedTime > config.DodgeDuration * 0.5 then
+        if elapsedTime > config.DodgeDuration * 0.3 then
             config.DodgeState = "hold"
             config.DodgeStartTime = tick()
         end
         
     elseif config.DodgeState == "hold" then
-        -- Удерживаем позицию вверху
+        -- Удерживаем позицию
         local targetY = config.OriginalYPosition + config.DodgeHeight
         local currentY = localRoot.Position.Y
         
@@ -3607,65 +3601,97 @@ local function performTeleportDodge(localRoot, targetPos, deltaTime)
             localRoot.Velocity = Vector3.new(0, 0, 0)
         end
         
-        -- Проверяем, закончилась ли анимация у цели
+        -- Проверяем анимацию
         if config.CurrentTarget then
             local isStillAnimating = checkTargetAnimationsInstant(config.CurrentTarget)
             if not isStillAnimating or elapsedTime > config.DodgeDuration then
                 config.DodgeState = "down"
                 config.DodgeStartTime = tick()
+                config.ReturnAfterDodge = true
             end
+        else
+            -- Если цель потеряна, сразу возвращаемся
+            config.DodgeState = "down"
+            config.DodgeStartTime = tick()
         end
         
     elseif config.DodgeState == "down" then
-        -- ВОЗВРАЩАЕМСЯ ВНИЗ
+        -- ВОЗВРАЩАЕМСЯ НА МЕСТО С СОХРАНЕНИЕМ ЦЕЛИ
         local targetY = config.OriginalYPosition
         local currentY = localRoot.Position.Y
+        local currentPos = localRoot.Position
         
-        if currentY > targetY + 0.5 then
-            -- Плавное опускание
-            local dropSpeed = math.min(60, (currentY - targetY) * 5)
-            localRoot.Velocity = Vector3.new(0, -dropSpeed, 0)
+        if config.ReturnAfterDodge and config.CurrentTarget and config.CurrentTarget.Character then
+            -- Возвращаемся к текущей цели
+            local targetChar = config.CurrentTarget.Character
+            local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
             
-            -- Телепортация если близко
-            if currentY - targetY < 2 then
-                local newPos = Vector3.new(localRoot.Position.X, targetY, localRoot.Position.Z)
-                localRoot.CFrame = CFrame.new(newPos, newPos + Vector3.new(0, 0, 1))
+            if targetRoot then
+                local targetPos = targetRoot.Position
+                local targetLook = targetRoot.CFrame.LookVector
+                
+                -- Вычисляем позицию заново
+                local shouldBeInFront = isTargetMovingForward(targetRoot) and Vector3.new(targetRoot.Velocity.X, 0, targetRoot.Velocity.Z).Magnitude > config.SpeedThreshold
+                local desiredOffset = shouldBeInFront and (targetLook * config.FrontDistance) or (-targetLook * config.BehindDistance)
+                local desiredPos = targetPos + desiredOffset + Vector3.new(0, targetY - currentY, 0)
+                
+                -- Плавное возвращение
+                local direction = desiredPos - currentPos
+                local distance = direction.Magnitude
+                
+                if distance > 1 then
+                    local speed = math.min(config.MovementSpeed, distance * 20)
+                    local moveStep = direction.Unit * speed * deltaTime
+                    localRoot.CFrame = CFrame.new(currentPos + moveStep, targetPos)
+                    localRoot.Velocity = moveStep / deltaTime
+                else
+                    config.DodgeState = "none"
+                    config.DodgeActive = false
+                    config.IsLifted = false
+                    config.ReturnAfterDodge = false
+                    config.InstantSyncActive = true
+                end
+            else
+                -- Если цель невалидна, выключаем уклонение
+                config.DodgeState = "none"
+                config.DodgeActive = false
+                config.IsLifted = false
+                config.ReturnAfterDodge = false
             end
         else
-            -- Вернулись на место
-            config.DodgeState = "none"
-            config.DodgeActive = false
-            config.IsLifted = false
+            -- Просто опускаемся
+            if currentY > targetY + 0.5 then
+                local dropSpeed = math.min(60, (currentY - targetY) * 5)
+                localRoot.Velocity = Vector3.new(0, -dropSpeed, 0)
+            else
+                local newPos = Vector3.new(currentPos.X, targetY, currentPos.Z)
+                localRoot.CFrame = CFrame.new(newPos, newPos + Vector3.new(0, 0, 1))
+                config.DodgeState = "none"
+                config.DodgeActive = false
+                config.IsLifted = false
+                config.ReturnAfterDodge = false
+            end
         end
         
-        if elapsedTime > config.ReturnDuration then
-            -- Принудительный телепорт на место если время вышло
-            local newPos = Vector3.new(localRoot.Position.X, config.OriginalYPosition, localRoot.Position.Z)
-            localRoot.CFrame = CFrame.new(newPos, newPos + Vector3.new(0, 0, 1))
+        if elapsedTime > config.ReturnDuration * 2 then
             config.DodgeState = "none"
             config.DodgeActive = false
             config.IsLifted = false
+            config.ReturnAfterDodge = false
         end
     end
 end
 
 -- Мгновенная синхронизация позиции
-local function instantPositionSync(localRoot, targetPos, targetLook, attachmentType, deltaTime, movementDirection)
+local function instantPositionSync(localRoot, targetPos, targetLook, shouldBeInFront, deltaTime)
     local config = MainModule.Killaura
     
-    -- ВСЕГДА позади если цель движется назад!
-    if movementDirection == "backward" then
-        attachmentType = "behind"
-    end
+    -- Определяем тип прикрепления
+    local attachmentType = shouldBeInFront and "front" or "behind"
+    config.AttachmentType = attachmentType
     
     -- Вычисляем желаемую позицию
-    local desiredOffset
-    if attachmentType == "behind" then
-        desiredOffset = -targetLook * config.BehindDistance
-    else
-        desiredOffset = targetLook * config.FrontDistance
-    end
-    
+    local desiredOffset = shouldBeInFront and (targetLook * config.FrontDistance) or (-targetLook * config.BehindDistance)
     local desiredPos = targetPos + desiredOffset
     
     -- Мгновенное перемещение
@@ -3674,15 +3700,11 @@ local function instantPositionSync(localRoot, targetPos, targetLook, attachmentT
     local distance = direction.Magnitude
     
     if distance > 0.01 then
-        -- Мгновенная скорость
         local speed = math.min(config.MovementSpeed * 2, distance * 50)
         local moveStep = direction.Unit * speed * deltaTime
         local newPos = currentPos + moveStep
         
-        -- Быстрый поворот (всегда смотрим на цель)
-        local lookAtPos = targetPos
-        
-        local targetCF = CFrame.new(newPos, lookAtPos)
+        local targetCF = CFrame.new(newPos, targetPos)
         local currentCF = localRoot.CFrame
         local smoothCF = currentCF:Lerp(targetCF, config.RotationSpeed * deltaTime * 2)
         
@@ -3693,14 +3715,10 @@ local function instantPositionSync(localRoot, targetPos, targetLook, attachmentT
         config.LastSyncTime = tick()
         
     else
-        -- Фиксация на месте
         localRoot.CFrame = CFrame.new(desiredPos, targetPos)
         localRoot.Velocity = Vector3.new(0, 0, 0)
         config.InstantSyncActive = false
     end
-    
-    -- Обновляем тип прикрепления
-    config.AttachmentType = attachmentType
 end
 
 -- Основная функция синхронизации
@@ -3713,8 +3731,8 @@ local function ultraFastSync(targetRoot, targetHumanoid, localRoot, deltaTime)
     local targetLook = targetRoot.CFrame.LookVector
     local horizontalSpeed = Vector3.new(targetVel.X, 0, targetVel.Z).Magnitude
     
-    -- Определяем направление движения цели
-    local movementDirection = getTargetMovementDirection(targetRoot)
+    -- Определяем, движется ли цель ВПЕРЕД
+    local isMovingForward = isTargetMovingForward(targetRoot)
     
     -- Проверка прыжка
     local isTargetJumping = checkTargetJumping(targetRoot)
@@ -3730,18 +3748,17 @@ local function ultraFastSync(targetRoot, targetHumanoid, localRoot, deltaTime)
         end
     end
     
-    -- ПРОВЕРКА АНИМАЦИЙ ДЛЯ УКЛОНЕНИЯ (ИСПРАВЛЕНО!)
+    -- ПРОВЕРКА АНИМАЦИЙ ДЛЯ УКЛОНЕНИЯ
     if config.CurrentTarget then
         local isAnimating = checkTargetAnimationsInstant(config.CurrentTarget)
         
-        -- Если цель использует анимацию телепорта - УКЛОНЯЕМСЯ!
         if isAnimating and not config.DodgeActive then
-            performTeleportDodge(localRoot, targetPos, deltaTime)
+            performTeleportDodge(localRoot, targetPos, targetLook, deltaTime)
             config.LastAnimationCheck = tick()
-            return -- Прерываем обычную синхронизацию во время уклонения
-        elseif not isAnimating and config.DodgeActive then
-            -- Завершаем уклонение если анимация закончилась
+            return
+        elseif not isAnimating and config.DodgeActive and config.DodgeState ~= "down" then
             config.DodgeState = "down"
+            config.DodgeStartTime = tick()
         end
     end
     
@@ -3750,15 +3767,12 @@ local function ultraFastSync(targetRoot, targetHumanoid, localRoot, deltaTime)
         return
     end
     
-    -- Определяем позицию с учетом движения НАЗАД
-    local shouldBeInFront = (horizontalSpeed > config.SpeedThreshold) 
-        and not config.IsJumping 
-        and movementDirection ~= "backward" -- НЕ впереди если идет назад!
-    
-    local newAttachmentType = shouldBeInFront and "front" or "behind"
+    -- Определяем, должны ли мы быть впереди
+    -- ТОЛЬКО если цель движется ВПЕРЕД и скорость > 18
+    local shouldBeInFront = isMovingForward and horizontalSpeed > config.SpeedThreshold and not config.IsJumping
     
     -- МГНОВЕННАЯ СИНХРОНИЗАЦИЯ ПОЗИЦИИ
-    instantPositionSync(localRoot, targetPos, targetLook, newAttachmentType, deltaTime, movementDirection)
+    instantPositionSync(localRoot, targetPos, targetLook, shouldBeInFront, deltaTime)
     
     -- Синхронизация прыжка
     if config.IsJumping then
@@ -3794,6 +3808,32 @@ local function ultraFastSync(targetRoot, targetHumanoid, localRoot, deltaTime)
     config.TargetLastVelocity = targetVel
 end
 
+-- Функция проверки и смены цели
+local function checkAndSwitchTarget()
+    local config = MainModule.Killaura
+    
+    if not config.Enabled then return false end
+    
+    local currentTarget = config.CurrentTarget
+    
+    -- Проверяем текущую цель
+    if currentTarget then
+        local targetChar = currentTarget.Character
+        if not targetChar then
+            return false -- Цель невалидна
+        end
+        
+        local humanoid = targetChar:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then
+            return false -- Цель мертва
+        end
+    else
+        return false -- Нет цели
+    end
+    
+    return true -- Цель валидна
+end
+
 -- Основной цикл
 local function updateUltraFastSync(deltaTime)
     if not MainModule.Killaura.Enabled then return end
@@ -3810,82 +3850,69 @@ local function updateUltraFastSync(deltaTime)
     
     local config = MainModule.Killaura
     
-    -- Поиск цели
-    if not config.CurrentTarget or not config.IsAttached then
+    -- Проверяем и обновляем цель
+    if not checkAndSwitchTarget() then
+        config.CurrentTarget = nil
+        config.IsAttached = false
+        
         local closestPlayer = findClosestPlayer()
         if closestPlayer then
             config.CurrentTarget = closestPlayer
             config.IsAttached = true
-            config.IsLifted = false
-            config.IsJumping = false
-            config.DodgeActive = false
-            config.DodgeState = "none"
             config.InstantSyncActive = true
-            
-            local targetChar = closestPlayer.Character
-            local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-            
-            if targetRoot then
-                local targetVel = targetRoot.Velocity
-                local horizontalSpeed = Vector3.new(targetVel.X, 0, targetVel.Z).Magnitude
-                local targetLook = targetRoot.CFrame.LookVector
-                local movementDir = getTargetMovementDirection(targetRoot)
-                
-                local startPos
-                if horizontalSpeed > config.SpeedThreshold and movementDir ~= "backward" then
-                    startPos = targetRoot.Position + (targetLook * config.FrontDistance)
-                    config.AttachmentType = "front"
-                else
-                    startPos = targetRoot.Position - (targetLook * config.BehindDistance)
-                    config.AttachmentType = "behind"
-                end
-                
-                -- Мгновенная установка позиции
-                localRoot.CFrame = CFrame.new(startPos, targetRoot.Position)
-                config.LastPosition = startPos
-                config.LastSyncTime = tick()
-            end
+        else
+            -- НЕ НАШЛИ НОВУЮ ЦЕЛЬ - ВЫКЛЮЧАЕМ
+            MainModule.ToggleKillaura(false)
+            ShowNotification("Killaura", "Целей не найдено, отключено", 2)
+            return
         end
+    end
+    
+    -- Если после проверки все еще нет цели - выходим
+    if not config.CurrentTarget or not config.IsAttached then
         return
     end
     
-    -- Валидация цели
-    local targetPlayer = config.CurrentTarget
-    if not targetPlayer or not targetPlayer.Character then
-        config.CurrentTarget = nil
-        config.IsAttached = false
-        config.DodgeActive = false
-        config.DodgeState = "none"
-        return
-    end
-    
-    local targetChar = targetPlayer.Character
+    -- Получаем данные цели
+    local targetChar = config.CurrentTarget.Character
     local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
     local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
     
-    if not targetRoot or not targetHumanoid or targetHumanoid.Health <= 0 then
+    if not targetRoot or not targetHumanoid then
         config.CurrentTarget = nil
         config.IsAttached = false
-        config.IsLifted = false
-        config.IsJumping = false
-        config.DodgeActive = false
-        config.DodgeState = "none"
         return
     end
     
-    -- Синхронизация
+    -- Проверяем здоровье цели
+    if targetHumanoid.Health <= 0 then
+        config.CurrentTarget = nil
+        config.IsAttached = false
+        return
+    end
+    
+    -- Выполняем синхронизацию
     ultraFastSync(targetRoot, targetHumanoid, localRoot, deltaTime)
 end
 
--- Включение/выключение
+-- Включение/выключение с проверкой цели
 function MainModule.ToggleKillaura(enabled)
     local config = MainModule.Killaura
     
     if config.Enabled == enabled then return end
     
+    if enabled then
+        -- ПРИ ВКЛЮЧЕНИИ: проверяем, есть ли цели
+        local closestPlayer = findClosestPlayer()
+        if not closestPlayer then
+            ShowNotification("Killaura", "Целей не найдено, не включается", 2)
+            return -- НЕ включаем если нет целей
+        end
+    end
+    
     config.Enabled = enabled
     
-    -- Очистка
+    -- Очистка соединений
     for _, conn in pairs(config.Connections) do
         if conn then
             conn:Disconnect()
@@ -3905,7 +3932,41 @@ function MainModule.ToggleKillaura(enabled)
         return
     end
     
-    ShowNotification("Killaura", "Включено - FIXED ULTRA FAST", 1)
+    -- Находим цель при включении
+    local closestPlayer = findClosestPlayer()
+    if closestPlayer then
+        config.CurrentTarget = closestPlayer
+        config.IsAttached = true
+        config.InstantSyncActive = true
+        
+        -- Мгновенная установка позиции
+        local localPlayer = game:GetService("Players").LocalPlayer
+        if localPlayer and localPlayer.Character then
+            local localRoot = localPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local targetChar = closestPlayer.Character
+            local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+            
+            if localRoot and targetRoot then
+                local targetLook = targetRoot.CFrame.LookVector
+                local isMovingForward = isTargetMovingForward(targetRoot)
+                local horizontalSpeed = Vector3.new(targetRoot.Velocity.X, 0, targetRoot.Velocity.Z).Magnitude
+                local shouldBeInFront = isMovingForward and horizontalSpeed > config.SpeedThreshold
+                
+                local desiredOffset = shouldBeInFront and (targetLook * config.FrontDistance) or (-targetLook * config.BehindDistance)
+                local startPos = targetRoot.Position + desiredOffset
+                
+                localRoot.CFrame = CFrame.new(startPos, targetRoot.Position)
+                config.LastPosition = startPos
+            end
+        end
+        
+        ShowNotification("Killaura", "Включено - Цель найдена", 1)
+    else
+        -- НЕ НАШЛИ ЦЕЛЬ ПРИ ВКЛЮЧЕНИИ - ВЫКЛЮЧАЕМ
+        config.Enabled = false
+        ShowNotification("Killaura", "Целей не найдено, не включено", 2)
+        return
+    end
     
     -- Основной цикл
     local heartbeatConn = game:GetService("RunService").Heartbeat:Connect(function(deltaTime)
@@ -3932,12 +3993,15 @@ function MainModule.ToggleKillaura(enabled)
             config.DodgeActive = false
             config.DodgeState = "none"
             
-            task.delay(0.1, function()
+            task.delay(0.2, function()
                 local closestPlayer = findClosestPlayer()
                 if closestPlayer then
                     config.CurrentTarget = closestPlayer
                     config.IsAttached = true
                     config.InstantSyncActive = true
+                else
+                    MainModule.ToggleKillaura(false)
+                    ShowNotification("Killaura", "Целей не найдено после респавна", 2)
                 end
             end)
         end)
@@ -3951,17 +4015,40 @@ function MainModule.ToggleKillaura(enabled)
             config.DodgeActive = false
             config.DodgeState = "none"
             
-            task.delay(0.05, function()
+            task.delay(0.1, function()
                 local closestPlayer = findClosestPlayer()
                 if closestPlayer then
                     config.CurrentTarget = closestPlayer
                     config.IsAttached = true
                     config.InstantSyncActive = true
+                else
+                    MainModule.ToggleKillaura(false)
+                    ShowNotification("Killaura", "Цель вышла, новых нет", 2)
                 end
             end)
         end
     end)
     table.insert(config.Connections, removeConn)
+    
+    -- Периодическая проверка цели
+    task.spawn(function()
+        while config.Enabled do
+            task.wait(1)
+            
+            if not checkAndSwitchTarget() then
+                local closestPlayer = findClosestPlayer()
+                if closestPlayer then
+                    config.CurrentTarget = closestPlayer
+                    config.IsAttached = true
+                    config.InstantSyncActive = true
+                else
+                    MainModule.ToggleKillaura(false)
+                    ShowNotification("Killaura", "Цель потеряна, новых нет", 2)
+                    break
+                end
+            end
+        end
+    end)
 end
 
 -- Функции для горячих клавиш
@@ -4379,6 +4466,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
