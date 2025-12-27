@@ -3248,7 +3248,7 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
--- Упрощенный универсальный Fly: летим в направлении камеры
+-- Упрощенный универсальный Fly: летим в направлении движения персонажа
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
@@ -3286,51 +3286,41 @@ function MainModule.EnableFlight()
         local humanoid = GetHumanoid(character)
         if not humanoid then return end
         
-        -- Получаем направление движения с клавиш/джойстика
+        -- Получаем текущее направление движения персонажа
         local moveDirection = humanoid.MoveDirection
         
-        -- Если персонаж движется, летим в направлении камеры
+        -- Если персонаж движется, летим в этом направлении
         if moveDirection.Magnitude > 0 then
-            local camera = workspace.CurrentCamera
-            if not camera then
-                flyBV.Velocity = Vector3.new(0, 0, 0)
-                return
+            -- Горизонтальное направление берем из moveDirection (WASD/джойстик)
+            local horizontalDirection = Vector3.new(moveDirection.X, 0, moveDirection.Z)
+            
+            -- Для вертикального движения проверяем камеру
+            local verticalDirection = Vector3.new(0, 0, 0)
+            if moveDirection.Y ~= 0 then
+                local camera = workspace.CurrentCamera
+                if camera then
+                    -- Если есть вертикальный ввод (вверх/вниз), летим по направлению взгляда камеры
+                    local cameraLook = camera.CFrame.LookVector
+                    -- Берем вертикальную компоненту из вектора взгляда камеры
+                    local cameraUp = camera.CFrame.UpVector
+                    
+                    if moveDirection.Y > 0 then -- Вверх
+                        verticalDirection = cameraUp * math.abs(moveDirection.Y)
+                    elseif moveDirection.Y < 0 then -- Вниз
+                        verticalDirection = -cameraUp * math.abs(moveDirection.Y)
+                    end
+                else
+                    -- Если камеры нет, используем обычное вертикальное направление
+                    verticalDirection = Vector3.new(0, moveDirection.Y, 0)
+                end
             end
             
-            -- Получаем базовые векторы камеры
-            local cameraCF = camera.CFrame
-            local lookVector = cameraCF.LookVector  -- Куда смотрит камера (вперед)
-            local rightVector = cameraCF.RightVector -- Вправо от камеры
-            local upVector = cameraCF.UpVector       -- Вверх от камеры
+            -- Комбинируем горизонтальное и вертикальное направления
+            local finalDirection = horizontalDirection + verticalDirection
             
-            -- Вычисляем направление полета
-            local flightDirection = Vector3.new(0, 0, 0)
-            
-            -- Вперед/назад (по оси Z moveDirection)
-            if moveDirection.Z > 0 then -- Вперед (W или вверх на джойстике)
-                flightDirection = flightDirection + lookVector * math.abs(moveDirection.Z)
-            elseif moveDirection.Z < 0 then -- Назад (S или вниз на джойстике)
-                flightDirection = flightDirection - lookVector * math.abs(moveDirection.Z)
-            end
-            
-            -- Влево/вправо (по оси X moveDirection)
-            if moveDirection.X > 0 then -- Вправо (D или вправо на джойстике)
-                flightDirection = flightDirection + rightVector * math.abs(moveDirection.X)
-            elseif moveDirection.X < 0 then -- Влево (A или влево на джойстике)
-                flightDirection = flightDirection - rightVector * math.abs(moveDirection.X)
-            end
-            
-            -- Вверх/вниз (по оси Y moveDirection) - используем upVector камеры
-            if moveDirection.Y > 0 then -- Вверх (обычно Space или специальная кнопка)
-                flightDirection = flightDirection + upVector * math.abs(moveDirection.Y)
-            elseif moveDirection.Y < 0 then -- Вниз (обычно Shift или специальная кнопка)
-                flightDirection = flightDirection - upVector * math.abs(moveDirection.Y)
-            end
-            
-            -- Нормализуем направление и умножаем на скорость
-            if flightDirection.Magnitude > 0 then
-                flightDirection = flightDirection.Unit * MainModule.Fly.Speed
-                flyBV.Velocity = flightDirection
+            if finalDirection.Magnitude > 0 then
+                finalDirection = finalDirection.Unit * MainModule.Fly.Speed
+                flyBV.Velocity = finalDirection
             else
                 flyBV.Velocity = Vector3.new(0, 0, 0)
             end
@@ -3996,6 +3986,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
