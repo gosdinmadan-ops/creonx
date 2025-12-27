@@ -3248,7 +3248,7 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
--- Упрощенный универсальный Fly: летим в направлении движения персонажа
+-- Упрощенный универсальный Fly: летим туда, куда смотрим
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
@@ -3283,16 +3283,45 @@ function MainModule.EnableFlight()
         rootPart = GetRootPart(character)
         if not rootPart or not flyBV then return end
         
-        local humanoid = GetHumanoid(character)
-        if not humanoid then return end
+        local Camera = workspace.CurrentCamera
+        if not Camera then return end
         
         -- Получаем текущее направление движения персонажа
         local moveDirection = humanoid.MoveDirection
         
-        -- Если персонаж движется, летим в этом направлении
+        -- Получаем вектор взгляда камеры (куда смотрим)
+        local lookVector = Camera.CFrame.LookVector
+        
+        -- Определяем направление полета на основе движения персонажа
+        local flyDirection = Vector3.new(0, 0, 0)
+        
+        -- Вперед (W или джойстик вперед) = летим вперед (по вектору взгляда)
         if moveDirection.Magnitude > 0 then
-            moveDirection = moveDirection.Unit * MainModule.Fly.Speed
-            flyBV.Velocity = moveDirection
+            -- Анализируем направление движения относительно взгляда
+            local moveForward = moveDirection:Dot(lookVector) > 0.3  -- Двигаемся вперед
+            local moveBackward = moveDirection:Dot(lookVector) < -0.3  -- Двигаемся назад
+            local moveRight = moveDirection:Dot(Camera.CFrame.RightVector) > 0.3  -- Двигаемся вправо
+            local moveLeft = moveDirection:Dot(Camera.CFrame.RightVector) < -0.3  -- Двигаемся влево
+            
+            if moveForward then
+                flyDirection = flyDirection + lookVector
+            elseif moveBackward then
+                flyDirection = flyDirection - lookVector
+            end
+            
+            if moveRight then
+                flyDirection = flyDirection + Camera.CFrame.RightVector
+            elseif moveLeft then
+                flyDirection = flyDirection - Camera.CFrame.RightVector
+            end
+            
+            -- Нормализуем если есть движение
+            if flyDirection.Magnitude > 0 then
+                flyDirection = flyDirection.Unit * MainModule.Fly.Speed
+                flyBV.Velocity = flyDirection
+            else
+                flyBV.Velocity = Vector3.new(0, 0, 0)
+            end
         else
             flyBV.Velocity = Vector3.new(0, 0, 0)
         end
@@ -3960,6 +3989,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
