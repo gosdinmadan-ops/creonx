@@ -3248,7 +3248,7 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
--- Упрощенный универсальный Fly: летим в направлении движения персонажа
+-- Полёт строго по направлению камеры (куда смотрим - туда и летим)
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
@@ -3286,71 +3286,49 @@ function MainModule.EnableFlight()
         local humanoid = GetHumanoid(character)
         if not humanoid then return end
         
+        -- Летим строго по направлению камеры (куда смотрим - туда и летим)
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+        
         -- Получаем текущее направление движения персонажа
         local moveDirection = humanoid.MoveDirection
         
-        -- Если персонаж движется, летим в этом направлении
+        -- Для ПК: используем WASD для направления (горизонтальное движение)
+        -- Для мобилок: используем виртуальный джойстик
+        
         if moveDirection.Magnitude > 0 then
-            -- Для вертикального движения используем направление взгляда камеры
-            local camera = workspace.CurrentCamera
-            local finalDirection = Vector3.new(0, 0, 0)
+            -- Горизонтальное направление берем из moveDirection
+            local horizontalDirection = Vector3.new(moveDirection.X, 0, moveDirection.Z)
             
-            if camera then
-                -- Вектор взгляда камеры (куда смотрим)
-                local lookVector = camera.CFrame.LookVector
-                
-                -- Нормализуем горизонтальное направление движения
-                local horizontalMove = Vector3.new(moveDirection.X, 0, moveDirection.Z)
-                if horizontalMove.Magnitude > 0 then
-                    horizontalMove = horizontalMove.Unit
-                end
-                
-                -- Создаем горизонтальное направление полета на основе направления взгляда
-                local horizontalLook = Vector3.new(lookVector.X, 0, lookVector.Z)
-                if horizontalLook.Magnitude > 0 then
-                    horizontalLook = horizontalLook.Unit
-                end
-                
-                -- Комбинируем: горизонтальное направление из движения, но ориентацию из взгляда
-                local horizontalVelocity = Vector3.new(0, 0, 0)
-                if horizontalMove.Magnitude > 0 and horizontalLook.Magnitude > 0 then
-                    -- Идем вперед/назад/вбок относительно взгляда камеры
-                    if moveDirection.Z > 0 then -- W/вперед
-                        horizontalVelocity = horizontalVelocity + horizontalLook
-                    end
-                    if moveDirection.Z < 0 then -- S/назад
-                        horizontalVelocity = horizontalVelocity - horizontalLook
-                    end
-                    if moveDirection.X > 0 then -- D/вправо
-                        local rightVector = camera.CFrame.RightVector
-                        horizontalVelocity = horizontalVelocity + Vector3.new(rightVector.X, 0, rightVector.Z).Unit
-                    end
-                    if moveDirection.X < 0 then -- A/влево
-                        local rightVector = camera.CFrame.RightVector
-                        horizontalVelocity = horizontalVelocity - Vector3.new(rightVector.X, 0, rightVector.Z).Unit
-                    end
-                end
-                
-                -- Вертикальное движение (вверх/вниз) берем из вектора взгляда камеры
-                local verticalVelocity = Vector3.new(0, 0, 0)
-                if moveDirection.Y > 0 then -- Вверх
-                    -- Двигаемся вверх по направлению взгляда
-                    verticalVelocity = Vector3.new(0, math.abs(lookVector.Y), 0)
-                elseif moveDirection.Y < 0 then -- Вниз
-                    -- Двигаемся вниз по направлению взгляда
-                    verticalVelocity = Vector3.new(0, -math.abs(lookVector.Y), 0)
-                end
-                
-                -- Объединяем горизонтальную и вертикальную компоненты
-                finalDirection = horizontalVelocity + verticalVelocity
-            else
-                -- Если камеры нет, используем простое направление движения
-                finalDirection = moveDirection
+            -- Вертикальное направление: если персонаж идет вперед/назад/вбок
+            -- Для полета вверх/вниз нужно вертикальное движение
+            local verticalDirection = Vector3.new(0, 0, 0)
+            
+            -- НОВАЯ ЛОГИКА: Летим в направлении камеры с учетом вертикального компонента
+            local cameraLook = camera.CFrame.LookVector
+            
+            -- Проецируем горизонтальное направление движения на направление взгляда камеры
+            local forwardDirection = cameraLook * moveDirection.Z
+            local rightDirection = camera.CFrame.RightVector * moveDirection.X
+            
+            -- Комбинируем направления
+            local flightDirection = forwardDirection + rightDirection
+            
+            -- Добавляем возможность лететь вверх/вниз с помощью вертикальной оси
+            -- Для ПК: вертикальная ось может быть из клавиш или мыши
+            -- Для мобилок: из виртуального джойстика или тапов
+            local verticalInput = moveDirection.Y
+            
+            if verticalInput ~= 0 then
+                -- Для вертикального полета используем вертикальную компоненту камеры
+                local cameraUp = camera.CFrame.UpVector
+                flightDirection = flightDirection + (cameraUp * verticalInput)
             end
             
-            if finalDirection.Magnitude > 0 then
-                finalDirection = finalDirection.Unit * MainModule.Fly.Speed
-                flyBV.Velocity = finalDirection
+            -- Нормализуем и применяем скорость
+            if flightDirection.Magnitude > 0 then
+                flightDirection = flightDirection.Unit * MainModule.Fly.Speed
+                flyBV.Velocity = flightDirection
             else
                 flyBV.Velocity = Vector3.new(0, 0, 0)
             end
@@ -4016,6 +3994,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
