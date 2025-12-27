@@ -3066,13 +3066,7 @@ local function executeDodge()
     local player = game:GetService("Players").LocalPlayer
     if not player then return false end
     
-    local remote = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
-    if remote then
-        remote = remote:FindFirstChild("UsedTool")
-        if not remote then return false end
-    else
-        return false
-    end
+    local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("UsedTool")
     
     local tool = nil
     if player.Character then
@@ -3080,14 +3074,20 @@ local function executeDodge()
     end
     
     if not tool and player:FindFirstChild("Backpack") then
-        local backpack = player:FindFirstChild("Backpack")
+        local backpack = player:WaitForChild("Backpack")
         tool = backpack:FindFirstChild("DODGE!")
     end
     
     if not tool then return false end
     
+    -- Подготовка аргументов как в примере
+    local args = {
+        buffer.fromstring("\207\201\202\201\202\202\202\202\202\202:\245\206\197\202\202\202\159\185\163\164\173\135\165\188\175\137\191\185\190\165\167\201\202\202\202\202\202\202\202\138\204\203\202\201\202\202\202\202\202\202\218\138\207\203\202\206\205\202\202\202\139\191\190\165\159\185\175\203"),
+        {tool}  -- инструмент передается как таблица
+    }
+    
     local success = pcall(function() 
-        remote:FireServer("UsingMoveCustom", tool, nil, {Clicked = true}) 
+        remote:FireServer(unpack(args))
     end)
     
     if success then
@@ -4466,6 +4466,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
