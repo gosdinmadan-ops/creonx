@@ -3248,6 +3248,7 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
+-- Упрощенный универсальный Fly: летим туда, куда смотрим
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
@@ -3303,7 +3304,7 @@ function MainModule.EnableFlight()
         if horizontalLook.Magnitude > 0.1 then
             rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + horizontalLook)
         end
-    end))
+    end)
     
     -- Обработка смерти персонажа
     if MainModule.Fly.HumanoidDiedConnection then
@@ -3356,6 +3357,16 @@ function MainModule.DisableFlight()
         if rootPart then
             local bv = rootPart:FindFirstChild("FlyBodyVelocity")
             if bv then bv:Destroy() end
+        end
+    end
+    
+    -- Восстанавливаем гравитацию
+    local character = GetCharacter()
+    if character then
+        local humanoid = GetHumanoid(character)
+        if humanoid then
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
         end
     end
     
@@ -3962,6 +3973,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
