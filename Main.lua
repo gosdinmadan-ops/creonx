@@ -178,7 +178,7 @@ MainModule.SpikesKillFeature = {
 MainModule.VoidKillFeature = {
     Enabled = false,
     AnimationIds = {
-        "rbxassetid://105341857343164",
+        "rbxassetid://107989020363293",
         "rbxassetid://71619354165195"
     },
     ZonePosition = Vector3.new(-95.1, 964.6, 67.6),
@@ -4020,6 +4020,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
