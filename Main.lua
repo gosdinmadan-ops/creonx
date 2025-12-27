@@ -247,12 +247,14 @@ MainModule.Killaura = {
     Enabled = false,
     TeleportAnimations = {
         "79649041083405",
-        "73242877658272",
+        "73242877658272", 
         "85793691404836",
         "86197206792061",
         "99157505926076"
     },
-    Connections = {}
+    Connections = {},
+    LastTeleportTime = 0,
+    TeleportCooldown = 0.5 -- Костыль чтобы не спамить телепорт
 }
 
 MainModule.Misc = {
@@ -3371,21 +3373,24 @@ function MainModule.SetFlySpeed(speed)
     return MainModule.Fly.Speed
 end
 
--- Функция поиска ближайшего игрока
+-- БЫСТРАЯ функция поиска ближайшего игрока
 local function findClosestPlayer()
-    local character = GetCharacter()
-    if not character then return nil, 0 end
+    local character = game.Players.LocalPlayer.Character
+    if not character then return nil end
     
-    local rootPart = GetRootPart(character)
-    if not rootPart then return nil, 0 end
+    local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+    if not rootPart then return nil end
     
     local closestPlayer = nil
     local closestDistance = math.huge
     
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
-            local targetHumanoid = player.Character:FindFirstChild("Humanoid")
+    local players = game:GetService("Players"):GetPlayers()
+    
+    for _, player in pairs(players) do
+        if player ~= game.Players.LocalPlayer and player.Character then
+            local targetCharacter = player.Character
+            local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart") or targetCharacter:FindFirstChild("Torso")
+            local targetHumanoid = targetCharacter:FindFirstChild("Humanoid")
             
             if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
                 local distance = (targetRoot.Position - rootPart.Position).Magnitude
@@ -3397,54 +3402,108 @@ local function findClosestPlayer()
         end
     end
     
-    return closestPlayer, closestDistance
+    return closestPlayer
 end
 
 -- Функция телепортации к цели
 local function teleportToTarget(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return false end
     
-    local character = GetCharacter()
+    local character = game.Players.LocalPlayer.Character
     if not character then return false end
     
-    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local humanoid = targetPlayer.Character:FindFirstChild("Humanoid")
+    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart") or targetPlayer.Character:FindFirstChild("Torso")
+    if not targetRoot then return false end
     
-    if not targetRoot or not humanoid or humanoid.Health <= 0 then
-        return false
-    end
-    
-    local rootPart = GetRootPart(character)
+    local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
     if not rootPart then return false end
     
     local targetSpeed = targetRoot.Velocity.Magnitude
-    local targetLookVector = targetRoot.CFrame.LookVector
     
+    -- МОМЕНТАЛЬНАЯ ТЕЛЕПОРТАЦИЯ
     if targetSpeed >= 16 and targetSpeed <= 18 then
-        -- Телепортация вплотную к игроку
+        -- Телепорт вплотную
         rootPart.CFrame = CFrame.new(targetRoot.Position)
+        return true
     elseif targetSpeed >= 20 and targetSpeed <= 30 then
-        -- Телепортация вперед игрока на 5 блоков
-        local teleportPos = targetRoot.Position + (targetLookVector * 5)
+        -- Телепорт вперед по взгляду
+        local lookVector = targetRoot.CFrame.LookVector
+        local teleportPos = targetRoot.Position + (lookVector * 5)
         rootPart.CFrame = CFrame.new(teleportPos)
+        return true
+    else
+        -- Если скорость не подходит, все равно телепортируемся вплотную
+        rootPart.CFrame = CFrame.new(targetRoot.Position)
+        return true
     end
-    
-    return true
 end
 
--- Функция проверки анимаций нашего персонажа
-local function checkOurAnimations()
-    local character = GetCharacter()
+-- АЛЬТЕРНАТИВНЫЙ метод проверки анимаций - через отслеживание всех AnimationController
+local function checkOurAnimationsAlternative()
+    local character = game.Players.LocalPlayer.Character
     if not character then return false end
     
-    local humanoid = GetHumanoid(character)
+    -- Проверяем все AnimationTrack в персонаже
+    local animator = character:FindFirstChildOfClass("Animator")
+    if not animator then return false end
+    
+    -- Получаем все активные треки
+    for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+        if track and track.Animation then
+            local animId = tostring(track.Animation.AnimationId)
+            -- Убираем ненужные части из ID
+            animId = animId:gsub("rbxassetid://", ""):gsub("%D", "")
+            
+            for _, targetAnim in pairs(MainModule.Killaura.TeleportAnimations) do
+                if animId == targetAnim then
+                    return true
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+-- ГЛАВНЫЙ метод - отслеживаем через Humanoid
+local function checkOurAnimations()
+    local character = game.Players.LocalPlayer.Character
+    if not character then return false end
+    
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
     
+    -- Проверяем анимации на Humanoid
     for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do
         if track and track.Animation then
-            local animId = track.Animation.AnimationId
+            local animId = tostring(track.Animation.AnimationId)
+            -- Упрощаем ID
+            animId = animId:gsub("rbxassetid://", ""):gsub("%D", "")
+            
             for _, targetAnim in pairs(MainModule.Killaura.TeleportAnimations) do
-                if animId:find(targetAnim) then
+                if animId == targetAnim then
+                    return true
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+-- САМЫЙ ПРОСТОЙ метод - проверяем через Children
+local function checkAnimationsSimple()
+    local character = game.Players.LocalPlayer.Character
+    if not character then return false end
+    
+    -- Проверяем все объекты в персонаже
+    for _, child in pairs(character:GetDescendants()) do
+        if child:IsA("Animation") then
+            local animId = tostring(child.AnimationId)
+            animId = animId:gsub("rbxassetid://", ""):gsub("%D", "")
+            
+            for _, targetAnim in pairs(MainModule.Killaura.TeleportAnimations) do
+                if animId == targetAnim then
                     return true
                 end
             end
@@ -3470,24 +3529,56 @@ function MainModule.ToggleKillaura(enabled)
     
     ShowNotification("Killaura", "Enabled", 3)
     
-    -- Основное подключение для проверки анимаций и телепортации
-    table.insert(MainModule.Killaura.Connections, RunService.Heartbeat:Connect(function()
+    local RunService = game:GetService("RunService")
+    local Players = game:GetService("Players")
+    
+    -- ОСНОВНОЙ ЦИКЛ - БЫСТРЫЙ И ПРОСТОЙ
+    local connection = RunService.Heartbeat:Connect(function()
         if not MainModule.Killaura.Enabled then return end
         
-        -- Проверяем, идет ли у нас одна из целевых анимаций
-        if checkOurAnimations() then
-            -- Ищем ближайшего игрока
-            local closestPlayer, distance = findClosestPlayer()
+        -- Проверяем по разным методам
+        local hasAnim1 = checkOurAnimations() -- через Humanoid
+        local hasAnim2 = checkAnimationsSimple() -- через поиск в потомках
+        local hasAnim3 = checkOurAnimationsAlternative() -- через Animator
+        
+        local hasTargetAnimation = hasAnim1 or hasAnim2 or hasAnim3
+        
+        if hasTargetAnimation then
+            -- Костыль чтобы не спамить телепорт
+            local currentTime = tick()
+            if currentTime - MainModule.Killaura.LastTeleportTime > MainModule.Killaura.TeleportCooldown then
+                -- МОМЕНТАЛЬНО ищем игрока
+                local closestPlayer = findClosestPlayer()
+                if closestPlayer then
+                    -- МОМЕНТАЛЬНО телепортируемся
+                    teleportToTarget(closestPlayer)
+                    MainModule.Killaura.LastTeleportTime = currentTime
+                end
+            end
+        end
+    end)
+    
+    table.insert(MainModule.Killaura.Connections, connection)
+    
+    -- Резервный метод - проверка каждые 0.1 секунды
+    local fastCheck = RunService.Heartbeat:Connect(function()
+        if not MainModule.Killaura.Enabled then return end
+        
+        -- Упрощенная проверка
+        local character = game.Players.LocalPlayer.Character
+        if not character then return end
+        
+        -- Проверяем простейшим способом
+        local simpleCheck = checkAnimationsSimple()
+        if simpleCheck then
+            local closestPlayer = findClosestPlayer()
             if closestPlayer then
                 teleportToTarget(closestPlayer)
             end
         end
-    end))
+    end)
     
-    -- Обработчик изменения персонажа
-    table.insert(MainModule.Killaura.Connections, LocalPlayer.CharacterAdded:Connect(function()
-        task.wait(1) -- Ждем загрузки персонажа
-    end))
+    table.insert(MainModule.Killaura.Connections, fastCheck)
 end
 
 -- Функции для горячих клавиш
@@ -3905,6 +3996,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
