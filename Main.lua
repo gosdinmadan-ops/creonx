@@ -3250,7 +3250,7 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
--- Полёт строго по направлению камеры (куда смотрим - туда и летим)
+-- Полёт строго по направлению камеры с сохранением физики
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
@@ -3263,15 +3263,22 @@ function MainModule.EnableFlight()
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
     
-    -- Отключаем обычное движение персонажа при полёте
-    humanoid.PlatformStand = true
+    -- НЕ отключаем физику! Оставляем всё как есть
+    -- humanoid.PlatformStand = false
     
-    -- Создаем BodyVelocity
+    -- Создаем BodyVelocity для полёта
     local flyBV = Instance.new("BodyVelocity")
     flyBV.Name = "FlyBodyVelocity"
-    flyBV.MaxForce = Vector3.new(40000, 40000, 40000)
+    flyBV.MaxForce = Vector3.new(40000, 0, 40000) -- Горизонтальная сила
     flyBV.Velocity = Vector3.new(0, 0, 0)
     flyBV.Parent = rootPart
+    
+    -- Создаем отдельный BodyVelocity для вертикального движения
+    local flyBVVertical = Instance.new("BodyVelocity")
+    flyBVVertical.Name = "FlyBodyVelocityVertical"
+    flyBVVertical.MaxForce = Vector3.new(0, 40000, 0) -- Вертикальная сила
+    flyBVVertical.Velocity = Vector3.new(0, 0, 0)
+    flyBVVertical.Parent = rootPart
     
     MainModule.Fly.BodyVelocity = flyBV
     
@@ -3328,48 +3335,21 @@ function MainModule.EnableFlight()
         end)
     else
         -- МОБИЛЬНЫЕ УСТРОЙСТВА
-        -- Будем использовать виртуальный джойстик
-        local touchStartPos = nil
-        local touchActive = false
-        
-        MainModule.Fly.InputConnections["TouchBegan"] = UserInputService.TouchStarted:Connect(function(touch)
-            -- Определяем, это джойстик или нет (можно улучшить логику)
-            touchStartPos = touch.Position
-            touchActive = true
-        end)
-        
-        MainModule.Fly.InputConnections["TouchMoved"] = UserInputService.TouchMoved:Connect(function(touch)
-            if not touchActive then return end
+        -- Используем обычный MoveDirection для мобилок
+        MainModule.Fly.InputConnections["MobileMove"] = RunService.Heartbeat:Connect(function()
+            local moveDirection = humanoid.MoveDirection
             
-            -- Простая логика джойстика
-            local delta = touch.Position - touchStartPos
-            local maxRadius = 50
-            
-            -- Нормализуем ввод
-            local magnitude = math.min(delta.Magnitude, maxRadius) / maxRadius
-            
-            if magnitude > 0.1 then
-                local direction = delta.Unit
-                
-                -- Вперед/назад по Y оси касания
-                forwardInput = direction.Y
-                
-                -- Влево/вправо по X оси касания
-                rightInput = direction.X
+            if moveDirection.Magnitude > 0 then
+                -- Для мобилок используем ввод через MoveDirection
+                forwardInput = moveDirection.Z
+                rightInput = moveDirection.X
+                upInput = moveDirection.Y
             else
                 forwardInput = 0
                 rightInput = 0
+                upInput = 0
             end
         end)
-        
-        MainModule.Fly.InputConnections["TouchEnded"] = UserInputService.TouchEnded:Connect(function(touch)
-            touchActive = false
-            forwardInput = 0
-            rightInput = 0
-            upInput = 0
-        end)
-        
-        -- Для мобилок также можно добавить кнопки вверх/вниз
     end
     
     -- Основной цикл полета
@@ -3379,41 +3359,56 @@ function MainModule.EnableFlight()
         end
         
         rootPart = GetRootPart(character)
-        if not rootPart or not flyBV then return end
+        if not rootPart or not flyBV or not flyBVVertical then return end
         
         local camera = workspace.CurrentCamera
         if not camera then return end
         
-        -- Получаем векторы камеры
-        local cameraLook = camera.CFrame.LookVector  -- Куда смотрим (вперед)
-        local cameraRight = camera.CFrame.RightVector -- Вправо
-        local cameraUp = camera.CFrame.UpVector      -- Вверх
+        -- Получаем векторы камеры (только горизонтальные)
+        local cameraLookFlat = camera.CFrame.LookVector * Vector3.new(1, 0, 1)  -- Взгляд без вертикали
+        cameraLookFlat = cameraLookFlat.Unit
         
-        -- Вычисляем направление полета на основе ввода
-        local flightDirection = Vector3.new(0, 0, 0)
+        local cameraRightFlat = camera.CFrame.RightVector * Vector3.new(1, 0, 1)  -- Вправо без вертикали
+        cameraRightFlat = cameraRightFlat.Unit
         
-        -- Вперед/назад (по направлению взгляда)
+        -- Горизонтальное движение (относительно камеры)
+        local horizontalDirection = Vector3.new(0, 0, 0)
+        
+        -- Вперед/назад (по направлению взгляда камеры)
         if math.abs(forwardInput) > 0 then
-            flightDirection = flightDirection + (cameraLook * forwardInput)
+            horizontalDirection = horizontalDirection + (cameraLookFlat * forwardInput)
         end
         
         -- Влево/вправо (относительно камеры)
         if math.abs(rightInput) > 0 then
-            flightDirection = flightDirection + (cameraRight * rightInput)
+            horizontalDirection = horizontalDirection + (cameraRightFlat * rightInput)
         end
         
-        -- Вверх/вниз (вертикально)
-        if math.abs(upInput) > 0 then
-            flightDirection = flightDirection + (Vector3.new(0, 1, 0) * upInput)
-        end
-        
-        -- Применяем скорость
-        if flightDirection.Magnitude > 0 then
-            -- Нормализуем и масштабируем
-            flightDirection = flightDirection.Unit * MainModule.Fly.Speed
-            flyBV.Velocity = flightDirection
+        -- Применяем горизонтальную скорость
+        if horizontalDirection.Magnitude > 0 then
+            horizontalDirection = horizontalDirection.Unit * MainModule.Fly.Speed
+            flyBV.Velocity = Vector3.new(horizontalDirection.X, 0, horizontalDirection.Z)
+            
+            -- Поворачиваем персонажа в направлении движения (только если есть горизонтальное движение)
+            if horizontalDirection.Magnitude > 0.1 then
+                local lookAtPoint = rootPart.Position + horizontalDirection
+                humanoid:MoveTo(lookAtPoint)
+                
+                -- Плавный поворот персонажа
+                local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + horizontalDirection)
+                rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + horizontalDirection)
+            end
         else
             flyBV.Velocity = Vector3.new(0, 0, 0)
+        end
+        
+        -- Вертикальное движение (отдельно, не влияет на поворот)
+        if math.abs(upInput) > 0 then
+            flyBVVertical.Velocity = Vector3.new(0, upInput * MainModule.Fly.Speed, 0)
+        else
+            -- Если нет вертикального ввода, оставляем гравитацию работать
+            -- Но немного компенсируем гравитацию для плавного полёта
+            flyBVVertical.Velocity = Vector3.new(0, -1, 0) -- Легкая компенсация гравитации
         end
     end)
     
@@ -3466,18 +3461,16 @@ function MainModule.DisableFlight()
         MainModule.Fly.CharacterAddedConnection = nil
     end
     
-    -- Восстанавливаем нормальное управление
+    -- Убираем BodyVelocity
     local character = GetCharacter()
     if character then
-        local humanoid = GetHumanoid(character)
-        if humanoid then
-            humanoid.PlatformStand = false
-        end
-        
         local rootPart = GetRootPart(character)
         if rootPart then
             local bv = rootPart:FindFirstChild("FlyBodyVelocity")
             if bv then bv:Destroy() end
+            
+            local bvVertical = rootPart:FindFirstChild("FlyBodyVelocityVertical")
+            if bvVertical then bvVertical:Destroy() end
         end
     end
     
@@ -4084,6 +4077,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
