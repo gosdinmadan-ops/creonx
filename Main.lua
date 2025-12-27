@@ -262,9 +262,8 @@ MainModule.Killaura = {
     LastPositionUpdate = 0,
     PositionUpdateInterval = 0,
     
-    -- Изменяем на BodyVelocity и другие менее заметные методы
-    HiddenForces = {},
-    VelocityForces = {},
+    -- Заменяем HiddenForces на альтернативные методы
+    MovementControllers = {},
     OriginalProperties = nil,
     
     -- Параметры позиционирования
@@ -272,14 +271,11 @@ MainModule.Killaura = {
     FrontDistance = 4,
     SpeedThreshold = 16.5,
     
-    -- Параметры для плавности
-    MaxVelocityForce = 200,
-    SmoothingFactor = 0.8,
-    MaxForceDistance = 10,
-    
-    -- Управление скоростью (менее заметно, чем BodyPosition)
-    VelocityStrength = 150,
-    DampingFactor = 25
+    -- Параметры для плавного движения
+    MaxForce = 10000,
+    SmoothnessFactor = 0.2, -- Увеличиваем для более плавного движения
+    TeleportSpeed = 120,    -- Скорость телепортации
+    MinDistance = 0.5       -- Минимальная дистанция для телепортации
 }
 
 MainModule.Misc = {
@@ -3403,7 +3399,7 @@ for _, animId in pairs(MainModule.Killaura.TeleportAnimations) do
     MainModule.Killaura.TargetAnimationsSet[animId] = true
 end
 
--- Поиск ближайшего живого игрока (без изменений)
+-- Поиск ближайшего живого игрока (БЕЗ ИЗМЕНЕНИЙ)
 local function findClosestPlayer()
     local playersService = game:GetService("Players")
     local localPlayer = playersService.LocalPlayer
@@ -3441,7 +3437,7 @@ local function findClosestPlayer()
     return closestPlayer
 end
 
--- Проверка анимаций жертвы (без изменений)
+-- Проверка анимаций жертвы (БЕЗ ИЗМЕНЕНИЙ)
 local function checkTargetAnimations(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then
         return false
@@ -3490,69 +3486,35 @@ local function checkTargetAnimations(targetPlayer)
     return false
 end
 
--- Создаем менее заметные силы на основе BodyVelocity
-local function createVelocityForces(character)
+-- Создаем альтернативные методы управления без BodyPosition
+local function setupMovementControl(character)
     if not character then return end
     
-    -- Очищаем старые силы
-    for _, force in pairs(MainModule.Killaura.VelocityForces) do
-        if force and force.Parent then
-            force:Destroy()
+    -- Очищаем старые контроллеры
+    for _, controller in pairs(MainModule.Killaura.MovementControllers) do
+        if controller and controller.Parent then
+            controller:Destroy()
         end
     end
-    MainModule.Killaura.VelocityForces = {}
+    MainModule.Killaura.MovementControllers = {}
     
     local rootPart = character:FindFirstChild("HumanoidRootPart") or 
                      character:FindFirstChild("Torso") or 
                      character.PrimaryPart
     
     if rootPart then
-        -- BodyVelocity для плавного движения (менее заметно)
-        local bodyVelocity = Instance.new("BodyVelocity")
-        bodyVelocity.Name = "KillauraVelocity"
-        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-        bodyVelocity.MaxForce = Vector3.new(
-            MainModule.Killaura.MaxVelocityForce * 100, 
-            MainModule.Killaura.MaxVelocityForce * 100, 
-            MainModule.Killaura.MaxVelocityForce * 100
-        )
-        bodyVelocity.P = 1000
-        bodyVelocity.Parent = rootPart
-        table.insert(MainModule.Killaura.VelocityForces, bodyVelocity)
-        
-        -- AlignPosition для точного позиционирования (менее детектируемо)
-        local alignPosition = Instance.new("AlignPosition")
-        alignPosition.Name = "KillauraAlignPosition"
-        alignPosition.ApplyAtCenterOfMass = true
-        alignPosition.MaxForce = MainModule.Killaura.MaxVelocityForce * 100
-        alignPosition.MaxVelocity = math.huge
-        alignPosition.ReactionForceEnabled = false
-        alignPosition.Responsiveness = 200
-        alignPosition.RigidityEnabled = false
-        alignPosition.Parent = rootPart
-        table.insert(MainModule.Killaura.VelocityForces, alignPosition)
-        
-        -- AlignOrientation для поворота
-        local alignOrientation = Instance.new("AlignOrientation")
-        alignOrientation.Name = "KillauraAlignOrientation"
-        alignOrientation.MaxTorque = 10000
-        alignOrientation.Responsiveness = 200
-        alignOrientation.PrimaryAxisOnly = false
-        alignOrientation.ReactionTorqueEnabled = false
-        alignOrientation.RigidityEnabled = false
-        alignOrientation.Parent = rootPart
-        table.insert(MainModule.Killaura.VelocityForces, alignOrientation)
-        
         -- Сохраняем оригинальные свойства
         MainModule.Killaura.OriginalProperties = {
             Anchored = rootPart.Anchored,
             CanCollide = rootPart.CanCollide,
             Massless = if rootPart:IsA("BasePart") then rootPart.Massless else nil,
+            Velocity = rootPart.Velocity,
             AssemblyLinearVelocity = rootPart.AssemblyLinearVelocity,
             AssemblyAngularVelocity = rootPart.AssemblyAngularVelocity
         }
         
-        -- Менее заметные оптимизации
+        -- Оптимизация для движения
+        rootPart.Anchored = false
         rootPart.CanCollide = false
         if rootPart:IsA("BasePart") then
             rootPart.Massless = true
@@ -3562,13 +3524,36 @@ local function createVelocityForces(character)
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if humanoid then
             humanoid.PlatformStand = true
-            humanoid.AutoRotate = false
+            -- Уменьшаем трение для более плавного движения
+            local bodyForce = Instance.new("BodyForce")
+            bodyForce.Name = "AntiGravity"
+            bodyForce.Force = Vector3.new(0, workspace.Gravity * rootPart:GetMass(), 0)
+            bodyForce.Parent = rootPart
+            table.insert(MainModule.Killaura.MovementControllers, bodyForce)
         end
+        
+        -- Создаем BodyVelocity для плавного движения (менее детектируемо чем BodyPosition)
+        local bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.Name = "SmoothMovement"
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        bodyVelocity.MaxForce = Vector3.new(MainModule.Killaura.MaxForce, MainModule.Killaura.MaxForce, MainModule.Killaura.MaxForce)
+        bodyVelocity.P = 1000
+        bodyVelocity.Parent = rootPart
+        table.insert(MainModule.Killaura.MovementControllers, bodyVelocity)
+        
+        -- BodyGyro для стабилизации и поворота
+        local bodyGyro = Instance.new("BodyGyro")
+        bodyGyro.Name = "Stabilizer"
+        bodyGyro.P = 20000
+        bodyGyro.D = 1000
+        bodyGyro.MaxTorque = Vector3.new(40000, 40000, 40000)
+        bodyGyro.Parent = rootPart
+        table.insert(MainModule.Killaura.MovementControllers, bodyGyro)
     end
 end
 
 -- Восстанавливаем оригинальные свойства
-local function restoreOriginalProperties(character)
+local function restoreMovementControl(character)
     if not character then return end
     
     local rootPart = character:FindFirstChild("HumanoidRootPart") or 
@@ -3587,20 +3572,43 @@ local function restoreOriginalProperties(character)
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if humanoid then
             humanoid.PlatformStand = false
-            humanoid.AutoRotate = true
         end
     end
     
-    -- Удаляем силы
-    for _, force in pairs(MainModule.Killaura.VelocityForces) do
-        if force and force.Parent then
-            force:Destroy()
+    -- Удаляем контроллеры
+    for _, controller in pairs(MainModule.Killaura.MovementControllers) do
+        if controller and controller.Parent then
+            controller:Destroy()
         end
     end
-    MainModule.Killaura.VelocityForces = {}
+    MainModule.Killaura.MovementControllers = {}
 end
 
--- Прикрепление к цели с использованием Velocity
+-- Функция плавного движения к точке
+local function moveToPosition(rootPart, targetPosition, speed)
+    if not rootPart then return end
+    
+    -- Находим вектор направления
+    local direction = (targetPosition - rootPart.Position)
+    local distance = direction.Magnitude
+    
+    if distance > 0 then
+        -- Нормализуем направление и умножаем на скорость
+        direction = direction.Unit * math.min(speed, distance * 30)
+        
+        -- Применяем скорость через BodyVelocity
+        for _, controller in pairs(MainModule.Killaura.MovementControllers) do
+            if controller.Name == "SmoothMovement" then
+                controller.Velocity = direction
+                return true
+            end
+        end
+    end
+    
+    return false
+end
+
+-- Прикрепление к цели (СОХРАНЯЕМ ТЕЛЕПОРТ ПРИ ВКЛЮЧЕНИИ)
 local function attachToTarget(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then
         return false
@@ -3626,55 +3634,44 @@ local function attachToTarget(targetPlayer)
                      character.PrimaryPart
     if not rootPart then return false end
     
-    -- Создаем менее заметные силы
-    createVelocityForces(character)
+    -- Настраиваем управление движением
+    setupMovementControl(character)
     
-    -- Определяем начальную позицию с учетом скорости
+    -- Определяем начальную позицию
     local targetLookVector = targetRoot.CFrame.LookVector
     local targetSpeed = targetRoot.Velocity.Magnitude
     
     local targetPosition
     if targetSpeed <= MainModule.Killaura.SpeedThreshold then
+        -- ТЕЛЕПОРТАЦИЯ ВПРИТЫК СЗАДИ ПРИ ПЕРВОМ ВКЛЮЧЕНИИ
         targetPosition = targetRoot.Position - (targetLookVector * MainModule.Killaura.BehindDistance)
         MainModule.Killaura.AttachmentType = "behind"
+        
+        -- МГНОВЕННЫЙ ТЕЛЕПОРТ к цели (только при первом прикреплении)
+        rootPart.CFrame = CFrame.new(targetPosition, targetRoot.Position)
     else
+        -- ТЕЛЕПОРТАЦИЯ 4 БЛОКА ВПЕРЕДИ ПРИ СКОРОСТИ >16.5
         targetPosition = targetRoot.Position + (targetLookVector * MainModule.Killaura.FrontDistance)
         MainModule.Killaura.AttachmentType = "front"
+        
+        -- МГНОВЕННЫЙ ТЕЛЕПОРТ вперед
+        rootPart.CFrame = CFrame.new(targetPosition, targetPosition + targetLookVector)
     end
     
-    -- Начальная телепортация (быстро, но не мгновенно)
-    local distance = (targetPosition - rootPart.Position).Magnitude
-    if distance > 50 then
-        -- Если далеко - телепортируем
-        rootPart.CFrame = CFrame.new(targetPosition)
-    end
-    
-    -- Устанавливаем цели для AlignPosition
-    for _, force in pairs(MainModule.Killaura.VelocityForces) do
-        if force.Name == "KillauraAlignPosition" then
-            local attachment = Instance.new("Attachment")
-            attachment.Name = "KillauraTargetAttachment"
-            attachment.Parent = rootPart
-            attachment.Position = Vector3.new(0, 0, 0)
-            
-            local targetAttachment = Instance.new("Attachment")
-            targetAttachment.Name = "KillauraTargetPos"
-            targetAttachment.Parent = workspace.Terrain
-            targetAttachment.Position = targetPosition
-            
-            force.Attachment0 = attachment
-            force.Attachment1 = targetAttachment
-        end
-    end
-    
+    -- Устанавливаем цель
     MainModule.Killaura.CurrentTarget = targetPlayer
     MainModule.Killaura.IsAttached = true
     MainModule.Killaura.IsLifted = false
     
+    -- Обнуляем скорость после телепортации
+    rootPart.Velocity = Vector3.new(0, 0, 0)
+    rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    rootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    
     return true
 end
 
--- Обновление позиции через Velocity
+-- ОБНОВЛЕНИЕ ПОЗИЦИИ БЕЗ BodyPosition
 local function updateAttachment()
     if not MainModule.Killaura.Enabled or not MainModule.Killaura.CurrentTarget then
         return
@@ -3703,7 +3700,7 @@ local function updateAttachment()
         MainModule.Killaura.CurrentTarget = nil
         MainModule.Killaura.IsAttached = false
         MainModule.Killaura.IsLifted = false
-        restoreOriginalProperties(character)
+        restoreMovementControl(character)
         return
     end
     
@@ -3715,18 +3712,43 @@ local function updateAttachment()
     -- Получаем данные о цели
     local targetSpeed = targetRoot.Velocity.Magnitude
     local targetLookVector = targetRoot.CFrame.LookVector
-    local targetVelocity = targetRoot.Velocity
+    local targetCFrame = targetRoot.CFrame
     
-    -- Вычисляем новую позицию
+    -- ВЫЧИСЛЯЕМ НОВУЮ ПОЗИЦИЮ
     local targetPosition
     local newAttachmentType
     
+    -- ЛОГИКА ПРИКРЕПЛЕНИЯ БЕЗ BodyPosition:
     if targetSpeed <= MainModule.Killaura.SpeedThreshold then
         newAttachmentType = "behind"
-        targetPosition = targetRoot.Position - (targetLookVector * MainModule.Killaura.BehindDistance)
+        -- ВПРИТЫК СЗАДИ
+        targetPosition = targetCFrame.Position - (targetLookVector * MainModule.Killaura.BehindDistance)
+        
+        -- Плавное движение к позиции сзади
+        moveToPosition(rootPart, targetPosition, MainModule.Killaura.TeleportSpeed)
+        
+        -- Поворачиваемся к цели (смотрим на жертву)
+        for _, controller in pairs(MainModule.Killaura.MovementControllers) do
+            if controller.Name == "Stabilizer" then
+                local lookAtCFrame = CFrame.new(rootPart.Position, targetRoot.Position)
+                controller.CFrame = lookAtCFrame
+            end
+        end
+        
     else
         newAttachmentType = "front"
-        targetPosition = targetRoot.Position + (targetLookVector * MainModule.Killaura.FrontDistance)
+        -- 4 БЛОКА ВПЕРЕДИ
+        targetPosition = targetCFrame.Position + (targetLookVector * MainModule.Killaura.FrontDistance)
+        
+        -- Плавное движение вперед
+        moveToPosition(rootPart, targetPosition, MainModule.Killaura.TeleportSpeed)
+        
+        -- Смотрим в ту же сторону что и цель
+        for _, controller in pairs(MainModule.Killaura.MovementControllers) do
+            if controller.Name == "Stabilizer" then
+                controller.CFrame = CFrame.new(rootPart.Position, rootPart.Position + targetLookVector)
+            end
+        end
     end
     
     -- Обновляем тип прикрепления если изменился
@@ -3734,68 +3756,28 @@ local function updateAttachment()
         MainModule.Killaura.AttachmentType = newAttachmentType
     end
     
-    -- Проверяем анимации для подъема
+    -- ПРОВЕРКА АНИМАЦИЙ ДЛЯ ПОДЪЕМА
     local isTargetAnimating = checkTargetAnimations(targetPlayer)
     
     if isTargetAnimating and not MainModule.Killaura.IsLifted then
-        targetPosition = targetPosition + Vector3.new(0, MainModule.Killaura.LiftHeight, 0)
+        -- Плавный подъем на 8 блоков
+        local liftPosition = targetPosition + Vector3.new(0, MainModule.Killaura.LiftHeight, 0)
+        moveToPosition(rootPart, liftPosition, MainModule.Killaura.TeleportSpeed * 0.8)
         MainModule.Killaura.IsLifted = true
+        
     elseif not isTargetAnimating and MainModule.Killaura.IsLifted then
+        -- Плавный спуск
+        moveToPosition(rootPart, targetPosition, MainModule.Killaura.TeleportSpeed * 0.8)
         MainModule.Killaura.IsLifted = false
     end
     
-    -- Применяем движение через BodyVelocity (менее заметно)
-    for _, force in pairs(MainModule.Killaura.VelocityForces) do
-        if force.Name == "KillauraVelocity" then
-            -- Рассчитываем вектор к цели
-            local direction = (targetPosition - rootPart.Position)
-            local distance = direction.Magnitude
-            
-            if distance > 0.5 then
-                -- Нормализуем и умножаем на силу
-                direction = direction.Unit
-                local velocity = direction * math.min(
-                    distance * MainModule.Killaura.VelocityStrength,
-                    MainModule.Killaura.MaxVelocityForce
-                )
-                
-                -- Добавляем демпфирование
-                local currentVelocity = rootPart.Velocity
-                local damping = currentVelocity * MainModule.Killaura.DampingFactor
-                velocity = velocity - damping
-                
-                -- Добавляем скорость цели для синхронизации
-                velocity = velocity + (targetVelocity * MainModule.Killaura.SmoothingFactor)
-                
-                force.Velocity = velocity
-            else
-                force.Velocity = Vector3.new(0, 0, 0)
-            end
-        end
-        
-        if force.Name == "KillauraAlignPosition" and force.Attachment1 then
-            -- Обновляем позицию для AlignPosition
-            force.Attachment1.Position = targetPosition
-        end
-        
-        if force.Name == "KillauraAlignOrientation" then
-            -- Поворачиваемся к цели
-            if MainModule.Killaura.AttachmentType == "behind" then
-                local lookAtCFrame = CFrame.new(rootPart.Position, targetRoot.Position)
-                force.CFrame = lookAtCFrame
-            else
-                force.CFrame = CFrame.new(rootPart.Position, rootPart.Position + targetLookVector)
-            end
-        end
-    end
+    -- Для близких дистанций используем мгновенную коррекцию
+    local currentDistance = (targetRoot.Position - rootPart.Position).Magnitude
+    local desiredDistance = (newAttachmentType == "behind") and MainModule.Killaura.BehindDistance or MainModule.Killaura.FrontDistance
     
-    -- Мягкое обновление поворота
-    if MainModule.Killaura.AttachmentType == "behind" then
-        local goalCFrame = CFrame.new(rootPart.Position, targetRoot.Position)
-        rootPart.CFrame = rootPart.CFrame:Lerp(goalCFrame, MainModule.Killaura.SmoothingFactor * 0.1)
-    else
-        local goalCFrame = CFrame.new(rootPart.Position, rootPart.Position + targetLookVector)
-        rootPart.CFrame = rootPart.CFrame:Lerp(goalCFrame, MainModule.Killaura.SmoothingFactor * 0.1)
+    if math.abs(currentDistance - desiredDistance) > 2 then
+        -- Если сильно отстали - телепортируем ближе
+        rootPart.CFrame = CFrame.new(targetPosition)
     end
     
     MainModule.Killaura.LastPositionUpdate = tick()
@@ -3805,7 +3787,7 @@ end
 local function detachFromTarget()
     local localPlayer = game:GetService("Players").LocalPlayer
     if localPlayer and localPlayer.Character then
-        restoreOriginalProperties(localPlayer.Character)
+        restoreMovementControl(localPlayer.Character)
     end
     
     MainModule.Killaura.CurrentTarget = nil
@@ -3830,16 +3812,18 @@ function MainModule.ToggleKillaura(enabled)
     
     ShowNotification("Killaura", "Enabled", 3)
     
-    -- Основной цикл через Heartbeat (менее заметно, чем RenderStepped)
+    -- Основной цикл прикрепления
     local connection = game:GetService("RunService").Heartbeat:Connect(function(deltaTime)
         if not MainModule.Killaura.Enabled then return end
         
         if not MainModule.Killaura.IsAttached then
+            -- Ищем ближайшую жертву и прикрепляемся с телепортом
             local closestPlayer = findClosestPlayer()
             if closestPlayer then
                 attachToTarget(closestPlayer)
             end
         else
+            -- Обновление позиции без BodyPosition
             updateAttachment()
         end
     end)
@@ -4295,6 +4279,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
