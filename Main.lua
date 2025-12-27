@@ -58,14 +58,15 @@ MainModule.AutoDodge = {
     LastRangeUpdate = 0,
     RangeUpdateInterval = 0.5
 }
-
 MainModule.Fly = {
     Enabled = false,
     Speed = 39,
     Connection = nil,
     BodyVelocity = nil,
     HumanoidDiedConnection = nil,
-    CharacterAddedConnection = nil
+    CharacterAddedConnection = nil,
+    IsMobile = UserInputService.TouchEnabled,
+    VirtualJoystick = nil
 }
 
 
@@ -3249,7 +3250,7 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
--- Универсальный Fly: летим в том направлении, куда обычно идет персонаж
+-- Упрощенный универсальный Fly: летим в направлении движения персонажа
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
@@ -3261,9 +3262,6 @@ function MainModule.EnableFlight()
     local humanoid = GetHumanoid(character)
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
-    
-    -- Сохраняем оригинальную WalkSpeed
-    local originalWalkSpeed = humanoid.WalkSpeed
     
     -- Создаем BodyVelocity только при полете
     local flyBV = Instance.new("BodyVelocity")
@@ -3287,25 +3285,19 @@ function MainModule.EnableFlight()
         rootPart = GetRootPart(character)
         if not rootPart or not flyBV then return end
         
-        -- Получаем MoveDirection из Humanoid
+        local humanoid = GetHumanoid(character)
+        if not humanoid then return end
+        
+        -- Получаем текущее направление движения персонажа
         local moveDirection = humanoid.MoveDirection
         
-        -- Применяем скорость если есть направление
-        if moveDirection and moveDirection.Magnitude > 0 then
-            -- Нормализуем и применяем скорость полета
+        -- Если персонаж движется, летим в этом направлении
+        if moveDirection.Magnitude > 0 then
             moveDirection = moveDirection.Unit * MainModule.Fly.Speed
             flyBV.Velocity = moveDirection
-            
-            -- Изменяем состояние для анимаций
-            humanoid:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
         else
-            -- Если нет движения - останавливаемся
             flyBV.Velocity = Vector3.new(0, 0, 0)
-            humanoid:ChangeState(Enum.HumanoidStateType.Physics)
         end
-        
-        -- Отключаем гравитацию при полете
-        rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     end)
     
     -- Обработка смерти персонажа
@@ -3970,6 +3962,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
