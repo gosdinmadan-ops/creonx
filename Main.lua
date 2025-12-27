@@ -3248,7 +3248,7 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
--- Упрощенный универсальный Fly: летим туда, куда смотрим
+-- Упрощенный универсальный Fly: летим в направлении взгляда камеры
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
@@ -3260,10 +3260,6 @@ function MainModule.EnableFlight()
     local humanoid = GetHumanoid(character)
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
-    
-    -- Отключаем гравитацию для плавного полета
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, false)
     
     -- Создаем BodyVelocity только при полете
     local flyBV = Instance.new("BodyVelocity")
@@ -3287,23 +3283,16 @@ function MainModule.EnableFlight()
         rootPart = GetRootPart(character)
         if not rootPart or not flyBV then return end
         
+        -- Получаем направление взгляда камеры
         local camera = workspace.CurrentCamera
         if not camera then return end
         
-        -- Получаем направление взгляда камеры
+        -- Просто летим в направлении взгляда камеры
         local lookVector = camera.CFrame.LookVector
+        local velocity = lookVector * MainModule.Fly.Speed
         
-        -- Нормализуем и умножаем на скорость
-        local velocity = lookVector.Unit * MainModule.Fly.Speed
-        
-        -- Устанавливаем скорость для полета в направлении взгляда
+        -- Применяем скорость
         flyBV.Velocity = velocity
-        
-        -- Поворачиваем персонажа в направлении полета (опционально)
-        local horizontalLook = Vector3.new(lookVector.X, 0, lookVector.Z)
-        if horizontalLook.Magnitude > 0.1 then
-            rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + horizontalLook)
-        end
     end)
     
     -- Обработка смерти персонажа
@@ -3360,16 +3349,6 @@ function MainModule.DisableFlight()
         end
     end
     
-    -- Восстанавливаем гравитацию
-    local character = GetCharacter()
-    if character then
-        local humanoid = GetHumanoid(character)
-        if humanoid then
-            humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-            humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
-        end
-    end
-    
     MainModule.Fly.BodyVelocity = nil
 end
 
@@ -3387,6 +3366,7 @@ function MainModule.SetFlySpeed(speed)
     MainModule.Fly.Speed = math.clamp(speed, 1, 100)
     return MainModule.Fly.Speed
 end
+
 
 -- Новая улучшенная функция Killaura
 local function findClosestPlayer()
@@ -3973,6 +3953,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
