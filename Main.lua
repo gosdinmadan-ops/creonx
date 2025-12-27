@@ -58,17 +58,15 @@ MainModule.AutoDodge = {
     LastRangeUpdate = 0,
     RangeUpdateInterval = 0.5
 }
+
 MainModule.Fly = {
     Enabled = false,
     Speed = 39,
     Connection = nil,
     BodyVelocity = nil,
     HumanoidDiedConnection = nil,
-    CharacterAddedConnection = nil,
-    IsMobile = UserInputService.TouchEnabled,
-    VirtualJoystick = nil
+    CharacterAddedConnection = nil
 }
-
 
 MainModule.AutoQTE = {
     AntiStunEnabled = false
@@ -3962,6 +3960,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
