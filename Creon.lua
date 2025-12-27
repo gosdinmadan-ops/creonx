@@ -1286,13 +1286,22 @@ local function CreateCombatContent()
             MainModule.ToggleKillaura(enabled)
         elseif MainModule and MainModule.Killaura then
             MainModule.Killaura.Enabled = enabled
+            -- Показываем уведомление о включении/выключении
+            if enabled then
+                ShowNotification("Killaura", "Enabled", 3)
+            else
+                ShowNotification("Killaura", "Disabled", 3)
+            end
         end
     end, 2)
     
     -- Killaura Bind
     local killauraBindContainer, killauraBindBtn = CreateBindButton("Killaura Bind", KillauraHotkey, function(newKey)
         KillauraHotkey = newKey
-        SetBindInMainModule("killaura", newKey)
+        -- Сохраняем хоткей в MainModule.Killaura
+        if MainModule and MainModule.Killaura then
+            MainModule.Killaura.Hotkey = newKey
+        end
         setupKillauraListener()
     end, 3)
 end
@@ -2134,4 +2143,5 @@ end)
 
 -- Отображение сообщения о загрузке
 print("🎄 Creon X v2.5 loaded successfully 🎅")
+
 
