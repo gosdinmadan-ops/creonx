@@ -3077,20 +3077,20 @@ local function executeDodge()
     local remotes = remoteService:WaitForChild("Remotes")
     local remote = remotes:WaitForChild("UsedTool")
     
-    -- Ищем инструмент DODGE!
+    -- Ищем инструмент Push (вместо DODGE!)
     local tool = nil
     local character = player.Character
     
     -- Сначала проверяем в персонаже
     if character then
-        tool = character:FindFirstChild("DODGE!")
+        tool = character:FindFirstChild("Push")  -- Изменено на Push
     end
     
     -- Если не нашли в персонаже, проверяем в бэкпаке
     if not tool then
         local backpack = player:FindFirstChild("Backpack")
         if backpack then
-            tool = backpack:FindFirstChild("DODGE!")
+            tool = backpack:FindFirstChild("Push")  -- Изменено на Push
         end
     end
     
@@ -3098,7 +3098,7 @@ local function executeDodge()
     
     -- Подготовка аргументов с новым remote
     local args = {
-        buffer.fromstring("\225\231\228\231\228\228\228\228\228\228\020\219\224\235\228\228\228\177\151\141\138\131\169\139\146\129\167\145\151\144\139\137\231\228\228\228\228\228\228\228\164\226\229\228\231\228\228\228\228\228\228\244\164\225\229\228\224\227\228\228\228\165\145\144\139\177\151\129\229"),
+        buffer.fromstring("\200\206\205\206\205\205\205\205\205\205=\242\201\194\205\205\205\152\190\164\163\170\128\162\187\168\142\184\190\185\162\160\206\205\205\205\205\205\205\205\141\203\204\205\206\205\205\205\205\205\205\221\141\200\204\205\201\202\205\205\205\140\184\185\162\152\190\168\204"),
         {tool}  -- инструмент передается как таблица
     }
     
@@ -4535,6 +4535,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
