@@ -297,10 +297,6 @@ MainModule.ESP = {
     UpdateRate = 0.1
 }
 
-for _, id in ipairs(MainModule.Killaura.TargetAnimationIds) do
-    MainModule.Killaura.TargetAnimationsSet["rbxassetid://" .. id] = true
-end
-
 for _, id in ipairs(MainModule.AutoDodge.AnimationIds) do
     MainModule.AutoDodge.AnimationIdsSet[id] = true
 end
@@ -3909,6 +3905,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
