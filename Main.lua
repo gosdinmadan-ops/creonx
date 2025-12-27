@@ -64,13 +64,8 @@ MainModule.Fly = {
     Speed = 39,
     Connection = nil,
     BodyVelocity = nil,
-    BodyGyro = nil,
     HumanoidDiedConnection = nil,
-    CharacterAddedConnection = nil,
-    OriginalStates = nil,
-    LastPhysicsCheck = 0,
-    PhysicsCheckInterval = 0.3,
-    IsAntiCheatBypass = false
+    CharacterAddedConnection = nil
 }
 
 MainModule.AutoQTE = {
@@ -3253,17 +3248,11 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
--- Улучшенный максимально скрытный Fly
+-- Упрощенный Fly: летим туда, куда смотрим
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
     MainModule.Fly.Enabled = true
-    
-    -- Отключаем все предыдущие соединения
-    if MainModule.Fly.Connection then
-        MainModule.Fly.Connection:Disconnect()
-        MainModule.Fly.Connection = nil
-    end
     
     local character = GetCharacter()
     if not character then return end
@@ -3272,39 +3261,14 @@ function MainModule.EnableFlight()
     local rootPart = GetRootPart(character)
     if not (humanoid and rootPart) then return end
     
-    -- Сохраняем оригинальные состояния
-    MainModule.Fly.OriginalStates = {
-        WalkSpeed = humanoid.WalkSpeed,
-        JumpPower = humanoid.JumpPower,
-        AutoRotate = humanoid.AutoRotate,
-        PlatformStand = humanoid.PlatformStand
-    }
+    -- Создаем BodyVelocity только при полете
+    local flyBV = Instance.new("BodyVelocity")
+    flyBV.Name = "FlyBodyVelocity"
+    flyBV.MaxForce = Vector3.new(40000, 40000, 40000)
+    flyBV.Velocity = Vector3.new(0, 0, 0)
+    flyBV.Parent = rootPart
     
-    -- Отключаем авто-ротацию для лучшего контроля
-    humanoid.AutoRotate = false
-    humanoid.PlatformStand = false
-    
-    -- Создаем BodyGyro для контроля вращения (очень скрытный)
-    local flightBodyGyro = Instance.new("BodyGyro")
-    flightBodyGyro.Name = "HumanoidRootPartGyro"
-    flightBodyGyro.MaxTorque = Vector3.new(0, 0, 0) -- Начальное значение
-    flightBodyGyro.P = 1000
-    flightBodyGyro.D = 50
-    flightBodyGyro.CFrame = rootPart.CFrame
-    flightBodyGyro.Parent = rootPart
-    
-    -- Создаем BodyVelocity для движения
-    local flightBodyVelocity = Instance.new("BodyVelocity")
-    flightBodyVelocity.Name = "HumanoidRootPartVelocity"
-    flightBodyVelocity.MaxForce = Vector3.new(1, 1, 1) * 1000 -- Начальное низкое значение
-    flightBodyVelocity.P = 125
-    flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-    flightBodyVelocity.Parent = rootPart
-    
-    MainModule.Fly.BodyVelocity = flightBodyVelocity
-    MainModule.Fly.BodyGyro = flightBodyGyro
-    
-    MainModule.Fly.LastPhysicsCheck = tick()
+    MainModule.Fly.BodyVelocity = flyBV
     
     -- Основной цикл полета
     MainModule.Fly.Connection = RunService.Heartbeat:Connect(function()
@@ -3317,140 +3281,40 @@ function MainModule.EnableFlight()
         end
         
         rootPart = GetRootPart(character)
-        if not rootPart then return end
+        if not rootPart or not flyBV then return end
         
         local Camera = workspace.CurrentCamera
         if not Camera then return end
         
-        -- Получаем вектор взгляда камеры
-        local lookVector = Camera.CFrame.LookVector
-        local cameraCFrame = Camera.CFrame
-        
-        -- Обновляем BodyGyro чтобы персонаж смотрел туда же куда и камера
-        if flightBodyGyro then
-            -- Плавное изменение параметров для скрытности
-            local currentTime = tick()
-            if currentTime - MainModule.Fly.LastPhysicsCheck > MainModule.Fly.PhysicsCheckInterval then
-                MainModule.Fly.LastPhysicsCheck = currentTime
-                
-                -- Случайное изменение параметров для обхода античита
-                flightBodyGyro.MaxTorque = Vector3.new(
-                    math.random(9000, 11000),
-                    math.random(9000, 11000),
-                    math.random(9000, 11000)
-                )
-                flightBodyGyro.P = math.random(800, 1200)
-                
-                flightBodyVelocity.MaxForce = Vector3.new(
-                    math.random(8000, 12000),
-                    math.random(8000, 12000),
-                    math.random(8000, 12000)
-                )
-                flightBodyVelocity.P = math.random(100, 150)
-            end
-            
-            -- Плавное вращение к направлению камеры
-            local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + Vector3.new(lookVector.X, 0, lookVector.Z))
-            flightBodyGyro.CFrame = targetCFrame
-        end
-        
-        -- Определяем направление движения
+        -- Направление движения
         local moveDirection = Vector3.new(0, 0, 0)
-        local isMoving = false
         
-        -- Управление полетом (только горизонтальное)
+        -- WASD управление
+        local lookVector = Camera.CFrame.LookVector
+        local rightVector = Camera.CFrame.RightVector
+        
+        -- Вперед/назад (W/S)
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-            local flatLookVector = Vector3.new(lookVector.X, 0, lookVector.Z)
-            if flatLookVector.Magnitude > 0 then
-                moveDirection = moveDirection + flatLookVector.Unit
-            end
-            isMoving = true
+            moveDirection = moveDirection + lookVector
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-            local flatLookVector = Vector3.new(lookVector.X, 0, lookVector.Z)
-            if flatLookVector.Magnitude > 0 then
-                moveDirection = moveDirection - flatLookVector.Unit
-            end
-            isMoving = true
+            moveDirection = moveDirection - lookVector
         end
         
+        -- Влево/вправо (A/D)
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-            local rightVector = cameraCFrame.RightVector
-            local flatRightVector = Vector3.new(rightVector.X, 0, rightVector.Z)
-            if flatRightVector.Magnitude > 0 then
-                moveDirection = moveDirection - flatRightVector.Unit
-            end
-            isMoving = true
+            moveDirection = moveDirection - rightVector
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-            local rightVector = cameraCFrame.RightVector
-            local flatRightVector = Vector3.new(rightVector.X, 0, rightVector.Z)
-            if flatRightVector.Magnitude > 0 then
-                moveDirection = moveDirection + flatRightVector.Unit
-            end
-            isMoving = true
+            moveDirection = moveDirection + rightVector
         end
         
-        -- Вертикальное управление (неявное через вектор взгляда)
-        local verticalControl = 0
-        if math.abs(lookVector.Y) > 0.3 then
-            verticalControl = lookVector.Y * 0.7
-            isMoving = true
-        end
-        
-        if isMoving then
-            -- Нормализуем горизонтальное направление
-            if moveDirection.Magnitude > 0 then
-                moveDirection = moveDirection.Unit
-            end
-            
-            -- Комбинируем горизонтальное и вертикальное движение
-            local finalDirection = Vector3.new(
-                moveDirection.X,
-                verticalControl,
-                moveDirection.Z
-            )
-            
-            if finalDirection.Magnitude > 0 then
-                finalDirection = finalDirection.Unit
-            end
-            
-            -- Устанавливаем скорость движения
-            local targetVelocity = finalDirection * MainModule.Fly.Speed
-            
-            if flightBodyVelocity then
-                flightBodyVelocity.Velocity = targetVelocity
-            end
-            
-            -- Устанавливаем состояние для анимаций
-            humanoid:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
-            
-            -- Очень важный момент: имитируем нормальную физику
-            rootPart.AssemblyLinearVelocity = targetVelocity * 0.3
-            rootPart.Velocity = targetVelocity * 0.2
-            
+        -- Применяем скорость если есть направление
+        if moveDirection.Magnitude > 0 then
+            moveDirection = moveDirection.Unit * MainModule.Fly.Speed
+            flyBV.Velocity = moveDirection
         else
-            -- Если не двигаемся, плавно останавливаемся
-            if flightBodyVelocity then
-                flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            end
-            
-            -- Плавный сброс скоростей
-            rootPart.AssemblyLinearVelocity = rootPart.AssemblyLinearVelocity * 0.9
-            rootPart.Velocity = rootPart.Velocity * 0.9
-            
-            humanoid:ChangeState(Enum.HumanoidStateType.Physics)
-        end
-        
-        -- Анти-детект: имитируем нормальное поведение
-        if humanoid then
-            humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
-            humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
-            
-            -- Периодически меняем состояние для реалистичности
-            if math.random(1, 100) == 1 then
-                humanoid:ChangeState(Enum.HumanoidStateType.Running)
-            end
+            flyBV.Velocity = Vector3.new(0, 0, 0)
         end
     end)
     
@@ -3498,41 +3362,17 @@ function MainModule.DisableFlight()
         MainModule.Fly.CharacterAddedConnection = nil
     end
     
+    -- Удаляем BodyVelocity
     local character = GetCharacter()
     if character then
         local rootPart = GetRootPart(character)
         if rootPart then
-            -- Удаляем BodyVelocity
-            local bv = rootPart:FindFirstChild("HumanoidRootPartVelocity")
+            local bv = rootPart:FindFirstChild("FlyBodyVelocity")
             if bv then bv:Destroy() end
-            
-            -- Удаляем BodyGyro
-            local bg = rootPart:FindFirstChild("HumanoidRootPartGyro")
-            if bg then bg:Destroy() end
-            
-            -- Плавный сброс физических параметров
-            rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            rootPart.Velocity = Vector3.new(0, 0, 0)
-        end
-        
-        local humanoid = GetHumanoid(character)
-        if humanoid then
-            -- Восстанавливаем оригинальные состояния
-            if MainModule.Fly.OriginalStates then
-                humanoid.AutoRotate = MainModule.Fly.OriginalStates.AutoRotate
-                humanoid.PlatformStand = MainModule.Fly.OriginalStates.PlatformStand
-                humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
-                humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
-            end
-            
-            -- Возвращаем нормальное состояние
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
         end
     end
     
-    MainModule.Fly.OriginalStates = nil
     MainModule.Fly.BodyVelocity = nil
-    MainModule.Fly.BodyGyro = nil
 end
 
 function MainModule.ToggleFly(enabled)
@@ -4135,6 +3975,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
