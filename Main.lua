@@ -64,11 +64,11 @@ MainModule.Fly = {
     Speed = 39,
     Connection = nil,
     BodyVelocity = nil,
-    HumanoidDiedConnection = nil,
-    CharacterAddedConnection = nil,
     OriginalStates = nil,
     LastPhysicsCheck = 0,
-    PhysicsCheckInterval = 0.3
+    PhysicsCheckInterval = 0.3,
+    IsMobile = false,
+    IsAntiCheatBypass = false
 }
 
 
@@ -3252,11 +3252,50 @@ function MainModule.ToggleNoclip(enabled)
     ShowNotification("Noclip", "Don't work", 2)
 end
 
--- Улучшенный максимально скрытный Fly с простой логикой управления
+-- Функция для получения вектора движения на мобилке
+local function GetMobileMoveVector()
+    if not MainModule.Fly.IsMobile then 
+        return Vector3.new(0, 0, 0) 
+    end
+    
+    local moveVector = UserInputService:GetMoveVector()
+    
+    if moveVector.Magnitude > 0 then
+        local camera = workspace.CurrentCamera
+        if not camera then return Vector3.new(0, 0, 0) end
+        
+        local lookVector = camera.CFrame.LookVector
+        local rightVector = camera.CFrame.RightVector
+        
+        lookVector = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+        rightVector = Vector3.new(rightVector.X, 0, rightVector.Z).Unit
+        
+        local direction = (lookVector * moveVector.Y) + (rightVector * moveVector.X)
+        return direction.Unit
+    end
+    
+    return Vector3.new(0, 0, 0)
+end
+
+-- Функция создания BodyVelocity
+local function CreateFlyBV(rootPart)
+    if not rootPart then return nil end
+    
+    local flyBV = Instance.new("BodyVelocity")
+    flyBV.Name = "FlyBodyVelocity"
+    flyBV.MaxForce = Vector3.new(40000, 40000, 40000)
+    flyBV.Velocity = Vector3.new(0, 0, 0)
+    flyBV.Parent = rootPart
+    
+    return flyBV
+end
+
+-- Улучшенный максимально скрытный Fly с новой логикой
 function MainModule.EnableFlight()
     if MainModule.Fly.Enabled then return end
     
     MainModule.Fly.Enabled = true
+    MainModule.Fly.IsMobile = UserInputService.TouchEnabled
     
     -- Отключаем все предыдущие соединения
     if MainModule.Fly.Connection then
@@ -3279,22 +3318,13 @@ function MainModule.EnableFlight()
         PlatformStand = humanoid.PlatformStand
     }
     
-    -- Отключаем авто-ротацию для лучшего контроля
+    -- Отключаем авто-ротацию
     humanoid.AutoRotate = false
     humanoid.PlatformStand = false
     
-    -- Создаем BodyVelocity для движения (только один объект для скрытности)
-    if MainModule.Fly.BodyVelocity then
-        MainModule.Fly.BodyVelocity:Destroy()
-    end
+    -- Создаем BodyVelocity для движения
+    MainModule.Fly.BodyVelocity = CreateFlyBV(rootPart)
     
-    local flightBodyVelocity = Instance.new("BodyVelocity")
-    flightBodyVelocity.Name = "HumanoidRootPartVelocity"
-    flightBodyVelocity.MaxForce = Vector3.new(40000, 40000, 40000)
-    flightBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-    flightBodyVelocity.Parent = rootPart
-    
-    MainModule.Fly.BodyVelocity = flightBodyVelocity
     MainModule.Fly.LastPhysicsCheck = tick()
     
     -- Основной цикл полета
@@ -3308,82 +3338,112 @@ function MainModule.EnableFlight()
         end
         
         rootPart = GetRootPart(character)
-        if not rootPart or not MainModule.Fly.BodyVelocity then 
-            MainModule.DisableFlight()
-            return 
-        end
+        if not rootPart or not MainModule.Fly.BodyVelocity then return end
         
-        local Camera = workspace.CurrentCamera
-        if not Camera then return end
+        local camera = workspace.CurrentCamera
+        if not camera then return end
         
         -- Получаем вектор взгляда камеры
-        local lookVector = Camera.CFrame.LookVector
-        local cameraCFrame = Camera.CFrame
-        
-        -- Периодическая проверка физики
-        local currentTime = tick()
-        if currentTime - MainModule.Fly.LastPhysicsCheck > MainModule.Fly.PhysicsCheckInterval then
-            MainModule.Fly.LastPhysicsCheck = currentTime
-            
-            -- Случайное изменение параметров для обхода античита
-            local randomFactor = math.random(90, 110) / 100
-            MainModule.Fly.BodyVelocity.MaxForce = Vector3.new(
-                40000 * randomFactor,
-                40000 * randomFactor,
-                40000 * randomFactor
-            )
-            
-            -- Имитация нормального поведения для анимаций
-            if humanoid then
-                humanoid:ChangeState(Enum.HumanoidStateType.Running)
-            end
-        end
+        local lookVector = camera.CFrame.LookVector
+        local cameraCFrame = camera.CFrame
         
         -- Определяем направление движения
         local moveDirection = Vector3.new(0, 0, 0)
         local isMoving = false
         
-        -- Управление полетом (относительно камеры)
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-            -- Двигаемся в направлении взгляда камеры
-            moveDirection = moveDirection + lookVector
-            isMoving = true
-        end
-        
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-            -- Двигаемся в обратном направлении от взгляда камеры
-            moveDirection = moveDirection - lookVector
-            isMoving = true
-        end
-        
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+        if MainModule.Fly.IsMobile then
+            -- Для мобильных устройств
+            local mobileDirection = GetMobileMoveVector()
+            if mobileDirection.Magnitude > 0 then
+                moveDirection = mobileDirection
+                isMoving = true
+            end
+        else
+            -- Для ПК: WASD управление
             local rightVector = cameraCFrame.RightVector
-            moveDirection = moveDirection - rightVector
-            isMoving = true
+            
+            -- W/S - вперед/назад
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                moveDirection = moveDirection + lookVector
+                isMoving = true
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                moveDirection = moveDirection - lookVector
+                isMoving = true
+            end
+            
+            -- A/D - влево/вправо
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                moveDirection = moveDirection - rightVector
+                isMoving = true
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                moveDirection = moveDirection + rightVector
+                isMoving = true
+            end
         end
         
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-            local rightVector = cameraCFrame.RightVector
-            moveDirection = moveDirection + rightVector
-            isMoving = true
+        -- Вертикальное управление
+        local verticalControl = 0
+        if MainModule.Fly.IsMobile then
+            -- На мобильных: летим в направлении взгляда камеры
+            if math.abs(lookVector.Y) > 0.3 then
+                verticalControl = lookVector.Y * 0.7
+                isMoving = true
+            end
+        else
+            -- На ПК: Space/Shift для высоты
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                verticalControl = 0.7
+                isMoving = true
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
+                verticalControl = -0.7
+                isMoving = true
+            end
         end
         
         if isMoving then
-            -- Нормализуем направление
+            -- Нормализуем горизонтальное направление
             if moveDirection.Magnitude > 0 then
                 moveDirection = moveDirection.Unit
             end
             
+            -- Комбинируем горизонтальное и вертикальное движение
+            local finalDirection = Vector3.new(
+                moveDirection.X,
+                verticalControl,
+                moveDirection.Z
+            )
+            
+            if finalDirection.Magnitude > 0 then
+                finalDirection = finalDirection.Unit
+            end
+            
             -- Устанавливаем скорость движения
-            local targetVelocity = moveDirection * MainModule.Fly.Speed
+            local targetVelocity = finalDirection * MainModule.Fly.Speed
+            
             MainModule.Fly.BodyVelocity.Velocity = targetVelocity
             
-            -- Имитация нормальной физики для анимаций
-            if humanoid then
-                humanoid:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
-                -- Плавный сброс скоростей для реалистичности
-                rootPart.AssemblyLinearVelocity = rootPart.AssemblyLinearVelocity * 0.95
+            -- Устанавливаем состояние для анимаций
+            humanoid:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
+            
+            -- Анти-детект: имитируем нормальную физику
+            local currentTime = tick()
+            if currentTime - MainModule.Fly.LastPhysicsCheck > MainModule.Fly.PhysicsCheckInterval then
+                MainModule.Fly.LastPhysicsCheck = currentTime
+                
+                -- Случайное изменение параметров для обхода античита
+                MainModule.Fly.BodyVelocity.MaxForce = Vector3.new(
+                    math.random(35000, 45000),
+                    math.random(35000, 45000),
+                    math.random(35000, 45000)
+                )
             end
+            
+            rootPart.AssemblyLinearVelocity = targetVelocity * 0.3
+            rootPart.Velocity = targetVelocity * 0.2
+            
         else
             -- Если не двигаемся, плавно останавливаемся
             MainModule.Fly.BodyVelocity.Velocity = Vector3.new(0, 0, 0)
@@ -3392,14 +3452,13 @@ function MainModule.EnableFlight()
             rootPart.AssemblyLinearVelocity = rootPart.AssemblyLinearVelocity * 0.9
             rootPart.Velocity = rootPart.Velocity * 0.9
             
-            if humanoid then
-                humanoid:ChangeState(Enum.HumanoidStateType.Physics)
-            end
+            humanoid:ChangeState(Enum.HumanoidStateType.Physics)
         end
         
-        -- Анти-детект: периодически меняем состояние для реалистичности
-        if humanoid and math.random(1, 150) == 1 then
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        -- Анти-детект: сохраняем оригинальные параметры humanoid
+        if humanoid then
+            humanoid.WalkSpeed = MainModule.Fly.OriginalStates.WalkSpeed
+            humanoid.JumpPower = MainModule.Fly.OriginalStates.JumpPower
         end
     end)
     
@@ -3407,7 +3466,6 @@ function MainModule.EnableFlight()
     if MainModule.Fly.HumanoidDiedConnection then
         MainModule.Fly.HumanoidDiedConnection:Disconnect()
     end
-    
     MainModule.Fly.HumanoidDiedConnection = humanoid.Died:Connect(function()
         MainModule.DisableFlight()
     end)
@@ -3416,7 +3474,6 @@ function MainModule.EnableFlight()
     if MainModule.Fly.CharacterAddedConnection then
         MainModule.Fly.CharacterAddedConnection:Disconnect()
     end
-    
     MainModule.Fly.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newCharacter)
         task.wait(0.5)
         
@@ -3454,8 +3511,9 @@ function MainModule.DisableFlight()
         local rootPart = GetRootPart(character)
         if rootPart then
             -- Удаляем BodyVelocity
-            local bv = rootPart:FindFirstChild("HumanoidRootPartVelocity")
+            local bv = rootPart:FindFirstChild("FlyBodyVelocity")
             if bv then bv:Destroy() end
+            MainModule.Fly.BodyVelocity = nil
             
             -- Плавный сброс физических параметров
             rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
@@ -3478,7 +3536,6 @@ function MainModule.DisableFlight()
     end
     
     MainModule.Fly.OriginalStates = nil
-    MainModule.Fly.BodyVelocity = nil
 end
 
 function MainModule.ToggleFly(enabled)
@@ -4081,6 +4138,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
