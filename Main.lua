@@ -293,14 +293,14 @@ MainModule.Killaura = {
     InstantSyncActive = false,
     LastSyncTime = 0,
     
-    -- Уклонение переменные
-    DodgeHeight = 10,
-    DodgeDuration = 0.5,
+    -- Уклонение переменные (ОБНОВЛЕНО)
+    DodgeHeight = 7, -- Изменено с 10 на 7
+    DodgeDuration = 0.8, -- Изменено с 0.5 на 0.8 секунд
     ReturnDuration = 0.3,
     DodgeState = "none",
     OriginalYPosition = 0,
     DodgeStartY = 0,
-    OriginalTargetPosition = Vector3.new(), -- Сохраняем позицию цели при уклонении
+    OriginalTargetPosition = Vector3.new(),
     ReturnAfterDodge = false,
     
     -- Переменные для возврата после уклонения
@@ -3077,29 +3077,29 @@ local function executeDodge()
     local remotes = remoteService:WaitForChild("Remotes")
     local remote = remotes:WaitForChild("UsedTool")
     
-    -- Ищем инструмент Push (вместо DODGE!)
+    -- Ищем инструмент DODGE! (всегда DODGE!)
     local tool = nil
     local character = player.Character
     
     -- Сначала проверяем в персонаже
     if character then
-        tool = character:FindFirstChild("DODGE!")  -- Изменено на Push
+        tool = character:FindFirstChild("DODGE!")
     end
     
     -- Если не нашли в персонаже, проверяем в бэкпаке
     if not tool then
         local backpack = player:FindFirstChild("Backpack")
         if backpack then
-            tool = backpack:FindFirstChild("Push")  -- Изменено на Push
+            tool = backpack:FindFirstChild("DODGE!")
         end
     end
     
     if not tool then return false end
     
-    -- Подготовка аргументов с новым remote
+    -- Подготовка аргументов с НОВЫМ remote
     local args = {
-        buffer.fromstring("\200\206\205\206\205\205\205\205\205\205=\242\201\194\205\205\205\152\190\164\163\170\128\162\187\168\142\184\190\185\162\160\206\205\205\205\205\205\205\205\141\203\204\205\206\205\205\205\205\205\205\221\141\200\204\205\201\202\205\205\205\140\184\185\162\152\190\168\204"),
-        {tool}  -- инструмент передается как таблица
+        buffer.fromstring("\000\006\005\006\005\005\005\005\005\005\245:\001\n\005\005\005PvlkbHjs`Fpvqjh\006\005\005\005\005\005\005\005E\003\004\005\006\005\005\005\005\005\005\021E\000\004\005\001\002\005\005\005DpqjPv`\004"),
+        {tool}  -- передаем найденный DODGE! инструмент
     }
     
     -- Выполняем уклонение с обработкой ошибок
@@ -3582,11 +3582,89 @@ local function isTargetMovingForward(targetRoot)
     return dotProduct > 0.7 -- Строгий порог для "вперед"
 end
 
--- Возврат после уклонения с плавным преследованием цели
+-- УКЛОНЕНИЕ С ВОЗВРАТОМ К ЦЕЛИ (ИЗМЕНЕННАЯ ЛОГИКА)
+local function performTeleportDodge(localRoot, targetPos, targetLook, deltaTime)
+    local config = MainModule.Killaura
+    
+    if config.DodgeState == "none" then
+        -- Начинаем уклонение
+        config.DodgeState = "up"
+        config.DodgeStartTime = tick()
+        config.OriginalYPosition = localRoot.Position.Y
+        config.DodgeStartY = config.OriginalYPosition
+        config.IsLifted = true
+        config.DodgeActive = true
+        config.ReturnAfterDodge = false
+        
+        -- Мгновенный телепорт вверх на 7 блоков
+        local newPos = Vector3.new(
+            localRoot.Position.X,
+            config.OriginalYPosition + 7, -- Изменено на 7 блоков
+            localRoot.Position.Z
+        )
+        
+        localRoot.CFrame = CFrame.new(newPos, newPos + Vector3.new(0, 0, 1))
+        localRoot.Velocity = Vector3.new(0, 0, 0)
+        
+        -- Переходим к удержанию
+        config.DodgeState = "hold"
+        config.DodgeStartTime = tick()
+        
+    elseif config.DodgeState == "hold" then
+        -- Удерживаем позицию 0.8 секунд
+        local currentTime = tick()
+        local elapsedTime = currentTime - config.DodgeStartTime
+        
+        if elapsedTime >= 0.8 then
+            -- Прошло 0.8 секунд, начинаем возврат
+            config.DodgeState = "return"
+            config.ReturnStartTime = tick()
+            
+            -- Сохраняем данные цели для возврата
+            if config.CurrentTarget then
+                local targetChar = config.CurrentTarget.Character
+                if targetChar then
+                    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                    if targetRoot then
+                        -- Определяем, куда возвращаться (сзади или спереди)
+                        local targetVel = targetRoot.Velocity
+                        local horizontalSpeed = Vector3.new(targetVel.X, 0, targetVel.Z).Magnitude
+                        local isMovingForward = isTargetMovingForward(targetRoot)
+                        
+                        config.ReturnTargetPos = targetRoot.Position
+                        config.ReturnTargetLook = targetRoot.CFrame.LookVector
+                        config.WasInFront = isMovingForward and horizontalSpeed > config.SpeedThreshold and not config.IsJumping
+                    end
+                end
+            end
+        else
+            -- Удерживаем позицию на высоте 7 блоков
+            local targetY = config.OriginalYPosition + 7
+            local currentY = localRoot.Position.Y
+            
+            if math.abs(currentY - targetY) > 0.5 then
+                local correction = (targetY - currentY) * 5
+                localRoot.CFrame = CFrame.new(
+                    Vector3.new(localRoot.Position.X, targetY, localRoot.Position.Z),
+                    localRoot.Position + Vector3.new(0, 0, 1)
+                )
+                localRoot.Velocity = Vector3.new(0, correction, 0)
+            else
+                localRoot.Velocity = Vector3.new(0, 0, 0)
+            end
+        end
+        
+    elseif config.DodgeState == "return" then
+        -- Возвращаемся к цели
+        performReturnAfterDodge(localRoot, deltaTime)
+    end
+end
+
+-- Возврат после уклонения с плавным преследованием цели (ОБНОВЛЕНО)
 local function performReturnAfterDodge(localRoot, deltaTime)
     local config = MainModule.Killaura
     
-    if not config.CurrentTarget then
+    if not config.CurrentTarget or not config.ReturnAfterDodge then
         config.DodgeState = "none"
         config.DodgeActive = false
         config.IsLifted = false
@@ -3612,7 +3690,7 @@ local function performReturnAfterDodge(localRoot, deltaTime)
         return
     end
     
-    -- Получаем текущие данные цели
+    -- Получаем актуальные данные цели
     local targetPos = targetRoot.Position
     local targetLook = targetRoot.CFrame.LookVector
     local targetVel = targetRoot.Velocity
@@ -3622,11 +3700,9 @@ local function performReturnAfterDodge(localRoot, deltaTime)
     local isMovingForward = isTargetMovingForward(targetRoot)
     local shouldBeInFront = isMovingForward and horizontalSpeed > config.SpeedThreshold and not config.IsJumping
     
-    -- Сохраняем состояние для использования при возврате
-    if not config.ReturnAfterDodge then
-        config.ReturnAfterDodge = true
-        config.ReturnStartTime = tick()
-        config.WasInFront = shouldBeInFront
+    -- Используем сохраненные данные для определения позиции
+    if config.WasInFront then
+        shouldBeInFront = true
     end
     
     -- Вычисляем целевую позицию для возврата
@@ -3679,76 +3755,6 @@ local function performReturnAfterDodge(localRoot, deltaTime)
         config.IsLifted = false
         config.ReturnAfterDodge = false
         config.InstantSyncActive = true
-    end
-end
-
--- УКЛОНЕНИЕ С ВОЗВРАТОМ К ЦЕЛИ
-local function performTeleportDodge(localRoot, targetPos, targetLook, deltaTime)
-    local config = MainModule.Killaura
-    
-    if config.DodgeState == "none" then
-        -- Начинаем уклонение
-        config.DodgeState = "up"
-        config.DodgeStartTime = tick()
-        config.OriginalYPosition = localRoot.Position.Y
-        config.DodgeStartY = config.OriginalYPosition
-        config.IsLifted = true
-        config.DodgeActive = true
-        config.ReturnAfterDodge = false
-        
-        -- Мгновенный телепорт вверх на 10 блоков
-        local newPos = Vector3.new(
-            localRoot.Position.X,
-            config.OriginalYPosition + config.DodgeHeight,
-            localRoot.Position.Z
-        )
-        
-        localRoot.CFrame = CFrame.new(newPos, newPos + Vector3.new(0, 0, 1))
-        localRoot.Velocity = Vector3.new(0, 0, 0)
-        
-        -- Переходим к удержанию
-        config.DodgeState = "hold"
-        config.DodgeStartTime = tick()
-        
-    elseif config.DodgeState == "hold" then
-        -- Удерживаем позицию и ждем окончания анимации
-        local currentTime = tick()
-        local elapsedTime = currentTime - config.DodgeStartTime
-        
-        -- Проверяем, закончилась ли анимация
-        if config.CurrentTarget then
-            local isStillAnimating = checkTargetAnimationsInstant(config.CurrentTarget)
-            
-            if not isStillAnimating or elapsedTime > config.DodgeDuration then
-                -- Анимация закончилась, начинаем возврат
-                config.DodgeState = "return"
-                config.ReturnStartTime = tick()
-            else
-                -- Удерживаем позицию
-                local targetY = config.OriginalYPosition + config.DodgeHeight
-                local currentY = localRoot.Position.Y
-                
-                if math.abs(currentY - targetY) > 0.5 then
-                    local correction = (targetY - currentY) * 5
-                    localRoot.CFrame = CFrame.new(
-                        Vector3.new(localRoot.Position.X, targetY, localRoot.Position.Z),
-                        localRoot.Position + Vector3.new(0, 0, 1)
-                    )
-                    localRoot.Velocity = Vector3.new(0, correction, 0)
-                else
-                    localRoot.Velocity = Vector3.new(0, 0, 0)
-                end
-            end
-        else
-            -- Цель потеряна, выходим из уклонения
-            config.DodgeState = "none"
-            config.DodgeActive = false
-            config.IsLifted = false
-        end
-        
-    elseif config.DodgeState == "return" then
-        -- Возвращаемся к цели
-        performReturnAfterDodge(localRoot, deltaTime)
     end
 end
 
@@ -4535,6 +4541,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
