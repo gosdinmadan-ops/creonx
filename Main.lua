@@ -3083,7 +3083,7 @@ local function executeDodge()
     
     -- Сначала проверяем в персонаже
     if character then
-        tool = character:FindFirstChild("Push")  -- Изменено на Push
+        tool = character:FindFirstChild("DODGE!")  -- Изменено на Push
     end
     
     -- Если не нашли в персонаже, проверяем в бэкпаке
@@ -4535,6 +4535,7 @@ LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
 end)
 
 return MainModule
+
 
 
 
